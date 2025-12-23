@@ -6,6 +6,10 @@ set(CMAKE_CXX_COMPILER clang++)
 
 project(MiniDaxa C CXX)
 
+find_package(glslang CONFIG REQUIRED)
+find_package(Threads REQUIRED)
+find_package(Vulkan REQUIRED)
+
 # --- Standards ---
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -30,7 +34,12 @@ FetchContent_Declare(cglm GIT_REPOSITORY https://github.com/recp/cglm.git GIT_TA
 
 FetchContent_MakeAvailable(glfw volk vma cglm)
 
-add_subdirectory(external)
+
+set(SOURCES_FILES_GAME_ENGINE)
+set(INCLUDE_DIRECTORIES_ENGINE)
+
+add_subdirectory(thirdparty)
+add_subdirectory(src)
 
 
 
@@ -39,18 +48,26 @@ add_subdirectory(external)
 # Compiles your code with C23
 add_executable(${PROJECT_NAME} 
     src/main.c 
-    src/gpu/gpu.c
-    src/rendergraph.c 
+  ${SOURCES_FILES_GAME_ENGINE}
 )
 
-target_include_directories(${PROJECT_NAME} PRIVATE src)
+target_include_directories(${PROJECT_NAME} PRIVATE src shaders ${INCLUDE_DIRECTORIES_ENGINE} ${CMAKE_CURRENT_SOURCE_DIR})
+
+
 
 target_link_libraries(${PROJECT_NAME} PRIVATE 
     proxy_vk_mem  # Links your C++ library
     glfw 
     volk 
     cglm
+    glslang::glslang 
+    glslang::SPIRV 
+    glslang::glslang-default-resource-limits
 )
+
+if(UNIX)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread m)
+endif()
 
 
 

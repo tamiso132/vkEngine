@@ -1,0 +1,43 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// Binding 0: Read-Only Textures (Input)
+layout(set = 0, binding = 0) uniform sampler2D globalTextures[];
+
+// Binding 1: Buffers (Input/Output data)
+layout(set = 0, binding = 1) readonly buffer BufferData {
+    float d[];
+} globalBuffers[];
+
+// Binding 2: Writeable Images (Output)
+// Notera: Vi kör en array här också!
+layout(set = 0, binding = 2, rgba8) uniform writeonly image2D globalImages[];
+
+layout(push_constant) uniform Push {
+    uint inputTextureID;  // Läs från denna (Binding 0)
+    uint outputImageID;   // Skriv till denna (Binding 2)
+} pc;
+
+
+
+void main() {
+
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);   
+    // För att veta storleken, måste vi kolla på output-bilden vi ska skriva till
+    ivec2 size = imageSize(globalImages[nonuniformEXT(pc.outputImageID)]);
+
+    if (pos.x >= size.x || pos.y >= size.y) return;
+
+    vec2 uv = (vec2(pos) + 0.5) / vec2(size);
+
+    // 1. LÄS från Binding 0 (Sampled)
+    vec4 color = texture(globalTextures[nonuniformEXT(pc.inputTextureID)], uv);
+
+    // (Gör något coolt med färgen här...)
+    color.rgb = 1.0 - color.rgb; // Invertera färg som test
+
+    // 2. SKRIV till Binding 2 (Storage)
+    imageStore(globalImages[nonuniformEXT(pc.outputImageID)], pos, color);
+}

@@ -1,0 +1,19 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMake Build",
+            "type": "shell",
+            // HÄR ÄR ÄNDRINGEN: Vi lade till -DCMAKE_BUILD_TYPE=Debug
+            "command": "bash build.sh",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Bygger med Debug-symboler så att breakpoints fungerar"
+        }
+    ]
+}

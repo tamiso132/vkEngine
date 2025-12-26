@@ -2,6 +2,8 @@
 #define RESOURCE_MANAGER_H
 
 #include "gpu/gpu.h"
+#include "util.h"
+#include "vector.h"
 #include <stdbool.h>
 
 // --- Types ---
@@ -68,8 +70,10 @@ typedef struct RGResource {
 
 typedef struct {
   GPUDevice *gpu;
+  u32 frame_count;
   RGResource *resources; // Stretchy Buffer
-
+  Vector retired_buffers;
+  Vector free_buffers;
   // Bindless
   VkDescriptorPool descriptor_pool;
   VkDescriptorSetLayout bindless_layout;

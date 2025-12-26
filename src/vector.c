@@ -1,6 +1,7 @@
 #include "vector.h"
 
 void *default_alloc(size_t size, void *ctx) { return malloc(size); }
+
 void *default_realloc(void *ptr, size_t old, size_t new_s, void *ctx) {
   return realloc(ptr, new_s);
 }
@@ -31,15 +32,29 @@ void vec_push(Vector *vec, void *element) {
   memcpy(dest, element, vec->element_size);
   vec->length++;
 }
+
+void vec_remove_at(Vector *vec, u32 index) {
+  memmove(&vec->data[index], &vec[index + 1],
+          vec->element_size * (vec->length - index));
+}
+
+void vec_clear(Vector *vec) {
+  memset(vec->data, 0, vec->length * vec->element_size);
+  vec->length = 0;
+}
+
 void vec_realloc_capacity(Vector *vec, size_t new_cap) {
   vec->allocator->realloc(vec->data, vec->element_size * vec->capacity,
                           new_cap * vec->element_size, vec->allocator->ctx);
 }
+
 void *vec_at(Vector *vec, size_t index) {
   if (index >= vec->length)
     return NULL;
   return (char *)vec->data + (index * vec->element_size);
 }
+
+u32 vec_len(Vector *vec) { return vec->length; }
 
 void vec_destroy(Vector *vec) {
   if (vec->data) {

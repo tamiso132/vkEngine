@@ -1,3 +1,6 @@
+#pragma once
+
+#include "util.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -23,6 +26,12 @@ typedef struct Vector {
 // --- API ---
 void vec_init(Vector *vec, size_t elem_size, Allocator *allocator);
 void vec_push(Vector *vec, void *element);
+void vec_remove_at(Vector *vec, u32 index);
+void vec_clear(Vector *vec);
 void vec_realloc_capacity(Vector *vec, size_t new_cap);
 void *vec_at(Vector *vec, size_t index);
+u32 vec_len(Vector *vec);
 void vec_destroy(Vector *vec);
+
+// --EASE
+#define VEC_AT(vec, index, type) ((type *)vec_at(&vec, index))

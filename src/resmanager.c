@@ -1,5 +1,6 @@
 #include "resmanager.h"
 #include "util.h"
+#include "vector.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +10,11 @@
 #define BINDING_TEXTURES 0
 #define BINDING_BUFFERS 1
 #define BINDING_IMAGES 2
+
+typedef struct RetiredBuffer {
+  RGHandle handle;
+  uint64_t frame_retired;
+} RetiredBuffer;
 
 // --- Internal Helpers: Bindless Setup ---
 
@@ -129,8 +135,6 @@ static void _rm_update_bindless_storage(ResourceManager *rm, uint32_t id,
   vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
 }
 
-// --- Implementation: Lifecycle ---
-
 void rm_init(ResourceManager *rm, GPUDevice *gpu) {
   *rm = (ResourceManager){.gpu = gpu};
   _init_bindless(rm);
@@ -160,8 +164,6 @@ void rm_destroy(ResourceManager *rm) {
   vkDestroyDescriptorPool(rm->gpu->device, rm->descriptor_pool, NULL);
 }
 
-// --- Implementation: Creators ---
-
 RGHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size,
                           VkBufferUsageFlags usage) {
   RGResource res = {.type = RES_TYPE_BUFFER};
@@ -179,6 +181,7 @@ RGHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size,
 
   return (RGHandle){id};
 }
+
 RGHandle rm_create_image(ResourceManager *rm, RGImageInfo info) {
   RGResource res = {.type = RES_TYPE_IMAGE};
   strncpy(res.name, info.name ? info.name : "Unnamed", 63);
@@ -230,6 +233,58 @@ RGHandle rm_import_image(ResourceManager *rm, const char *name, VkImage img,
   return (RGHandle){id};
 }
 
+// Call once per frame at the start of the render loop
+void rm_process_retirement(ResourceManager *rm) {
+  // MAX_FRAMES_IN_FLIGHT (usually 2 or 3)
+  uint64_t safe_frame = rm->frame_count - 3;
+  for (int i = 0; i < vec_len(&rm->retired_buffers); i++) {
+    if (VEC_AT(rm->retired_buffers, i, RetiredBuffer)->frame_retired <
+        safe_frame) {
+
+      //
+      // Buffer is finally safe from GPU race conditions. Move to free pool.
+
+      vec_push(&rm->free_buffers,
+               &VEC_AT(rm->retired_buffers, i, RetiredBuffer)->handle);
+
+      vec_remove_at(&rm->retired_buffers, i--);
+    }
+  }
+}
+
+void rm_retire_buffer(ResourceManager *rm, RGHandle handle) {
+  RetiredBuffer rb = {.handle = handle, .frame_retired = rm->frame_count};
+  vec_push(&rm->retired_buffers, &rb);
+}
+
+RGHandle rm_acquire_reusable_buffer(ResourceManager *rm, uint64_t size,
+                                    VkBufferUsageFlags usage) {
+  int best_fit = -1;
+  uint64_t min_diff = UINT64_MAX;
+
+  // Search free list for a buffer that fits but isn't massively oversized
+  for (int i = 0; i < vec_len(&rm->free_buffers); i++) {
+    RGHandle *h = VEC_AT(rm->free_buffers, i, RGHandle);
+    uint64_t b_size = rm->resources[h->id].buf.size;
+
+    if (b_size >= size) {
+      uint64_t diff = b_size - size;
+      if (diff < min_diff) {
+        min_diff = diff;
+        best_fit = i;
+      }
+    }
+  }
+
+  if (best_fit != -1) {
+    RGHandle h = *VEC_AT(rm->free_buffers, best_fit, RGHandle);
+    vec_remove_at(&rm->free_buffers, best_fit);
+    return h;
+  }
+
+  // No reusable buffer; allocate new memory
+  return rm_create_buffer(rm, "VoxelData", size, usage);
+}
 // --- Implementation: Getters ---
 
 VkBuffer rm_get_buffer(ResourceManager *rm, RGHandle handle) {

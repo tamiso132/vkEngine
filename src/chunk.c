@@ -3,9 +3,6 @@
 #include "vector.h"
 #include <stdint.h>
 
-#define MAX_NODES_L1 512  // Est. max internal nodes
-#define MAX_NODES_L2 4096 // Est. max leaf nodes
-
 typedef struct Node {
   u64 mask;
 } Node;
@@ -28,98 +25,108 @@ static uint64_t split_by_3(uint32_t a) {
   return x;
 }
 
-void chunk_rebuild(ChunkTree *chunk) {
+// Max depth 6 = 4096^3 voxels
+#define MAX_TREE_DEPTH 6
+
+void chunk_rebuild(ChunkTree *chunk, int max_depth) {
   if (!chunk->is_dirty)
     return;
 
-  // Level 2 (Leaves): Holds the masks from chunk->bits
-  u64 l2_masks[MAX_NODES_L2];
-  u32 l2_count = 0;
+  vec_clear(&chunk->nodes);
+  vec_clear(&chunk->child_indices);
 
-  // Level 1 (Middle): Holds masks pointing to L2
-  u64 l1_masks[MAX_NODES_L1];
-  u32 l1_count = 0;
+  // 1. Temporary buffers for each level
+  // We store masks and a "popcount" for children to calculate pointers later
+  uint64_t *level_masks[MAX_TREE_DEPTH];
+  uint32_t level_node_count[MAX_TREE_DEPTH] = {0};
 
-  // Root: Just one mask
-  u64 root_mask = 0;
+  // Initialize Level 0 (Leaves) from the bits array
+  // Level 0 always has WORDS_PER_CHUNK potential nodes
+  uint32_t current_level_size = WORDS_PER_CHUNK;
 
-  // ---------------------------------------------------------
-  // STEP 1: BOTTOM-UP SCAN
-  // ---------------------------------------------------------
-  // We scan the bits array.
-  // The bits array is 4096 items long.
-  // Level 1 groups them into blocks of 64. (4096 / 64 = 64 blocks).
+  // Scratchpads for structural building
+  // In a real app, use a pre-allocated scratch buffer
+  for (int i = 0; i < max_depth; i++) {
+    level_masks[i] = malloc(current_level_size * sizeof(uint64_t));
+    memset(level_masks[i], 0, current_level_size * sizeof(uint64_t));
+    current_level_size /= 64;
+    if (current_level_size < 1)
+      current_level_size = 1;
+  }
 
-  for (int i = 0; i < 64; i++) {
-    u64 current_l1_mask = 0;
-    u32 start_of_leaves = l2_count; // Current write head of L2 buffer
-    bool has_active_leaves = false;
+  // 2. STEP 1: Bottom-Up structural pass
+  // Pass 0: Fill Leaf Level from raw bits
+  for (int i = 0; i < WORDS_PER_CHUNK; i++) {
+    level_masks[0][i] = chunk->bits[i];
+  }
+  level_node_count[0] = WORDS_PER_CHUNK;
 
-    // Check the 64 leaves belonging to this L1 block
-    int base_bit_index = i * 64;
+  // Pass 1 to N: Build parents from children
+  for (int d = 1; d < max_depth; d++) {
+    int child_count = level_node_count[d - 1];
+    int parent_count = child_count / 64;
 
-    for (int j = 0; j < 64; j++) {
-      uint64_t leaf_val = chunk->bits[base_bit_index + j];
+    for (int p = 0; p < parent_count; p++) {
+      uint64_t mask = 0;
+      for (int c = 0; c < 64; c++) {
+        if (level_masks[d - 1][p * 64 + c] != 0) {
+          mask |= (1ULL << c);
+        }
+      }
+      level_masks[d][p] = mask;
+    }
+    level_node_count[d] = parent_count;
+  }
 
-      if (leaf_val != 0) {
-        // Found an active leaf!
-        l2_masks[l2_count++] = leaf_val; // Save leaf data
-        current_l1_mask |= (1ULL << j);  // Mark bit in L1 parent
-        has_active_leaves = true;
+  // 3. STEP 2: Flattening (BFS Order)
+  // We only push nodes that have a non-zero mask (Sparse)
+  // We work from top (max_depth - 1) down to 0
+
+  uint32_t level_start_offsets[MAX_TREE_DEPTH];
+  uint32_t active_node_counts[MAX_TREE_DEPTH] = {0};
+
+  // Calculate how many active nodes exist per level to find offsets
+  uint32_t total_active = 0;
+  for (int d = max_depth - 1; d >= 0; d--) {
+    level_start_offsets[d] = total_active;
+    for (int i = 0; i < level_node_count[d]; i++) {
+      if (level_masks[d][i] != 0)
+        active_node_counts[d]++;
+    }
+    total_active += active_node_counts[d];
+  }
+
+  vec_realloc_capacity(&chunk->nodes, total_active);
+  vec_realloc_capacity(&chunk->child_indices, total_active);
+
+  // Push to Vectors and resolve pointers
+  for (int d = max_depth - 1; d >= 0; d--) {
+    uint32_t next_level_child_ptr = (d > 0) ? level_start_offsets[d - 1] : 0;
+
+    for (int i = 0; i < level_node_count[d]; i++) {
+      uint64_t mask = level_masks[d][i];
+      if (mask == 0 && d != max_depth - 1)
+        continue; // Skip empty (except root)
+
+      Node n = {.mask = mask};
+      ChildIndex c = {.first_child_index =
+                          (d > 0 && mask != 0) ? next_level_child_ptr : 0};
+
+      vec_push(&chunk->nodes, &n);
+      vec_push(&chunk->child_indices, &c);
+
+      // The next node's children will start after this node's children
+      if (d > 0) {
+        next_level_child_ptr += __builtin_popcountll(mask);
       }
     }
-
-    // If this block had active leaves, save the Level 1 node
-    if (has_active_leaves) {
-      root_mask |= (1ULL << i); // Mark bit in Root
-      l1_masks[l1_count] = current_l1_mask;
-      l1_count++;
-    }
   }
 
-  // ---------------------------------------------------------
-  // STEP 2: FLATTEN (BFS Order: Root -> L1 -> L2)
-  // ---------------------------------------------------------
-
-  Node root_node = {.mask = root_mask};
-  ChildIndex root_child = {.first_child_index =
-                               1}; // L1 always starts at index 1
-
-  vec_realloc_capacity(&chunk->nodes, l1_count + l2_count + 1);
-  vec_realloc_capacity(&chunk->child_indices, l1_count + l2_count + 1);
-
-  // -- B. Write Level 1 --
-
-  u32 current_child_accumulator = 0;
-  u32 l2_start_offset = 1 + l1_count;
-
-  for (int i = 0; i < l1_count; i++) {
-    Node n = {.mask = l1_masks[i]};
-
-    // 1. Point to the current write head
-    u32 child_idx = l2_start_offset + current_child_accumulator;
-
-    ChildIndex c = {.first_child_index = child_idx};
-
-    vec_push(&chunk->nodes, &n);
-    vec_push(&chunk->child_indices, &c);
-
-    current_child_accumulator += __builtin_popcountll(l1_masks[i]);
-  }
-
-  // -- C. Write Level 2 (Leaves) --
-  for (int i = 0; i < l2_count; i++) {
-    Node n = {.mask = l2_masks[i]};
-    ChildIndex c = {.first_child_index =
-                        0}; // Leaves have no children (or 0 to indicate end)
-
-    vec_push(&chunk->nodes, &n);
-    vec_push(&chunk->child_indices, &c);
-  }
-
+  // Cleanup
+  for (int i = 0; i < max_depth; i++)
+    free(level_masks[i]);
   chunk->is_dirty = false;
 }
-
 // MORTON ENCODER
 // Input: x, y, z inside the chunk (Range 0 to 63)
 // Output: 64-bit sortable code

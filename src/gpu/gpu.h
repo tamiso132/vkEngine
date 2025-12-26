@@ -3,6 +3,7 @@
 
 #define VK_NO_PROTOTYPES
 
+#include "util.h"
 #include "vk_mem_alloc.h"
 #include "volk.h"
 #include <GLFW/glfw3.h>
@@ -15,6 +16,7 @@ typedef struct GPUDevice GPUDevice;
 typedef struct {
   VkBuffer vk;
   VmaAllocation alloc;
+  u64 size;
 } GPUBuffer;
 
 typedef struct {

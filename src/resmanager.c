@@ -12,250 +12,248 @@
 
 // --- Internal Helpers: Bindless Setup ---
 
-static void _init_bindless(ResourceManager *rm)
-{
-    // 1. Create Pool (Must have UPDATE_AFTER_BIND)
-    VkDescriptorPoolSize sizes[] = {
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, RM_MAX_RESOURCES},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, RM_MAX_RESOURCES},
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, RM_MAX_RESOURCES}};
+static void _init_bindless(ResourceManager *rm) {
+  // 1. Create Pool (Must have UPDATE_AFTER_BIND)
+  VkDescriptorPoolSize sizes[] = {
+      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, RM_MAX_RESOURCES},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, RM_MAX_RESOURCES},
+      {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, RM_MAX_RESOURCES}};
 
-    VkDescriptorPoolCreateInfo pi = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
-        .maxSets = 1,
-        .poolSizeCount = 3,
-        .pPoolSizes = sizes};
-    vkCreateDescriptorPool(rm->gpu->device, &pi, NULL, &rm->descriptor_pool);
+  VkDescriptorPoolCreateInfo pi = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
+      .maxSets = 1,
+      .poolSizeCount = 3,
+      .pPoolSizes = sizes};
+  vkCreateDescriptorPool(rm->gpu->device, &pi, NULL, &rm->descriptor_pool);
 
-    // 2. Create Layout
-    VkDescriptorSetLayoutBinding bindings[] = {
-        // Binding 0: Textures (Sampled)
-        {BINDING_TEXTURES, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, RM_MAX_RESOURCES, VK_SHADER_STAGE_ALL, NULL},
-        // Binding 1: Buffers (Storage)
-        {BINDING_BUFFERS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, RM_MAX_RESOURCES, VK_SHADER_STAGE_ALL, NULL},
-        // Binding 2: Images (Storage Write)
-        {BINDING_IMAGES, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, RM_MAX_RESOURCES, VK_SHADER_STAGE_ALL, NULL}};
+  // 2. Create Layout
+  VkDescriptorSetLayoutBinding bindings[] = {
+      // Binding 0: Textures (Sampled)
+      {BINDING_TEXTURES, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+       RM_MAX_RESOURCES, VK_SHADER_STAGE_ALL, NULL},
+      // Binding 1: Buffers (Storage)
+      {BINDING_BUFFERS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, RM_MAX_RESOURCES,
+       VK_SHADER_STAGE_ALL, NULL},
+      // Binding 2: Images (Storage Write)
+      {BINDING_IMAGES, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, RM_MAX_RESOURCES,
+       VK_SHADER_STAGE_ALL, NULL}};
 
-    // Allow "partially bound" (holes in array) and "update after bind"
-    VkDescriptorBindingFlags f = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
-    VkDescriptorBindingFlags bindFlags[] = {f, f, f};
+  // Allow "partially bound" (holes in array) and "update after bind"
+  VkDescriptorBindingFlags f = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+                               VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+  VkDescriptorBindingFlags bindFlags[] = {f, f, f};
 
-    VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-        .bindingCount = 3,
-        .pBindingFlags = bindFlags};
+  VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo = {
+      .sType =
+          VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+      .bindingCount = 3,
+      .pBindingFlags = bindFlags};
 
-    VkDescriptorSetLayoutCreateInfo li = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-        .pNext = &flagsInfo,
-        .bindingCount = 3,
-        .pBindings = bindings};
-    vkCreateDescriptorSetLayout(rm->gpu->device, &li, NULL, &rm->bindless_layout);
+  VkDescriptorSetLayoutCreateInfo li = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+      .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+      .pNext = &flagsInfo,
+      .bindingCount = 3,
+      .pBindings = bindings};
+  vkCreateDescriptorSetLayout(rm->gpu->device, &li, NULL, &rm->bindless_layout);
 
-    // 3. Allocate Set
-    VkDescriptorSetAllocateInfo ai = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = rm->descriptor_pool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &rm->bindless_layout};
-    vkAllocateDescriptorSets(rm->gpu->device, &ai, &rm->bindless_set);
+  // 3. Allocate Set
+  VkDescriptorSetAllocateInfo ai = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+      .descriptorPool = rm->descriptor_pool,
+      .descriptorSetCount = 1,
+      .pSetLayouts = &rm->bindless_layout};
+  vkAllocateDescriptorSets(rm->gpu->device, &ai, &rm->bindless_set);
 
-    // 4. Default Sampler (Linear)
-    VkSamplerCreateInfo si = {
-        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .magFilter = VK_FILTER_LINEAR,
-        .minFilter = VK_FILTER_LINEAR,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .maxAnisotropy = 1.0f,
-        .maxLod = VK_LOD_CLAMP_NONE};
-    vkCreateSampler(rm->gpu->device, &si, NULL, &rm->default_sampler);
+  // 4. Default Sampler (Linear)
+  VkSamplerCreateInfo si = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                            .magFilter = VK_FILTER_LINEAR,
+                            .minFilter = VK_FILTER_LINEAR,
+                            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+                            .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                            .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                            .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                            .maxAnisotropy = 1.0f,
+                            .maxLod = VK_LOD_CLAMP_NONE};
+  vkCreateSampler(rm->gpu->device, &si, NULL, &rm->default_sampler);
 }
 
 // --- Internal Helpers: Bindless Updates ---
 
-static void _rm_update_bindless_sampled(ResourceManager *rm, uint32_t id, VkImageView view)
-{
-    VkDescriptorImageInfo imgInfo = {
-        .sampler = rm->default_sampler,
-        .imageView = view,
-        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkWriteDescriptorSet write = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = rm->bindless_set,
-        .dstBinding = BINDING_TEXTURES,
-        .dstArrayElement = id,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .pImageInfo = &imgInfo};
-    vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
+static void _rm_update_bindless_sampled(ResourceManager *rm, uint32_t id,
+                                        VkImageView view) {
+  VkDescriptorImageInfo imgInfo = {
+      .sampler = rm->default_sampler,
+      .imageView = view,
+      .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                .dstSet = rm->bindless_set,
+                                .dstBinding = BINDING_TEXTURES,
+                                .dstArrayElement = id,
+                                .descriptorCount = 1,
+                                .descriptorType =
+                                    VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                .pImageInfo = &imgInfo};
+  vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
 }
 
-static void _rm_update_bindless_buffer(ResourceManager *rm, uint32_t id, VkBuffer buffer)
-{
-    VkDescriptorBufferInfo bufInfo = {
-        .buffer = buffer,
-        .offset = 0,
-        .range = VK_WHOLE_SIZE};
-    VkWriteDescriptorSet write = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = rm->bindless_set,
-        .dstBinding = BINDING_BUFFERS,
-        .dstArrayElement = id,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        .pBufferInfo = &bufInfo};
-    vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
+static void _rm_update_bindless_buffer(ResourceManager *rm, uint32_t id,
+                                       VkBuffer buffer) {
+  VkDescriptorBufferInfo bufInfo = {
+      .buffer = buffer, .offset = 0, .range = VK_WHOLE_SIZE};
+  VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                .dstSet = rm->bindless_set,
+                                .dstBinding = BINDING_BUFFERS,
+                                .dstArrayElement = id,
+                                .descriptorCount = 1,
+                                .descriptorType =
+                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                .pBufferInfo = &bufInfo};
+  vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
 }
 
-static void _rm_update_bindless_storage(ResourceManager *rm, uint32_t id, VkImageView view)
-{
-    VkDescriptorImageInfo imgInfo = {
-        .sampler = VK_NULL_HANDLE,
-        .imageView = view,
-        .imageLayout = VK_IMAGE_LAYOUT_GENERAL};
-    VkWriteDescriptorSet write = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = rm->bindless_set,
-        .dstBinding = BINDING_IMAGES,
-        .dstArrayElement = id,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-        .pImageInfo = &imgInfo};
-    vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
+static void _rm_update_bindless_storage(ResourceManager *rm, uint32_t id,
+                                        VkImageView view) {
+  VkDescriptorImageInfo imgInfo = {.sampler = VK_NULL_HANDLE,
+                                   .imageView = view,
+                                   .imageLayout = VK_IMAGE_LAYOUT_GENERAL};
+  VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                .dstSet = rm->bindless_set,
+                                .dstBinding = BINDING_IMAGES,
+                                .dstArrayElement = id,
+                                .descriptorCount = 1,
+                                .descriptorType =
+                                    VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                                .pImageInfo = &imgInfo};
+  vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
 }
 
 // --- Implementation: Lifecycle ---
 
-void rm_init(ResourceManager *rm, GPUDevice *gpu)
-{
-    *rm = (ResourceManager){.gpu = gpu};
-    _init_bindless(rm);
+void rm_init(ResourceManager *rm, GPUDevice *gpu) {
+  *rm = (ResourceManager){.gpu = gpu};
+  _init_bindless(rm);
 }
 
-void rm_destroy(ResourceManager *rm)
-{
-    // 1. Destroy Resources
-    for (size_t i = 0; i < v_len(rm->resources); i++)
-    {
-        RGResource *r = &rm->resources[i];
-        if (!r->is_imported)
-        {
-            if (r->type == RES_TYPE_BUFFER)
-            {
-                // Assuming you have vmaDestroyBuffer wrapped or accessible via gpu->allocator
-                vmaDestroyBuffer(rm->gpu->allocator, r->buf.vk, r->buf.alloc);
-            }
-            if (r->type == RES_TYPE_IMAGE)
-            {
-                vkDestroyImageView(rm->gpu->device, r->img.img.view, NULL);
-                vmaDestroyImage(rm->gpu->allocator, r->img.img.vk, r->img.img.alloc);
-            }
-        }
+void rm_destroy(ResourceManager *rm) {
+  // 1. Destroy Resources
+  for (size_t i = 0; i < v_len(rm->resources); i++) {
+    RGResource *r = &rm->resources[i];
+    if (!r->is_imported) {
+      if (r->type == RES_TYPE_BUFFER) {
+        // Assuming you have vmaDestroyBuffer wrapped or accessible via
+        // gpu->allocator
+        vmaDestroyBuffer(rm->gpu->allocator, r->buf.vk, r->buf.alloc);
+      }
+      if (r->type == RES_TYPE_IMAGE) {
+        vkDestroyImageView(rm->gpu->device, r->img.img.view, NULL);
+        vmaDestroyImage(rm->gpu->allocator, r->img.img.vk, r->img.img.alloc);
+      }
     }
-    v_free(rm->resources);
+  }
+  v_free(rm->resources);
 
-    // 2. Destroy Bindless Context
-    vkDestroySampler(rm->gpu->device, rm->default_sampler, NULL);
-    vkDestroyDescriptorSetLayout(rm->gpu->device, rm->bindless_layout, NULL);
-    vkDestroyDescriptorPool(rm->gpu->device, rm->descriptor_pool, NULL);
+  // 2. Destroy Bindless Context
+  vkDestroySampler(rm->gpu->device, rm->default_sampler, NULL);
+  vkDestroyDescriptorSetLayout(rm->gpu->device, rm->bindless_layout, NULL);
+  vkDestroyDescriptorPool(rm->gpu->device, rm->descriptor_pool, NULL);
 }
 
 // --- Implementation: Creators ---
 
-RGHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size, VkBufferUsageFlags usage)
-{
-    RGResource res = {.type = RES_TYPE_BUFFER};
-    strncpy(res.name, name, 63);
+RGHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size,
+                          VkBufferUsageFlags usage) {
+  RGResource res = {.type = RES_TYPE_BUFFER};
+  strncpy(res.name, name, 63);
 
-    // Create GPU Resource
-    GPUBufferInfo info = {.size = size, .usage = usage, .memory_usage = VMA_MEMORY_USAGE_AUTO};
-    res.buf = gpu_create_buffer(rm->gpu, &info);
+  // Create GPU Resource
+  GPUBufferInfo info = {
+      .size = size, .usage = usage, .memory_usage = VMA_MEMORY_USAGE_AUTO};
+  res.buf = gpu_create_buffer(rm->gpu, &info);
 
-    // Add to Manager & Update Bindless
-    uint32_t id = (uint32_t)v_len(rm->resources);
-    v_push(rm->resources, res);
-    _rm_update_bindless_buffer(rm, id, res.buf.vk);
+  // Add to Manager & Update Bindless
+  uint32_t id = (uint32_t)v_len(rm->resources);
+  v_push(rm->resources, res);
+  _rm_update_bindless_buffer(rm, id, res.buf.vk);
 
-    return (RGHandle){id};
+  return (RGHandle){id};
 }
+RGHandle rm_create_image(ResourceManager *rm, RGImageInfo info) {
+  RGResource res = {.type = RES_TYPE_IMAGE};
+  strncpy(res.name, info.name ? info.name : "Unnamed", 63);
 
-RGHandle rm_create_image(ResourceManager *rm, const char *name, uint32_t w, uint32_t h, VkFormat fmt)
-{
-    RGResource res = {.type = RES_TYPE_IMAGE};
-    strncpy(res.name, name, 63);
+  VkImageUsageFlags usage = info.usage;
 
-    // Force STORAGE_BIT to allow bindless writing (imageStore)
-    GPUImageInfo info = {
-        .extent = {w, h, 1},
-        .format = fmt,
-        .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                 VK_IMAGE_USAGE_STORAGE_BIT};
-    res.img.img = gpu_create_image(rm->gpu, &info);
-    res.img.current_layout = VK_IMAGE_LAYOUT_UNDEFINED; // New image starts undefined
+  // Create GPU Resource
+  GPUImageInfo gpu_info = {.extent = {info.width, info.height, 1},
+                           .format = info.format,
+                           .usage = usage,
+                           .debug_name = res.name};
 
-    // Add to Manager & Update Bindless
-    uint32_t id = (uint32_t)v_len(rm->resources);
-    v_push(rm->resources, res);
+  // Call low-level GPU allocator
+  res.img.img = gpu_create_image(rm->gpu, &gpu_info);
+  res.img.current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    // Update Bindings 0 (Texture) and 2 (Storage Image)
+  // Add to Manager
+  uint32_t id = (uint32_t)v_len(rm->resources);
+  v_push(rm->resources, res);
+
+  // Update Bindless Descriptors based on usage capabilities
+  bool is_sampled = (usage & VK_IMAGE_USAGE_SAMPLED_BIT);
+  bool is_storage = (usage & VK_IMAGE_USAGE_STORAGE_BIT);
+
+  if (is_sampled) {
     _rm_update_bindless_sampled(rm, id, res.img.img.view);
-    _rm_update_bindless_storage(rm, id, res.img.img.view);
+  }
 
-    return (RGHandle){id};
+  if (is_storage) {
+    _rm_update_bindless_storage(rm, id, res.img.img.view);
+  }
+
+  return (RGHandle){id};
 }
 
-RGHandle rm_import_image(ResourceManager *rm, const char *name, VkImage img, VkImageView view, VkImageLayout cur_layout)
-{
-    RGResource res = {
-        .type = RES_TYPE_IMAGE,
-        .is_imported = true};
-    strncpy(res.name, name ? name : "Imported", 63);
+RGHandle rm_import_image(ResourceManager *rm, const char *name, VkImage img,
+                         VkImageView view, VkImageLayout cur_layout) {
+  RGResource res = {.type = RES_TYPE_IMAGE, .is_imported = true};
+  strncpy(res.name, name ? name : "Imported", 63);
 
-    res.img.img.vk = img;
-    res.img.img.view = view;
-    res.img.current_layout = cur_layout; // Important: Capture state from previous frame/swapchain
+  res.img.img.vk = img;
+  res.img.img.view = view;
+  res.img.current_layout =
+      cur_layout; // Important: Capture state from previous frame/swapchain
 
-    uint32_t id = (uint32_t)v_len(rm->resources);
-    v_push(rm->resources, res);
+  uint32_t id = (uint32_t)v_len(rm->resources);
+  v_push(rm->resources, res);
 
-    return (RGHandle){id};
+  return (RGHandle){id};
 }
 
 // --- Implementation: Getters ---
 
-VkBuffer rm_get_buffer(ResourceManager *rm, RGHandle handle)
-{
-    if (handle.id >= v_len(rm->resources))
-        return VK_NULL_HANDLE;
-    return rm->resources[handle.id].buf.vk;
+VkBuffer rm_get_buffer(ResourceManager *rm, RGHandle handle) {
+  if (handle.id >= v_len(rm->resources))
+    return VK_NULL_HANDLE;
+  return rm->resources[handle.id].buf.vk;
 }
 
-VkImage rm_get_image(ResourceManager *rm, RGHandle handle)
-{
-    if (handle.id >= v_len(rm->resources))
-        return VK_NULL_HANDLE;
-    return rm->resources[handle.id].img.img.vk;
+VkImage rm_get_image(ResourceManager *rm, RGHandle handle) {
+  if (handle.id >= v_len(rm->resources))
+    return VK_NULL_HANDLE;
+  return rm->resources[handle.id].img.img.vk;
 }
 
-VkImageView rm_get_image_view(ResourceManager *rm, RGHandle handle)
-{
-    if (handle.id >= v_len(rm->resources))
-        return VK_NULL_HANDLE;
-    return rm->resources[handle.id].img.img.view;
+VkImageView rm_get_image_view(ResourceManager *rm, RGHandle handle) {
+  if (handle.id >= v_len(rm->resources))
+    return VK_NULL_HANDLE;
+  return rm->resources[handle.id].img.img.view;
 }
 
-VkDescriptorSetLayout rm_get_bindless_layout(ResourceManager *rm)
-{
-    return rm->bindless_layout;
+VkDescriptorSetLayout rm_get_bindless_layout(ResourceManager *rm) {
+  return rm->bindless_layout;
 }
 
-VkDescriptorSet rm_get_bindless_set(ResourceManager *rm)
-{
-    return rm->bindless_set;
+VkDescriptorSet rm_get_bindless_set(ResourceManager *rm) {
+  return rm->bindless_set;
 }

@@ -53,6 +53,8 @@ struct GPUDevice {
   VkQueue transfer_queue;
   uint32_t graphics_family;
 
+  VkDebugUtilsMessengerEXT debug_messenger;
+
   VmaAllocator allocator;
   VkSurfaceKHR surface; // Optional, usually tied to window
 

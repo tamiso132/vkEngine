@@ -1,261 +1,336 @@
 #include "rendergraph.h"
-#include "util.h" // Your vector helper
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-// --- Lookup Table ---
-static const struct
-{
-    VkPipelineStageFlagBits2 stage;
-    VkAccessFlags2 access;
-    VkImageLayout layout;
-} USAGE_INFO[] = {
-    [RG_USAGE_VERTEX] = {VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT, VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED},
-    [RG_USAGE_INDEX] = {VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT, VK_ACCESS_2_INDEX_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED},
-    [RG_USAGE_UNIFORM] = {VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_UNIFORM_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED},
-    [RG_USAGE_SAMPLED] = {VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-    [RG_USAGE_STORAGE_READ] = {VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT, VK_IMAGE_LAYOUT_GENERAL},
-    [RG_USAGE_STORAGE_WRITE] = {VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL},
-    [RG_USAGE_TRANSFER_SRC] = {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL},
-    [RG_USAGE_TRANSFER_DST] = {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL},
-    [RG_USAGE_COLOR] = {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-    [RG_USAGE_DEPTH] = {VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL},
-};
+// --- Configuration ---
+#define RG_INIT_CAP 8
+#define MAX_RESOURCES 1024 // Must match resmanager's limit
 
-// --- Internal Structs ---
-typedef struct
-{
-    uint32_t id;
-    VkPipelineStageFlagBits2 stage;
-    VkAccessFlags2 access;
-    VkImageLayout layout;
-} RGRef;
+// --- Internal Helper: Access Flag Deduction ---
+// This mimics the 'getAccessFlags' logic from your C++ code.
+// It guesses the correct VkAccessFlagBits2 based on the pipeline stage and
+// usage type.
+static VkAccessFlags2 _deduce_access_flags(VkPipelineStageFlags2 stage,
+                                           RGUsageType type) {
+  bool is_write = (type & RG_USAGE_WRITE);
 
-typedef struct
-{
-    const char *name;
-    RGExecuteCallback exec;
-    void *user_data;
-    RGRef *reads;  // Vector
-    RGRef *writes; // Vector
-} RGTask;
-
-typedef struct
-{
-    VkPipelineStageFlagBits2 stage;
-    VkAccessFlags2 access;
-    VkImageLayout layout;
-    VkPipelineStageFlagBits2 stage_write;
-    VkAccessFlags2 access_write;
-    bool initialized;
-} RGTransState;
-
-typedef struct
-{
-    uint32_t task_idx;
-    VkImageMemoryBarrier2 *img_bars;
-    VkBufferMemoryBarrier2 *buf_bars;
-} RGBatch;
-
-struct RenderGraph
-{
-    ResourceManager *rm;
-    RGTask *tasks;        // Vector
-    RGBatch *batches;     // Vector
-    RGTransState *states; // Vector
-};
-
-// --- Helpers ---
-static void _push_ref(RenderGraph *rg, uint32_t task_id, RGHandle res, RGUsage usage, bool write)
-{
-    RGTask *t = &rg->tasks[task_id];
-    RGRef ref = {
-        .id = res.id,
-        .stage = USAGE_INFO[usage].stage,
-        .access = USAGE_INFO[usage].access,
-        .layout = USAGE_INFO[usage].layout};
-    if (write)
-        v_push(t->writes, ref);
-    else
-        v_push(t->reads, ref);
-}
-
-static void sync_resource(RGResource *res, RGTransState *state, RGRef *ref, bool is_write,
-                          VkImageMemoryBarrier2 **i_bars, VkBufferMemoryBarrier2 **b_bars)
-{
-    if (!state->initialized)
-    {
-        state->stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-        state->access = 0;
-        state->layout = (res->type == RES_TYPE_IMAGE) ? res->img.current_layout : VK_IMAGE_LAYOUT_UNDEFINED;
-        state->initialized = true;
-    }
-
-    bool layout_change = (res->type == RES_TYPE_IMAGE && state->layout != ref->layout && ref->layout != VK_IMAGE_LAYOUT_UNDEFINED);
-    bool hazard = is_write ? (state->access != 0) : (state->access_write != 0);
-
-    if (hazard || layout_change)
-    {
-        if (res->type == RES_TYPE_IMAGE)
-        {
-            VkImageMemoryBarrier2 b = {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                .image = res->img.img.vk,
-                .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-                .srcStageMask = state->stage,
-                .srcAccessMask = state->access,
-                .dstStageMask = ref->stage,
-                .dstAccessMask = ref->access,
-                .oldLayout = state->layout,
-                .newLayout = ref->layout};
-            v_push(*i_bars, b);
-        }
-        else
-        {
-            VkBufferMemoryBarrier2 b = {
-                .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-                .buffer = res->buf.vk,
-                .size = VK_WHOLE_SIZE,
-                .srcStageMask = is_write ? state->stage : state->stage_write,
-                .srcAccessMask = is_write ? state->access : state->access_write,
-                .dstStageMask = ref->stage,
-                .dstAccessMask = ref->access};
-            v_push(*b_bars, b);
-        }
-    }
-
-    state->stage = ref->stage;
-    state->access = ref->access;
-    if (res->type == RES_TYPE_IMAGE && ref->layout != VK_IMAGE_LAYOUT_UNDEFINED)
-        state->layout = ref->layout;
+  // 1. Color Attachment
+  if (stage & VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT) {
     if (is_write)
-    {
-        state->stage_write = ref->stage;
-        state->access_write = ref->access;
+      return VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+    return VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
+  }
+
+  // 2. Depth Stencil
+  if (stage & (VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+               VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT)) {
+    if (is_write)
+      return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+  }
+
+  // 3. Shaders (Vertex, Frag, Compute)
+  if (stage & (VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+               VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT)) {
+    if (is_write)
+      return VK_ACCESS_2_SHADER_WRITE_BIT;
+    return VK_ACCESS_2_SHADER_READ_BIT;
+  }
+
+  // 4. Transfer
+  if (stage & VK_PIPELINE_STAGE_2_TRANSFER_BIT) {
+    if (is_write)
+      return VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    return VK_ACCESS_2_TRANSFER_READ_BIT;
+  }
+
+  // 5. Host
+  if (stage & VK_PIPELINE_STAGE_2_HOST_BIT) {
+    if (is_write)
+      return VK_ACCESS_2_HOST_WRITE_BIT;
+    return VK_ACCESS_2_HOST_READ_BIT;
+  }
+
+  // Fallback/General
+  if (is_write)
+    return VK_ACCESS_2_MEMORY_WRITE_BIT;
+  return VK_ACCESS_2_MEMORY_READ_BIT;
+}
+
+// --- Lifecycle ---
+
+RenderGraph *rg_init(ResourceManager *rm) {
+  RenderGraph *rg = malloc(sizeof(RenderGraph));
+  rg->rm = rm;
+
+  rg->pass_count = 0;
+  rg->pass_cap = RG_INIT_CAP;
+  rg->passes = malloc(sizeof(RGPass) * rg->pass_cap);
+
+  // Allocate state tracking for every possible resource ID
+  rg->resource_states = malloc(sizeof(RGSyncState) * MAX_RESOURCES);
+
+  return rg;
+}
+
+void rg_destroy(RenderGraph *rg) {
+  for (uint32_t i = 0; i < rg->pass_count; i++) {
+    RGPass *p = &rg->passes[i];
+    if (p->usages)
+      free(p->usages);
+    if (p->img_barriers)
+      free(p->img_barriers);
+    if (p->buf_barriers)
+      free(p->buf_barriers);
+  }
+  free(rg->passes);
+  free(rg->resource_states);
+  free(rg);
+}
+
+// --- Pass Building ---
+
+RGPass *rg_add_pass(RenderGraph *rg, const char *name, RGTaskType type,
+                    RGPassFunc func, void *user_data) {
+  if (rg->pass_count >= rg->pass_cap) {
+    rg->pass_cap *= 2;
+    rg->passes = realloc(rg->passes, sizeof(RGPass) * rg->pass_cap);
+  }
+
+  RGPass *p = &rg->passes[rg->pass_count++];
+  strncpy(p->name, name, 63);
+  p->type = type;
+  p->func = func;
+  p->user_data = user_data;
+
+  // Init Usages
+  p->usage_count = 0;
+  p->usage_cap = RG_INIT_CAP;
+  p->usages = malloc(sizeof(RGResourceUsage) * p->usage_cap);
+
+  // Init Barriers (Empty initially)
+  p->img_barriers = NULL;
+  p->img_barrier_count = 0;
+  p->buf_barriers = NULL;
+  p->buf_barrier_count = 0;
+
+  return p;
+}
+
+// Internal helper to add usage to a pass
+static void _rg_add_usage(RGPass *p, RGHandle res, RGUsageType type,
+                          VkPipelineStageFlags2 stage, VkImageLayout layout) {
+  if (p->usage_count >= p->usage_cap) {
+    p->usage_cap *= 2;
+    p->usages = realloc(p->usages, sizeof(RGResourceUsage) * p->usage_cap);
+  }
+
+  RGResourceUsage *u = &p->usages[p->usage_count++];
+  u->handle = res;
+  u->type = type;
+  u->stage = stage;
+  u->layout = layout;
+  u->access = _deduce_access_flags(stage, type);
+}
+
+void rg_pass_read(RGPass *pass, RGHandle resource,
+                  VkPipelineStageFlags2 stage) {
+  _rg_add_usage(pass, resource, RG_USAGE_READ, stage,
+                VK_IMAGE_LAYOUT_UNDEFINED);
+}
+
+void rg_pass_write(RGPass *pass, RGHandle resource,
+                   VkPipelineStageFlags2 stage) {
+  _rg_add_usage(pass, resource, RG_USAGE_WRITE, stage,
+                VK_IMAGE_LAYOUT_UNDEFINED);
+}
+
+void rg_pass_set_color_target(RGPass *pass, RGHandle image,
+                              VkClearValue clear) {
+  // Implies: Write access, Color Output Stage, Optimal Layout
+  _rg_add_usage(pass, image, RG_USAGE_WRITE,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+}
+
+void rg_pass_texture_read(RGPass *pass, RGHandle image) {
+  // Implies: Read access, Fragment Shader Stage, Read-Only Layout
+  _rg_add_usage(pass, image, RG_USAGE_READ,
+                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
+// --- Compilation (Barrier Generation) ---
+
+void rg_compile(RenderGraph *rg) {
+  // 1. Reset Global State
+  //    This simulates the state of resources at the very beginning of the frame
+  //    (before Pass 0).
+  for (uint32_t i = 0; i < MAX_RESOURCES; i++) {
+    RGResource *res = &rg->rm->resources[i];
+    RGSyncState *state = &rg->resource_states[i];
+
+    state->last_stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+    state->last_access = VK_ACCESS_2_NONE;
+    state->is_written = false;
+
+    // Important: If it's an imported image (Swapchain), use its current real
+    // layout. If it's internal, assume Undefined.
+    if (res->type == RES_TYPE_IMAGE) {
+      state->last_layout = res->img.current_layout;
     }
-}
+  }
 
-// --- Public API ---
+  // 2. Iterate Passes linearly
+  for (uint32_t p_idx = 0; p_idx < rg->pass_count; p_idx++) {
+    RGPass *pass = &rg->passes[p_idx];
 
-RenderGraph *rg_init(ResourceManager *rm)
-{
-    RenderGraph *rg = calloc(1, sizeof(RenderGraph));
-    rg->rm = rm;
-    return rg;
-}
+    // Re-allocate barriers for this frame's compilation
+    // (Freeing old ones if they exist to support re-compilation)
+    if (pass->img_barriers)
+      free(pass->img_barriers);
+    if (pass->buf_barriers)
+      free(pass->buf_barriers);
 
-void rg_destroy(RenderGraph *rg)
-{
-    for (size_t i = 0; i < v_len(rg->tasks); i++)
-    {
-        v_free(rg->tasks[i].reads);
-        v_free(rg->tasks[i].writes);
-    }
-    v_free(rg->tasks);
-    for (size_t i = 0; i < v_len(rg->batches); i++)
-    {
-        v_free(rg->batches[i].img_bars);
-        v_free(rg->batches[i].buf_bars);
-    }
-    v_free(rg->batches);
-    v_free(rg->states);
-    free(rg);
-}
+    // Allocate max possible barriers (1 per usage is safe upper bound)
+    pass->img_barriers =
+        malloc(sizeof(VkImageMemoryBarrier2) * pass->usage_count);
+    pass->buf_barriers =
+        malloc(sizeof(VkBufferMemoryBarrier2) * pass->usage_count);
+    pass->img_barrier_count = 0;
+    pass->buf_barrier_count = 0;
 
-// 1. Create Pass (Builder Start)
-RGPass rg_add_pass(RenderGraph *rg, const char *name, RGTaskType type, RGExecuteCallback exec, void *user_data)
-{
-    RGTask t = {.name = name, .exec = exec, .user_data = user_data};
-    v_push(rg->tasks, t);
-    return (RGPass){.rg = rg, .id = (uint32_t)v_len(rg->tasks) - 1};
-}
+    // 3. Check Resources used in this pass against Global State
+    for (uint32_t u_idx = 0; u_idx < pass->usage_count; u_idx++) {
+      RGResourceUsage *usage = &pass->usages[u_idx];
+      uint32_t id = usage->handle.id;
+      RGResource *res = &rg->rm->resources[id];
+      RGSyncState *state = &rg->resource_states[id];
 
-// 2. Configure (Builder Methods)
-void rg_pass_read(RGPass pass, RGHandle res, RGUsage usage)
-{
-    _push_ref(pass.rg, pass.id, res, usage, false);
-}
+      bool is_write = (usage->type & RG_USAGE_WRITE);
+      bool is_image = (res->type == RES_TYPE_IMAGE);
 
-void rg_pass_write(RGPass pass, RGHandle res, RGUsage usage)
-{
-    _push_ref(pass.rg, pass.id, res, usage, true);
-}
+      // Decision: Do we need a barrier?
+      bool need_barrier = false;
 
-void rg_pass_set_color_target(RGPass pass, RGHandle res, VkClearValue clear)
-{
-    rg_pass_write(pass, res, RG_USAGE_COLOR);
-    // TODO: Store clear value in task if needed for dynamic rendering setup
-}
+      // Hazard Check:
+      // - If previously written, we ALWAYS need a barrier (Write->Read or
+      // Write->Write).
+      // - If previously read, and we are now Writing, we need a barrier
+      // (Read->Write).
+      // - (Read->Read does not need a barrier).
+      if (state->is_written || is_write) {
+        // However, the very first usage might not need a barrier if it's
+        // implicitly handled, BUT we usually emit one anyway to transition from
+        // TOP_OF_PIPE or acquire layout.
+        need_barrier = true;
+      }
 
-void rg_pass_set_depth_target(RGPass pass, RGHandle res, VkClearValue clear)
-{
-    rg_pass_write(pass, res, RG_USAGE_DEPTH);
-}
-
-// 3. Compile
-void rg_compile(RenderGraph *rg)
-{
-    // Reset state scratchpad
-    if (v_len(rg->states) > 0)
-        v_hdr(rg->states)->len = 0;
-    size_t res_count = v_len(rg->rm->resources);
-    for (size_t i = 0; i < res_count; i++)
-        v_push(rg->states, (RGTransState){0});
-
-    // Reset batches
-    for (size_t i = 0; i < v_len(rg->batches); i++)
-    {
-        v_hdr(rg->batches[i].img_bars)->len = 0;
-        v_hdr(rg->batches[i].buf_bars)->len = 0;
-    }
-    if (v_len(rg->batches) > 0)
-        v_hdr(rg->batches)->len = 0;
-
-    // Process Tasks
-    for (size_t t_idx = 0; t_idx < v_len(rg->tasks); t_idx++)
-    {
-        RGTask *task = &rg->tasks[t_idx];
-        RGBatch batch = {.task_idx = (uint32_t)t_idx};
-
-        for (size_t i = 0; i < v_len(task->reads); i++)
-            sync_resource(&rg->rm->resources[task->reads[i].id], &rg->states[task->reads[i].id],
-                          &task->reads[i], false, &batch.img_bars, &batch.buf_bars);
-
-        for (size_t i = 0; i < v_len(task->writes); i++)
-            sync_resource(&rg->rm->resources[task->writes[i].id], &rg->states[task->writes[i].id],
-                          &task->writes[i], true, &batch.img_bars, &batch.buf_bars);
-
-        v_push(rg->batches, batch);
-    }
-
-    // Persist Layouts
-    for (size_t i = 0; i < res_count; i++)
-    {
-        if (rg->states[i].initialized && rg->rm->resources[i].type == RES_TYPE_IMAGE)
-        {
-            rg->rm->resources[i].img.current_layout = rg->states[i].layout;
+      // Layout Transition Check (Images only):
+      if (is_image) {
+        if (usage->layout != VK_IMAGE_LAYOUT_UNDEFINED &&
+            usage->layout != state->last_layout) {
+          need_barrier = true;
         }
+      }
+
+      // Optimization: If nothing happened (TOP_OF_PIPE) and we just read
+      // without layout change, maybe skip? But for safety in this
+      // implementation, we barrier if the state is "dirty" or layout differs.
+
+      if (need_barrier) {
+        if (is_image) {
+          VkImageMemoryBarrier2 *b =
+              &pass->img_barriers[pass->img_barrier_count++];
+          b->sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+          b->pNext = NULL;
+          b->srcStageMask = state->last_stage;
+          b->srcAccessMask = state->last_access;
+          b->dstStageMask = usage->stage;
+          b->dstAccessMask = usage->access;
+          b->oldLayout = state->last_layout;
+          b->newLayout = usage->layout;
+
+          // Queue Family Ignored for now (assuming single queue)
+          b->srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+          b->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+          b->image = res->img.img.vk;
+
+          // Default to whole image for now
+          b->subresourceRange =
+              (VkImageSubresourceRange){VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        } else {
+          VkBufferMemoryBarrier2 *b =
+              &pass->buf_barriers[pass->buf_barrier_count++];
+          b->sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+          b->pNext = NULL;
+          b->srcStageMask = state->last_stage;
+          b->srcAccessMask = state->last_access;
+          b->dstStageMask = usage->stage;
+          b->dstAccessMask = usage->access;
+          b->srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+          b->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+          b->buffer = res->buf.vk;
+          b->offset = 0;
+          b->size = VK_WHOLE_SIZE;
+        }
+      }
+
+      // 4. Update Global State
+      state->last_stage = usage->stage;
+      state->last_access = usage->access;
+
+      // Track "Written" state.
+      // If we write, is_written = true.
+      // If we read, we *keep* the previous is_written state?
+      // No, standard practice: if we Read-After-Write, the hazard is resolved.
+      // But if we Read-After-Read, the previous Write is still the hazard
+      // origin for the NEXT write. Simplified logic: If we modify it, mark
+      // written. If we just read, keep the flag? Actually, once we barrier for
+      // Read, the memory is visible. The next barrier needs to know if the
+      // *previous op* was a write.
+      state->is_written = is_write;
+
+      if (is_image && usage->layout != VK_IMAGE_LAYOUT_UNDEFINED) {
+        state->last_layout = usage->layout;
+      }
     }
+  }
+
+  // 5. Update Resource Manager State
+  // Persist the final layouts back to the RM so the next frame knows where we
+  // left off.
+  for (uint32_t i = 0; i < MAX_RESOURCES; i++) {
+    RGResource *res = &rg->rm->resources[i];
+    if (res->type == RES_TYPE_IMAGE) {
+      res->img.current_layout = rg->resource_states[i].last_layout;
+    }
+  }
 }
 
-void rg_execute(RenderGraph *rg, VkCommandBuffer cmd)
-{
-    for (size_t i = 0; i < v_len(rg->batches); i++)
-    {
-        RGBatch *b = &rg->batches[i];
+// --- Execution ---
 
-        if (v_len(b->img_bars) || v_len(b->buf_bars))
-        {
-            VkDependencyInfo dep = {
-                .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                .imageMemoryBarrierCount = (uint32_t)v_len(b->img_bars),
-                .pImageMemoryBarriers = b->img_bars,
-                .bufferMemoryBarrierCount = (uint32_t)v_len(b->buf_bars),
-                .pBufferMemoryBarriers = b->buf_bars};
-            vkCmdPipelineBarrier2(cmd, &dep);
-        }
+void rg_execute(RenderGraph *rg, VkCommandBuffer cmd) {
+  for (uint32_t i = 0; i < rg->pass_count; i++) {
+    RGPass *p = &rg->passes[i];
 
-        RGTask *t = &rg->tasks[b->task_idx];
-        if (t->exec)
-            t->exec(cmd, t->user_data);
+    // 1. Submit Barriers
+    if (p->img_barrier_count > 0 || p->buf_barrier_count > 0) {
+      VkDependencyInfo dep = {
+          .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+          .imageMemoryBarrierCount = p->img_barrier_count,
+          .pImageMemoryBarriers = p->img_barriers,
+          .bufferMemoryBarrierCount = p->buf_barrier_count,
+          .pBufferMemoryBarriers = p->buf_barriers,
+      };
+      vkCmdPipelineBarrier2(cmd, &dep);
     }
+
+    // 2. Execute User Callback
+    if (p->func) {
+      p->func(cmd, p->user_data);
+    }
+  }
 }

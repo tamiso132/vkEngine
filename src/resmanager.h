@@ -6,70 +6,96 @@
 
 // --- Types ---
 
-// Opaque Handle
-typedef struct RGHandle
-{
-    uint32_t id;
+typedef struct RGHandle {
+  uint32_t id;
 } RGHandle;
 
-typedef enum RGResourceType
-{
-    RES_TYPE_BUFFER,
-    RES_TYPE_IMAGE
-} RGResourceType;
+typedef enum RGResourceType { RES_TYPE_BUFFER, RES_TYPE_IMAGE } RGResourceType;
+
+// --- Image Configuration ---
+
+// Presets for common use cases
+typedef enum RGImagePreset {
+  RG_IMAGETYPE_TEXTURE,    // Sampled, Transfer Dst
+  RG_IMAGETYPE_ATTACHMENT, // Color Attachment, Sampled
+  RG_IMAGETYPE_STORAGE,    // Storage (RW), Sampled
+  RG_IMAGETYPE_DEPTH       // Depth Stencil Attachment
+} RGImagePreset;
+
+// Flexible Creation Info
+typedef struct RGImageInfo {
+  const char *name;
+  uint32_t width;
+  uint32_t height;
+  VkFormat format;
+  RGImagePreset preset;    // Use a preset to auto-fill usage
+  VkImageUsageFlags usage; // OR explicitly set usage (overrides preset if != 0)
+  float scale; // Optional: Scale relative to swapchain (future proofing)
+} RGImageInfo;
+
+typedef enum RGImagePreset {
+  RG_IMAGETYPE_TEXTURE,    // Sampled, Transfer Dst
+  RG_IMAGETYPE_ATTACHMENT, // Color Attachment, Sampled
+  RG_IMAGETYPE_STORAGE,    // Storage (RW), Sampled
+  RG_IMAGETYPE_DEPTH       // Depth Stencil Attachment
+} RGImagePreset;
+
+// Flexible Creation Info
+typedef struct RGImageInfo {
+  const char *name;
+  uint32_t width;
+  uint32_t height;
+  VkFormat format;
+  RGImagePreset preset;    // Use a preset to auto-fill usage
+  VkImageUsageFlags usage; // OR explicitly set usage (overrides preset if != 0)
+  float scale; // Optional: Scale relative to swapchain (future proofing)
+} RGImageInfo;
 
 // Internal Resource Representation
-typedef struct RGResource
-{
-    char name[64];
-    RGResourceType type;
-    bool is_imported; // True = Do not destroy GPU resource on cleanup
+typedef struct RGResource {
+  char name[64];
+  RGResourceType type;
+  bool is_imported;
 
-    union
-    {
-        GPUBuffer buf;
-        struct
-        {
-            GPUImage img;
-            // We only need to store the current layout to bridge frames.
-            // (e.g., if a previous frame left the image in PRESENT_SRC, we need to know that).
-            VkImageLayout current_layout;
-        } img;
-    };
+  union {
+    GPUBuffer buf;
+    struct {
+      GPUImage img;
+      VkImageLayout current_layout;
+    } img;
+  };
 } RGResource;
 
-typedef struct
-{
-    GPUDevice *gpu;
-    RGResource *resources; // Stretchy Buffer (Vector)
+typedef struct {
+  GPUDevice *gpu;
+  RGResource *resources; // Stretchy Buffer
 
-    // --- Bindless Context ---
-    VkDescriptorPool descriptor_pool;
-    VkDescriptorSetLayout bindless_layout;
-    VkDescriptorSet bindless_set; // Global Set 0
-    VkSampler default_sampler;
+  // Bindless
+  VkDescriptorPool descriptor_pool;
+  VkDescriptorSetLayout bindless_layout;
+  VkDescriptorSet bindless_set;
+  VkSampler default_sampler;
 } ResourceManager;
 
 // --- API ---
 
-// Init & Destroy
 void rm_init(ResourceManager *rm, GPUDevice *gpu);
 void rm_destroy(ResourceManager *rm);
 
-// Creators (Creates resource + Adds to Bindless Heap)
-RGHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size, VkBufferUsageFlags usage);
-RGHandle rm_create_image(ResourceManager *rm, const char *name, uint32_t w, uint32_t h, VkFormat fmt);
+// Updated Creator
+RGHandle rm_create_image(ResourceManager *rm, RGImageInfo info);
 
-// Import (For swapchain images or external textures)
-RGHandle rm_import_image(ResourceManager *rm, const char *name, VkImage img, VkImageView view, VkImageLayout cur_layout);
+// Legacy/Buffer helpers
+RGHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size,
+                          VkBufferUsageFlags usage);
+RGHandle rm_import_image(ResourceManager *rm, const char *name, VkImage img,
+                         VkImageView view, VkImageLayout cur_layout);
 
-// Getters (Raw Vulkan handles)
+// Getters
 VkBuffer rm_get_buffer(ResourceManager *rm, RGHandle handle);
 VkImage rm_get_image(ResourceManager *rm, RGHandle handle);
 VkImageView rm_get_image_view(ResourceManager *rm, RGHandle handle);
-
-// Bindless Getters (For Pipeline Creation / Rendering)
 VkDescriptorSetLayout rm_get_bindless_layout(ResourceManager *rm);
 VkDescriptorSet rm_get_bindless_set(ResourceManager *rm);
 
-#endif // RESOURCE_MANAGER_H
+#endif

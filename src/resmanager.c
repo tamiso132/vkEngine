@@ -16,124 +16,17 @@ typedef struct RetiredBuffer {
   uint64_t frame_retired;
 } RetiredBuffer;
 
-// --- Internal Helpers: Bindless Setup ---
-
-static void _init_bindless(ResourceManager *rm) {
-  // 1. Create Pool (Must have UPDATE_AFTER_BIND)
-  VkDescriptorPoolSize sizes[] = {
-      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, RM_MAX_RESOURCES},
-      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, RM_MAX_RESOURCES},
-      {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, RM_MAX_RESOURCES}};
-
-  VkDescriptorPoolCreateInfo pi = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-      .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
-      .maxSets = 1,
-      .poolSizeCount = 3,
-      .pPoolSizes = sizes};
-  vkCreateDescriptorPool(rm->gpu->device, &pi, NULL, &rm->descriptor_pool);
-
-  // 2. Create Layout
-  VkDescriptorSetLayoutBinding bindings[] = {
-      // Binding 0: Textures (Sampled)
-      {BINDING_TEXTURES, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-       RM_MAX_RESOURCES, VK_SHADER_STAGE_ALL, NULL},
-      // Binding 1: Buffers (Storage)
-      {BINDING_BUFFERS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, RM_MAX_RESOURCES,
-       VK_SHADER_STAGE_ALL, NULL},
-      // Binding 2: Images (Storage Write)
-      {BINDING_IMAGES, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, RM_MAX_RESOURCES,
-       VK_SHADER_STAGE_ALL, NULL}};
-
-  // Allow "partially bound" (holes in array) and "update after bind"
-  VkDescriptorBindingFlags f = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-                               VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
-  VkDescriptorBindingFlags bindFlags[] = {f, f, f};
-
-  VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo = {
-      .sType =
-          VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-      .bindingCount = 3,
-      .pBindingFlags = bindFlags};
-
-  VkDescriptorSetLayoutCreateInfo li = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-      .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-      .pNext = &flagsInfo,
-      .bindingCount = 3,
-      .pBindings = bindings};
-  vkCreateDescriptorSetLayout(rm->gpu->device, &li, NULL, &rm->bindless_layout);
-
-  // 3. Allocate Set
-  VkDescriptorSetAllocateInfo ai = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-      .descriptorPool = rm->descriptor_pool,
-      .descriptorSetCount = 1,
-      .pSetLayouts = &rm->bindless_layout};
-  vkAllocateDescriptorSets(rm->gpu->device, &ai, &rm->bindless_set);
-
-  // 4. Default Sampler (Linear)
-  VkSamplerCreateInfo si = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-                            .magFilter = VK_FILTER_LINEAR,
-                            .minFilter = VK_FILTER_LINEAR,
-                            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-                            .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                            .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                            .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                            .maxAnisotropy = 1.0f,
-                            .maxLod = VK_LOD_CLAMP_NONE};
-  vkCreateSampler(rm->gpu->device, &si, NULL, &rm->default_sampler);
-}
-
-// --- Internal Helpers: Bindless Updates ---
+// --- Private Prototypes ---
+static void _init_bindless(ResourceManager *rm);
 
 static void _rm_update_bindless_sampled(ResourceManager *rm, uint32_t id,
-                                        VkImageView view) {
-  VkDescriptorImageInfo imgInfo = {
-      .sampler = rm->default_sampler,
-      .imageView = view,
-      .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-  VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                                .dstSet = rm->bindless_set,
-                                .dstBinding = BINDING_TEXTURES,
-                                .dstArrayElement = id,
-                                .descriptorCount = 1,
-                                .descriptorType =
-                                    VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                .pImageInfo = &imgInfo};
-  vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
-}
+                                        VkImageView view);
 
 static void _rm_update_bindless_buffer(ResourceManager *rm, uint32_t id,
-                                       VkBuffer buffer) {
-  VkDescriptorBufferInfo bufInfo = {
-      .buffer = buffer, .offset = 0, .range = VK_WHOLE_SIZE};
-  VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                                .dstSet = rm->bindless_set,
-                                .dstBinding = BINDING_BUFFERS,
-                                .dstArrayElement = id,
-                                .descriptorCount = 1,
-                                .descriptorType =
-                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                .pBufferInfo = &bufInfo};
-  vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
-}
+                                       VkBuffer buffer);
 
 static void _rm_update_bindless_storage(ResourceManager *rm, uint32_t id,
-                                        VkImageView view) {
-  VkDescriptorImageInfo imgInfo = {.sampler = VK_NULL_HANDLE,
-                                   .imageView = view,
-                                   .imageLayout = VK_IMAGE_LAYOUT_GENERAL};
-  VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                                .dstSet = rm->bindless_set,
-                                .dstBinding = BINDING_IMAGES,
-                                .dstArrayElement = id,
-                                .descriptorCount = 1,
-                                .descriptorType =
-                                    VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                                .pImageInfo = &imgInfo};
-  vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
-}
+                                        VkImageView view);
 
 void rm_init(ResourceManager *rm, GPUDevice *gpu) {
   *rm = (ResourceManager){.gpu = gpu};
@@ -311,4 +204,120 @@ VkDescriptorSetLayout rm_get_bindless_layout(ResourceManager *rm) {
 
 VkDescriptorSet rm_get_bindless_set(ResourceManager *rm) {
   return rm->bindless_set;
+}
+
+// --- Private Functions ---
+static void _init_bindless(ResourceManager *rm) {
+  // 1. Create Pool (Must have UPDATE_AFTER_BIND)
+  VkDescriptorPoolSize sizes[] = {
+      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, RM_MAX_RESOURCES},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, RM_MAX_RESOURCES},
+      {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, RM_MAX_RESOURCES}};
+
+  VkDescriptorPoolCreateInfo pi = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
+      .maxSets = 1,
+      .poolSizeCount = 3,
+      .pPoolSizes = sizes};
+  vkCreateDescriptorPool(rm->gpu->device, &pi, NULL, &rm->descriptor_pool);
+
+  // 2. Create Layout
+  VkDescriptorSetLayoutBinding bindings[] = {
+      // Binding 0: Textures (Sampled)
+      {BINDING_TEXTURES, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+       RM_MAX_RESOURCES, VK_SHADER_STAGE_ALL, NULL},
+      // Binding 1: Buffers (Storage)
+      {BINDING_BUFFERS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, RM_MAX_RESOURCES,
+       VK_SHADER_STAGE_ALL, NULL},
+      // Binding 2: Images (Storage Write)
+      {BINDING_IMAGES, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, RM_MAX_RESOURCES,
+       VK_SHADER_STAGE_ALL, NULL}};
+
+  // Allow "partially bound" (holes in array) and "update after bind"
+  VkDescriptorBindingFlags f = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+                               VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+  VkDescriptorBindingFlags bindFlags[] = {f, f, f};
+
+  VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo = {
+      .sType =
+          VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+      .bindingCount = 3,
+      .pBindingFlags = bindFlags};
+
+  VkDescriptorSetLayoutCreateInfo li = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+      .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+      .pNext = &flagsInfo,
+      .bindingCount = 3,
+      .pBindings = bindings};
+  vkCreateDescriptorSetLayout(rm->gpu->device, &li, NULL, &rm->bindless_layout);
+
+  // 3. Allocate Set
+  VkDescriptorSetAllocateInfo ai = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+      .descriptorPool = rm->descriptor_pool,
+      .descriptorSetCount = 1,
+      .pSetLayouts = &rm->bindless_layout};
+  vkAllocateDescriptorSets(rm->gpu->device, &ai, &rm->bindless_set);
+
+  // 4. Default Sampler (Linear)
+  VkSamplerCreateInfo si = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                            .magFilter = VK_FILTER_LINEAR,
+                            .minFilter = VK_FILTER_LINEAR,
+                            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+                            .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                            .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                            .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                            .maxAnisotropy = 1.0f,
+                            .maxLod = VK_LOD_CLAMP_NONE};
+  vkCreateSampler(rm->gpu->device, &si, NULL, &rm->default_sampler);
+}
+
+static void _rm_update_bindless_sampled(ResourceManager *rm, uint32_t id,
+                                        VkImageView view) {
+  VkDescriptorImageInfo imgInfo = {
+      .sampler = rm->default_sampler,
+      .imageView = view,
+      .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                .dstSet = rm->bindless_set,
+                                .dstBinding = BINDING_TEXTURES,
+                                .dstArrayElement = id,
+                                .descriptorCount = 1,
+                                .descriptorType =
+                                    VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                .pImageInfo = &imgInfo};
+  vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
+}
+
+static void _rm_update_bindless_buffer(ResourceManager *rm, uint32_t id,
+                                       VkBuffer buffer) {
+  VkDescriptorBufferInfo bufInfo = {
+      .buffer = buffer, .offset = 0, .range = VK_WHOLE_SIZE};
+  VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                .dstSet = rm->bindless_set,
+                                .dstBinding = BINDING_BUFFERS,
+                                .dstArrayElement = id,
+                                .descriptorCount = 1,
+                                .descriptorType =
+                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                .pBufferInfo = &bufInfo};
+  vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
+}
+
+static void _rm_update_bindless_storage(ResourceManager *rm, uint32_t id,
+                                        VkImageView view) {
+  VkDescriptorImageInfo imgInfo = {.sampler = VK_NULL_HANDLE,
+                                   .imageView = view,
+                                   .imageLayout = VK_IMAGE_LAYOUT_GENERAL};
+  VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                .dstSet = rm->bindless_set,
+                                .dstBinding = BINDING_IMAGES,
+                                .dstArrayElement = id,
+                                .descriptorCount = 1,
+                                .descriptorType =
+                                    VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                                .pImageInfo = &imgInfo};
+  vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
 }

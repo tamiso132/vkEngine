@@ -1,5 +1,4 @@
-#ifndef RESOURCE_MANAGER_H
-#define RESOURCE_MANAGER_H
+#pragma once
 
 #include "gpu/gpu.h"
 #include "util.h"
@@ -81,19 +80,13 @@ typedef struct {
   VkSampler default_sampler;
 } ResourceManager;
 
-// --- API ---
-
+// PUBLIC FUNCTIONS
 void rm_init(ResourceManager *rm, GPUDevice *gpu);
 void rm_destroy(ResourceManager *rm);
 
-// Updated Creator
 RGHandle rm_create_image(ResourceManager *rm, RGImageInfo info);
-
-// Legacy/Buffer helpers
-RGHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size,
-                          VkBufferUsageFlags usage);
-RGHandle rm_import_image(ResourceManager *rm, const char *name, VkImage img,
-                         VkImageView view, VkImageLayout cur_layout);
+void rm_process_retirement(ResourceManager *rm);
+void rm_retire_buffer(ResourceManager *rm, RGHandle handle);
 
 // Getters
 VkBuffer rm_get_buffer(ResourceManager *rm, RGHandle handle);
@@ -101,5 +94,3 @@ VkImage rm_get_image(ResourceManager *rm, RGHandle handle);
 VkImageView rm_get_image_view(ResourceManager *rm, RGHandle handle);
 VkDescriptorSetLayout rm_get_bindless_layout(ResourceManager *rm);
 VkDescriptorSet rm_get_bindless_set(ResourceManager *rm);
-
-#endif

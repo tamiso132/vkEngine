@@ -1,5 +1,7 @@
 #include "vector.h"
 
+// --- Private Prototypes ---
+
 void *default_alloc(size_t size, void *ctx) { return malloc(size); }
 
 void *default_realloc(void *ptr, size_t old, size_t new_s, void *ctx) {
@@ -38,6 +40,10 @@ void vec_remove_at(Vector *vec, u32 index) {
           vec->element_size * (vec->length - index));
 }
 
+void vec_free(Vector *vec) {
+  vec->allocator->free(vec->data, vec->allocator->ctx);
+}
+
 void vec_clear(Vector *vec) {
   memset(vec->data, 0, vec->length * vec->element_size);
   vec->length = 0;
@@ -63,3 +69,5 @@ void vec_destroy(Vector *vec) {
   vec->data = NULL;
   vec->length = 0;
 }
+
+// --- Private Functions ---

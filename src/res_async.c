@@ -1,6 +1,8 @@
 #include "res_async.h"
+#include "resmanager.h"
 
 // --- Private Prototypes ---
+static void testtest();
 static void testing(int hey);
 static void _async_swap(ResourceManager *rm, AsyncBuffer *ab);
 
@@ -37,6 +39,8 @@ void async_update(ResourceManager *rm, AsyncBuffer *ab, void *data,
 }
 
 // --- Private Functions ---
+static void testtest() {}
+
 // comment for function
 // hhh
 static void testing(int hey) {}

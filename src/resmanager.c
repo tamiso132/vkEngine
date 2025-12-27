@@ -1,9 +1,11 @@
 #include "resmanager.h"
+#include "gpu/gpu.h"
 #include "util.h"
 #include "vector.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vulkan/vulkan_core.h>
 
 // --- Constants ---
 #define RM_MAX_RESOURCES 1024
@@ -19,14 +21,9 @@ typedef struct RetiredBuffer {
 // --- Private Prototypes ---
 static void _init_bindless(ResourceManager *rm);
 
-static void _rm_update_bindless_sampled(ResourceManager *rm, uint32_t id,
-                                        VkImageView view);
-
-static void _rm_update_bindless_buffer(ResourceManager *rm, uint32_t id,
-                                       VkBuffer buffer);
-
-static void _rm_update_bindless_storage(ResourceManager *rm, uint32_t id,
-                                        VkImageView view);
+static void _rm_update_bindless(ResourceManager *rm, u32 index,
+                                VkDescriptorImageInfo *imageInfo,
+                                VkDescriptorBufferInfo *bufferInfo);
 
 void rm_init(ResourceManager *rm, GPUDevice *gpu) {
   *rm = (ResourceManager){.gpu = gpu};
@@ -34,22 +31,17 @@ void rm_init(ResourceManager *rm, GPUDevice *gpu) {
 }
 
 void rm_destroy(ResourceManager *rm) {
-  // 1. Destroy Resources
-  for (size_t i = 0; i < v_len(rm->resources); i++) {
-    RGResource *r = &rm->resources[i];
-    if (!r->is_imported) {
-      if (r->type == RES_TYPE_BUFFER) {
-        // Assuming you have vmaDestroyBuffer wrapped or accessible via
-        // gpu->allocator
-        vmaDestroyBuffer(rm->gpu->allocator, r->buf.vk, r->buf.alloc);
-      }
-      if (r->type == RES_TYPE_IMAGE) {
-        vkDestroyImageView(rm->gpu->device, r->img.img.view, NULL);
-        vmaDestroyImage(rm->gpu->allocator, r->img.img.vk, r->img.img.alloc);
-      }
-    }
+  Vector *buffers = rm->resources[RES_TYPE_BUFFER];
+  for (size_t i = 0; i < vec_len(buffers); i++) {
+    RBuffer *buffer = VEC_AT((*buffers), i, RBuffer);
+    vmaDestroyBuffer(rm->gpu->allocator, buffer->vkHandle, buffer->alloc);
   }
-  v_free(rm->resources);
+
+  Vector *images = rm->resources[RES_TYPE_IMAGE];
+
+  for (u32 i = 0; i < RES_TYPE_COUNT; i++) {
+    vec_free(rm->resources[i]);
+  }
 
   // 2. Destroy Bindless Context
   vkDestroySampler(rm->gpu->device, rm->default_sampler, NULL);
@@ -59,9 +51,10 @@ void rm_destroy(ResourceManager *rm) {
 
 RGHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size,
                           VkBufferUsageFlags usage) {
-  RGResource res = {.type = RES_TYPE_BUFFER};
-  strncpy(res.name, name, 63);
-
+  RBuffer buffer = {};
+  strncpy(buffer.name, name, strlen(name));
+  buffer.name = calloc(strlen(name), 1);
+  strcpy(buffer.name, name);
   // Create GPU Resource
   GPUBufferInfo info = {
       .size = size, .usage = usage, .memory_usage = VMA_MEMORY_USAGE_AUTO};
@@ -73,6 +66,46 @@ RGHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size,
   _rm_update_bindless_buffer(rm, id, res.buf.vk);
 
   return (RGHandle){id};
+}
+// I resmanager.c
+
+void rm_resize_image(ResourceManager *rm, RGHandle handle, uint32_t width,
+                     uint32_t height) {
+  RGResource *res = &rm->resources[handle.id];
+
+  // Säkerhetskoll: Vi kan inte resize:a importerade bilder (t.ex. Swapchain)
+  if (res->is_imported) {
+    printf("Error: Cannot resize imported resource %s\n", res->name);
+    return;
+  }
+
+  // 1. Pensionera den gamla bilden (så den inte raderas medan GPU använder den)
+  RetiredResource retired = {
+      .type = RES_TYPE_IMAGE,
+      .img = res->img.img, // Spara undan den gamla GPU-datan
+      .frame_retired = rm->frame_count};
+  // Antag att du bytt namn på retired_buffers till retired_resources i din
+  // manager
+  vec_push(&rm->retired_resources, &retired);
+
+  // 2. Skapa den nya bilden (återanvänd format och usage från den gamla)
+  GPUImageInfo new_info = {
+      .extent = {width, height, 1},
+      .format = res->img.img.format, // Hämta format från den gamla
+      .usage = res->img.usage, // Hämta usage flaggorna vi sparade tidigare
+      .debug_name = res->name};
+
+  // Ersätt datan i resurs-slotten
+  res->img.img = gpu_create_image(rm->gpu, &new_info);
+  res->img.current_layout =
+      VK_IMAGE_LAYOUT_UNDEFINED; // Ny bild = undefined layout
+
+  // 3. Uppdatera Bindless Descriptor direkt!
+  // Eftersom ID:t är detsamma, skriver vi bara över pekaren i descriptor setet.
+  _rm_update_descriptor(rm, handle.id);
+
+  printf("Resized image %s (ID: %d) to %dx%d\n", res->name, handle.id, width,
+         height);
 }
 
 RGHandle rm_create_image(ResourceManager *rm, RGImageInfo info) {
@@ -126,25 +159,26 @@ RGHandle rm_import_image(ResourceManager *rm, const char *name, VkImage img,
   return (RGHandle){id};
 }
 
-// Call once per frame at the start of the render loop
 void rm_process_retirement(ResourceManager *rm) {
-  // MAX_FRAMES_IN_FLIGHT (usually 2 or 3)
-  uint64_t safe_frame = rm->frame_count - 3;
-  for (int i = 0; i < vec_len(&rm->retired_buffers); i++) {
-    if (VEC_AT(rm->retired_buffers, i, RetiredBuffer)->frame_retired <
-        safe_frame) {
+  uint64_t safe_frame = rm->frame_count - 3; // Eller din MAX_FRAMES_IN_FLIGHT
 
-      //
-      // Buffer is finally safe from GPU race conditions. Move to free pool.
+  for (int i = 0; i < vec_len(&rm->retired_resources); i++) {
+    RetiredResource *r = VEC_AT(rm->retired_resources, i, RetiredResource);
 
-      vec_push(&rm->free_buffers,
-               &VEC_AT(rm->retired_buffers, i, RetiredBuffer)->handle);
+    if (r->frame_retired < safe_frame) {
+      // Nu är det säkert att förstöra objektet på riktigt
+      if (r->type == RES_TYPE_BUFFER) {
+        vmaDestroyBuffer(rm->gpu->allocator, r->buf.vk, r->buf.alloc);
+      } else if (r->type == RES_TYPE_IMAGE) {
+        vkDestroyImageView(rm->gpu->device, r->img.view, NULL);
+        vmaDestroyImage(rm->gpu->allocator, r->img.vk, r->img.alloc);
+      }
 
-      vec_remove_at(&rm->retired_buffers, i--);
+      // Ta bort från listan (swap-remove är snabbast om ordning ej spelar roll)
+      vec_remove_at(&rm->retired_resources, i--);
     }
   }
 }
-
 void rm_retire_buffer(ResourceManager *rm, RGHandle handle) {
   RetiredBuffer rb = {.handle = handle, .frame_retired = rm->frame_count};
   vec_push(&rm->retired_buffers, &rb);
@@ -180,22 +214,19 @@ RGHandle rm_acquire_reusable_buffer(ResourceManager *rm, uint64_t size,
 }
 // --- Implementation: Getters ---
 
-VkBuffer rm_get_buffer(ResourceManager *rm, RGHandle handle) {
+GPUBuffer rm_get_buffer(ResourceManager *rm, RGHandle handle) {
+  assert(handle.id == RES_TYPE_BUFFER);
+
   if (handle.id >= v_len(rm->resources))
     return VK_NULL_HANDLE;
-  return rm->resources[handle.id].buf.vk;
+  return rm->resources[handle.res_type][handle.id];
 }
 
 VkImage rm_get_image(ResourceManager *rm, RGHandle handle) {
+  assert(handle.id == RES_TYPE_BUFFER);
   if (handle.id >= v_len(rm->resources))
     return VK_NULL_HANDLE;
-  return rm->resources[handle.id].img.img.vk;
-}
-
-VkImageView rm_get_image_view(ResourceManager *rm, RGHandle handle) {
-  if (handle.id >= v_len(rm->resources))
-    return VK_NULL_HANDLE;
-  return rm->resources[handle.id].img.img.view;
+  return rm->resources[handle.res_type][handle.id];
 }
 
 VkDescriptorSetLayout rm_get_bindless_layout(ResourceManager *rm) {
@@ -274,50 +305,21 @@ static void _init_bindless(ResourceManager *rm) {
   vkCreateSampler(rm->gpu->device, &si, NULL, &rm->default_sampler);
 }
 
-static void _rm_update_bindless_sampled(ResourceManager *rm, uint32_t id,
-                                        VkImageView view) {
-  VkDescriptorImageInfo imgInfo = {
-      .sampler = rm->default_sampler,
-      .imageView = view,
-      .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+static void _rm_update_bindless(ResourceManager *rm, u32 index,
+                                VkDescriptorImageInfo *imageInfo,
+                                VkDescriptorBufferInfo *bufferInfo) {
+
+  ;
+
   VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                                 .dstSet = rm->bindless_set,
                                 .dstBinding = BINDING_TEXTURES,
-                                .dstArrayElement = id,
+                                .dstArrayElement = index,
                                 .descriptorCount = 1,
                                 .descriptorType =
                                     VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                .pImageInfo = &imgInfo};
-  vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
-}
+                                .pImageInfo = imageInfo,
+                                .pBufferInfo = bufferInfo};
 
-static void _rm_update_bindless_buffer(ResourceManager *rm, uint32_t id,
-                                       VkBuffer buffer) {
-  VkDescriptorBufferInfo bufInfo = {
-      .buffer = buffer, .offset = 0, .range = VK_WHOLE_SIZE};
-  VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                                .dstSet = rm->bindless_set,
-                                .dstBinding = BINDING_BUFFERS,
-                                .dstArrayElement = id,
-                                .descriptorCount = 1,
-                                .descriptorType =
-                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                .pBufferInfo = &bufInfo};
-  vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
-}
-
-static void _rm_update_bindless_storage(ResourceManager *rm, uint32_t id,
-                                        VkImageView view) {
-  VkDescriptorImageInfo imgInfo = {.sampler = VK_NULL_HANDLE,
-                                   .imageView = view,
-                                   .imageLayout = VK_IMAGE_LAYOUT_GENERAL};
-  VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                                .dstSet = rm->bindless_set,
-                                .dstBinding = BINDING_IMAGES,
-                                .dstArrayElement = id,
-                                .descriptorCount = 1,
-                                .descriptorType =
-                                    VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                                .pImageInfo = &imgInfo};
   vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
 }

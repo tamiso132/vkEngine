@@ -34,9 +34,8 @@ FetchContent_Declare(cglm GIT_REPOSITORY https://github.com/recp/cglm.git GIT_TA
 
 FetchContent_MakeAvailable(glfw volk vma cglm)
 
+include(cmake/engine.cmake)
 
-set(SOURCES_FILES_GAME_ENGINE)
-set(INCLUDE_DIRECTORIES_ENGINE)
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
@@ -44,14 +43,15 @@ add_subdirectory(src)
 
 
 
-# --- 2. C Executable (Main App) ---
-# Compiles your code with C23
+get_property(SOURCES_FILES_GAME_ENGINE GLOBAL PROPERTY GLOBAL_SOURCES)
+get_property(INCLUDE_DIRECTORIES_ENGINE GLOBAL PROPERTY GLOBAL_INCLUDES)
+
 add_executable(${PROJECT_NAME} 
     src/main.c 
   ${SOURCES_FILES_GAME_ENGINE}
 )
 
-target_include_directories(${PROJECT_NAME} PRIVATE src shaders ${INCLUDE_DIRECTORIES_ENGINE} ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(${PROJECT_NAME} PRIVATE src shaders ${INCLUDE_DIRECTORIES_ENGINE} ${CMAKE_CURRENT_SOURCE_DIR} thirdparty/hashmap.c)
 
 
 
@@ -63,6 +63,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glslang::glslang 
     glslang::SPIRV 
     glslang::glslang-default-resource-limits
+
 )
 
 if(UNIX)

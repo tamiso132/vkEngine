@@ -17,7 +17,7 @@ typedef enum {
 
 // Defines how a resource is used in a specific pass
 typedef struct {
-  RGHandle handle;
+  ResHandle handle;
   RGUsageType type;
   VkPipelineStageFlags2 stage;
   VkAccessFlags2 access;
@@ -81,19 +81,21 @@ RGPass *rg_add_pass(RenderGraph *rg, const char *name, RGTaskType type,
 
 // 2. Define Usage (Builder pattern)
 // Declares that 'pass' reads 'resource' at 'stage'.
-void rg_pass_read(RGPass *pass, RGHandle resource, VkPipelineStageFlags2 stage);
+void rg_pass_read(RGPass *pass, ResHandle resource,
+                  VkPipelineStageFlags2 stage);
 
 // Declares that 'pass' writes to 'resource' at 'stage'.
-void rg_pass_write(RGPass *pass, RGHandle resource,
+void rg_pass_write(RGPass *pass, ResHandle resource,
                    VkPipelineStageFlags2 stage);
 
 // Helper: Declares a Color Attachment Write (Output)
 // Implies RG_USAGE_WRITE | COLOR_ATTACHMENT_OUTPUT | COLOR_ATTACHMENT_OPTIMAL
-void rg_pass_set_color_target(RGPass *pass, RGHandle image, VkClearValue clear);
+void rg_pass_set_color_target(RGPass *pass, ResHandle image,
+                              VkClearValue clear);
 
 // Helper: Declares a Texture Read (Sampled)
 // Implies RG_USAGE_READ | FRAGMENT_SHADER | SHADER_READ_ONLY_OPTIMAL
-void rg_pass_texture_read(RGPass *pass, RGHandle image);
+void rg_pass_texture_read(RGPass *pass, ResHandle image);
 
 // 3. Compile & Execute
 // Analyses the passes and injects necessary barriers into them.

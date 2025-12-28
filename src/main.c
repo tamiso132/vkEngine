@@ -14,8 +14,8 @@
 
 // --- User Data for the Pass ---
 typedef struct {
-  RGHandle vbo;
-  RGHandle output_tex;
+  ResHandle vbo;
+  ResHandle output_tex;
   VkExtent2D extent;
   ResourceManager *rm;
   GPUPipeline pipeline;
@@ -104,9 +104,9 @@ int main() {
       -0.5f, 0.5f,  0.0f  // Left
   };
 
-  RGHandle vbo = rm_create_buffer(&rm, "TriangleVBO", sizeof(vertices),
-                                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                      VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT);
+  ResHandle vbo = rm_create_buffer(&rm, "TriangleVBO", sizeof(vertices),
+                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT);
 
   // 6. Pipeline Setup
   GpBuilder b = gp_init();
@@ -124,7 +124,7 @@ int main() {
   // We import VK_NULL_HANDLE initially; we will hot-swap this pointer every
   // frame.
 
-  RGHandle h_backbuffer = rm_create_image(
+  ResHandle h_backbuffer = rm_create_image(
       &rm, (RGImageInfo){.name = "SceneColor",
                          .width = 800,
                          .height = 600,

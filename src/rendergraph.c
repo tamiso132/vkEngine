@@ -120,7 +120,7 @@ RGPass *rg_add_pass(RenderGraph *rg, const char *name, RGTaskType type,
 }
 
 // Internal helper to add usage to a pass
-static void _rg_add_usage(RGPass *p, RGHandle res, RGUsageType type,
+static void _rg_add_usage(RGPass *p, ResHandle res, RGUsageType type,
                           VkPipelineStageFlags2 stage, VkImageLayout layout) {
   if (p->usage_count >= p->usage_cap) {
     p->usage_cap *= 2;
@@ -135,19 +135,19 @@ static void _rg_add_usage(RGPass *p, RGHandle res, RGUsageType type,
   u->access = _deduce_access_flags(stage, type);
 }
 
-void rg_pass_read(RGPass *pass, RGHandle resource,
+void rg_pass_read(RGPass *pass, ResHandle resource,
                   VkPipelineStageFlags2 stage) {
   _rg_add_usage(pass, resource, RG_USAGE_READ, stage,
                 VK_IMAGE_LAYOUT_UNDEFINED);
 }
 
-void rg_pass_write(RGPass *pass, RGHandle resource,
+void rg_pass_write(RGPass *pass, ResHandle resource,
                    VkPipelineStageFlags2 stage) {
   _rg_add_usage(pass, resource, RG_USAGE_WRITE, stage,
                 VK_IMAGE_LAYOUT_UNDEFINED);
 }
 
-void rg_pass_set_color_target(RGPass *pass, RGHandle image,
+void rg_pass_set_color_target(RGPass *pass, ResHandle image,
                               VkClearValue clear) {
   // Implies: Write access, Color Output Stage, Optimal Layout
   _rg_add_usage(pass, image, RG_USAGE_WRITE,
@@ -155,7 +155,7 @@ void rg_pass_set_color_target(RGPass *pass, RGHandle image,
                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 }
 
-void rg_pass_texture_read(RGPass *pass, RGHandle image) {
+void rg_pass_texture_read(RGPass *pass, ResHandle image) {
   // Implies: Read access, Fragment Shader Stage, Read-Only Layout
   _rg_add_usage(pass, image, RG_USAGE_READ,
                 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,

@@ -1,16 +1,11 @@
 #pragma once
 #include "resmanager.h"
 
-typedef struct AsyncBuffer {
-  ResHandle front;      // Buffer currently visible to GPU
-  ResHandle back;       // Buffer currently being uploaded to
-  VkFence upload_fence; // Signal for transfer completion
-  uint32_t bindless_id; // Fixed index in the global descriptor array
-  bool is_uploading;
-} AsyncBuffer;
-
+typedef struct AsyncBuffer AsyncBuffer;
 // PUBLIC FUNCTIONS
-void async_init(ResourceManager *rm, AsyncBuffer *ab, uint32_t bindless_id);
+
+void async_check_upload_ready(ResourceManager *rm, AsyncBuffer *ab);
+void async_init(ResourceManager *rm, RGBufferInfo *info, AsyncBuffer *ab);
 void async_sync(ResourceManager *rm, AsyncBuffer *ab);
-void async_update(ResourceManager *rm, AsyncBuffer *ab, void *data,
-                  uint64_t size);
+void async_update(ResourceManager *rm, VkCommandBuffer cmd, AsyncBuffer *ab,
+                  VkFence *fence, void *data, uint64_t size);

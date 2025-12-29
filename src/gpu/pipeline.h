@@ -1,5 +1,4 @@
-#ifndef PIPELINE_H
-#define PIPELINE_H
+#pragma once
 
 #include <stdbool.h>
 #include <volk.h>
@@ -13,7 +12,7 @@ typedef struct {
 
 // The Builder Struct (Holds state before creation)
 typedef struct {
-  // Shaders (Source paths for runtime compilation)
+  // Shaders (Source paths for spirv)
   const char *vs_path;
   const char *fs_path;
 
@@ -62,9 +61,9 @@ void gp_set_layout(GpBuilder *b, VkDescriptorSetLayout bindless,
 
 // Cleanup
 
-#endif // PIPELINE_H
-
 // PUBLIC FUNCTIONS
+
+void gp_enable_blend(GpBuilder *b);
 bool write_file_binary(const char *path, const void *data, size_t size);
 
 // 1. Start (Returns builder with valid defaults: No depth, Triangle List, No
@@ -79,7 +78,6 @@ void gp_set_depth_format(GpBuilder *b, VkFormat format);
 
 // Depth & Blend
 void gp_enable_depth(GpBuilder *b, bool write, VkCompareOp op);
-void gp_enable_blend(GpBuilder *b);
 
 // 3. Build (Compiles shaders and creates pipeline)
 // Note: Returns the pipeline by value.

@@ -83,19 +83,18 @@ void rm_destroy(ResourceManager *rm) {
   vkDestroyDescriptorPool(rm->gpu->device, rm->descriptor_pool, NULL);
 }
 
-ResHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size,
-                           VkBufferUsageFlags usage,
-                           VkMemoryPropertyFlags memory) {
+ResHandle rm_create_buffer(ResourceManager *rm, RGBufferInfo *info) {
   RBuffer buffer = {};
-  strcpy(buffer.name, name);
+  strcpy(buffer.name, info->name);
   // Create GPU Resource
-  GPUBufferInfo info = {
-      .size = size, .usage = usage, .memory_usage = VMA_MEMORY_USAGE_AUTO};
+  GPUBufferInfo bufferInfo = {
+      .size = info->capacity, .usage = info->usage, .memory_usage = info->mem};
 
   VkBufferCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                           .size = size,
-                           .usage = usage};
-  VmaAllocationCreateInfo ai = {.requiredFlags = memory};
+                           .size = info->capacity,
+                           .usage = info->usage};
+
+  VmaAllocationCreateInfo ai = {.requiredFlags = info->mem};
 
   vmaCreateBuffer(rm->gpu->allocator, &ci, &ai, &buffer.handle, &buffer.alloc,
                   NULL);
@@ -106,11 +105,11 @@ ResHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size,
 
   vec_push(rm->resources[RES_TYPE_BUFFER], &buffer);
 
-  VkDescriptorBufferInfo bufferInfo = {};
-  bufferInfo.buffer = buffer.handle;
-  bufferInfo.range = VK_WHOLE_SIZE;
+  VkDescriptorBufferInfo descriptorInfo = {};
+  descriptorInfo.buffer = buffer.handle;
+  descriptorInfo.range = VK_WHOLE_SIZE;
 
-  _bindless_add(rm, resHandle, NULL, &bufferInfo);
+  _bindless_add(rm, resHandle, NULL, &descriptorInfo);
 
   return resHandle;
 }
@@ -230,6 +229,21 @@ void rm_on_new_frame(ResourceManager *rm) {
   }
 }
 
+void rm_buffer_upload(ResourceManager *rm, VkCommandBuffer cmd,
+                      ResHandle handle, void *data, u32 size) {
+  RBuffer *buffer = rm_get_buffer(rm, handle);
+  // TODO, a check if the buffer is big enough,
+  // otherwise might need to return result about needing to resize the buffer
+  if (buffer->mem == VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+    // TODO, create staging buffer, then copy over all stuff
+  } else {
+    void *gpu_ptr = {};
+    vk_check(vmaMapMemory(rm->gpu->allocator, buffer->alloc, &gpu_ptr));
+
+    memcpy(gpu_ptr, data, size);
+  }
+};
+
 void rm_buffer_sync(ResourceManager *rm, VkCommandBuffer cmd,
                     BufferBarrierInfo *info) {
   rm_get_buffer(rm, info->buf_handle);
@@ -273,6 +287,8 @@ void rm_image_sync(ResourceManager *rm, VkCommandBuffer cmd,
 
 // --- Implementation: Getters ---
 
+GPUDevice *rm_get_gpu(ResourceManager *rm) { return rm->gpu; }
+
 RBuffer *rm_get_buffer(ResourceManager *rm, ResHandle handle) {
   assert(handle.id == RES_TYPE_BUFFER);
   assert(handle.id >= vec_len(rm->resources[handle.res_type]));
@@ -296,6 +312,7 @@ VkDescriptorSet rm_get_bindless_set(ResourceManager *rm) {
 }
 
 // --- Private Functions ---
+
 static void _retire_buffer(ResourceManager *rm, ResHandle handle) {
 
   RBuffer *buffer = rm_get_buffer(rm, handle);

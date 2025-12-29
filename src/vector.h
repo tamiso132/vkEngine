@@ -30,6 +30,8 @@ void default_free(void *ptr, void *ctx);
 
 // --- API ---
 void vec_init(Vector *vec, size_t elem_size, Allocator *allocator);
+void vec_init_with_capacity(Vector *vec, size_t capacity, size_t elem_size,
+                            Allocator *allocator);
 void vec_push(Vector *vec, void *element);
 void vec_remove_at(Vector *vec, u32 index);
 void vec_free(Vector *vec);

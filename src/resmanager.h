@@ -39,6 +39,13 @@ typedef struct {
 } RGImageInfo;
 
 typedef struct {
+  const char *name;
+  u32 capacity;
+  VkBufferUsageFlags2 usage;
+  VkMemoryPropertyFlags mem;
+} RGBufferInfo;
+
+typedef struct {
   ResHandle img_handle;
 
   VkImageLayout src_layout;
@@ -67,9 +74,10 @@ typedef struct {
   char name[50];
   u32 bindlessIndex;
   VkBuffer handle;
+  VkMemoryPropertyFlags mem;
   VmaAllocation alloc;
   u64 size;
-  u32 elementSize;
+  u32 capacity;
   VkBufferUsageFlags usage;
   res_b binding;
   VkDescriptorType type;
@@ -98,22 +106,34 @@ typedef struct ResourceManager ResourceManager;
 void rm_init(ResourceManager *rm, GPUDevice *gpu);
 
 void rm_destroy(ResourceManager *rm);
-ResHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size,
-                           VkBufferUsageFlags usage,
-                           VkMemoryPropertyFlags memory);
+
+ResHandle rm_create_buffer(ResourceManager *rm, RGBufferInfo *info);
+
+void rm_resize_image(ResourceManager *rm, ResHandle handle, uint32_t width,
+                     uint32_t height);
 
 ResHandle rm_create_image(ResourceManager *rm, RGImageInfo info);
+
 ResHandle rm_import_image(ResourceManager *rm, RGImageInfo *info, VkImage img,
                           VkImageView view, VkImageLayout cur_layout);
 
 void rm_on_new_frame(ResourceManager *rm);
+
+void rm_buffer_upload(ResourceManager *rm, VkCommandBuffer cmd,
+                      ResHandle handle, void *data, u32 size);
+
 void rm_buffer_sync(ResourceManager *rm, VkCommandBuffer cmd,
                     BufferBarrierInfo *info);
+
 void rm_image_sync(ResourceManager *rm, VkCommandBuffer cmd,
                    ImageBarrierInfo *info);
 
-// Getters
+GPUDevice *rm_get_gpu(ResourceManager *rm);
+
 RBuffer *rm_get_buffer(ResourceManager *rm, ResHandle handle);
+
 RImage *rm_get_image(ResourceManager *rm, ResHandle handle);
+
 VkDescriptorSetLayout rm_get_bindless_layout(ResourceManager *rm);
+
 VkDescriptorSet rm_get_bindless_set(ResourceManager *rm);

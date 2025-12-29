@@ -67,13 +67,27 @@ typedef struct GPUSwapchain {
 } GPUSwapchain;
 
 // PUBLIC FUNCTIONS
-bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info);
+
 void gpu_immediate_submit(GPUDevice *dev,
                           void (*callback)(VkCommandBuffer, void *),
                           void *user_data);
+
+bool gpu_swapchain_init(GPUDevice *dev, GPUSwapchain *sc, uint32_t w,
+                        uint32_t h);
+
+bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info);
+
+void gpu_immediate_submit(GPUDevice *dev,
+                          void (*callback)(VkCommandBuffer, void *),
+                          void *user_data);
+
 bool gpu_swapchain_init(GPUDevice *dev, GPUSwapchain *sc, uint32_t w,
                         uint32_t h);
 
 bool gpu_swapchain_acquire(GPUDevice *dev, GPUSwapchain *sc);
+
 void gpu_swapchain_present(GPUDevice *dev, GPUSwapchain *sc, VkQueue queue);
+
+void gpu_swapchain_destroy(GPUDevice *dev, GPUSwapchain *sc);
+
 void gpu_destroy(GPUDevice *dev);

@@ -1,4 +1,5 @@
 #include "filewatch.h"
+#include "vector.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -101,7 +102,48 @@ void fw_destroy(FileWatcher *fw) {
   free(fw);
 }
 
+bool file_write_binary(const char *path, const void *data, size_t size) {
+  if (!path || !data)
+    return false;
+
+  FILE *f = fopen(path, "wb"); // 'wb' is critical for binary data
+  if (!f) {
+    printf("Error: Failed to open file for writing: %s\n", path);
+    return false;
+  }
+
+  size_t written = fwrite(data, 1, size, f);
+  fclose(f);
+
+  if (written != size) {
+    printf("Error: Failed to write all bytes to %s (wrote %zu of %zu)\n", path,
+           written, size);
+    return false;
+  }
+
+  return true;
+}
+Vector file_read_binary(const char *path) {
+  FILE *f = fopen(path, "rb");
+
+  if (!f)
+    return (Vector){};
+
+  fseek(f, 0, SEEK_END);
+  long size = ftell(f);
+  fseek(f, 0, SEEK_SET);
+
+  Vector vec = {};
+  vec_init_with_capacity(&vec, size, 1, NULL);
+  fread(vec.data, 1, size, f);
+  vec.length = size;
+  fclose(f);
+
+  return vec;
+}
+
 // --- Private Functions ---
+
 static time_t get_file_time(const char *path) {
   stat_struct s;
   if (stat_func(path, &s) == 0) {

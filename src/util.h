@@ -4,7 +4,9 @@
 #include <stdlib.h>
 #include <time.h>
 #include <volk.h>
-#include <vulkan/vulkan_core.h>
+
+typedef uint8_t u8;
+typedef int8_t i8;
 
 typedef float f32;
 typedef double f64;

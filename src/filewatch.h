@@ -1,14 +1,18 @@
 // filewatch.h
 #pragma once
+#include "vector.h"
 #include <stdbool.h>
-
 typedef void (*FWCallback)(const char *path, void *user_data);
 
 typedef struct FileWatcher FileWatcher;
 
 // PUBLIC FUNCTIONS
+
 FileWatcher *fw_init();
 void fw_poll(FileWatcher *fw);
 void fw_destroy(FileWatcher *fw);
 void fw_add_watch(FileWatcher *fw, const char *path, FWCallback cb,
                   void *user_data);
+
+bool file_write_binary(const char *path, const void *data, size_t size);
+Vector file_read_binary(const char *path);

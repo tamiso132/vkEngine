@@ -1,0 +1,29 @@
+========== KOHI SORT DEBUG ==========
+C File: /home/tom/Projects/vkEngine/src/res_async.c
+H File: /home/tom/Projects/vkEngine/src/res_async.h
+
+--- PART 1: DETECTED C FUNCTIONS (Ordered) ---
+01. async_init           |  void async_init(ResourceManager *rm, RGBufferInfo *info, AsyncBuffer *ab);
+02. async_sync           |  void async_sync(ResourceManager *rm, AsyncBuffer *ab);
+03. async_update         |  void async_update(ResourceManager *rm, AsyncBuffer *ab, VkFence *fence, void *data, uint64_t size);
+
+--- PART 2: MERGE SIMULATION (Check for Duplicates) ---
+[   ] 001: #pragma once
+[   ] 002: #include "resmanager.h"
+[   ] 003: 
+[   ] 004: typedef struct AsyncBuffer {
+[   ] 005:   // front and back buffer
+[   ] 006:   ResHandle buffers[2];
+[   ] 007:   u32 active_b_index;
+[   ] 008:   VkFence upload_fence;
+[   ] 009:   bool is_uploading;
+[   ] 010: } AsyncBuffer;
+[   ] 011: 
+[MKR] 012: // PUBLIC FUNCTIONS
+[UPD] 013: void async_init(ResourceManager *rm, RGBufferInfo *info, AsyncBuffer *ab);
+[UPD] 014: void async_sync(ResourceManager *rm, AsyncBuffer *ab);
+[   ] 015: void async_update(ResourceManager *rm, AsyncBuffer *ab, VkFence *fence,
+[   ] 016:                   void *data, uint64_t size);
+
+--- PART 3: NEW INSERTIONS ---
+ [NEW] async_update

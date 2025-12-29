@@ -18,7 +18,12 @@ void vec_init(Vector *vec, size_t elem_size, Allocator *allocator) {
   vec->element_size = elem_size;
   vec->allocator = allocator ? allocator : &std_allocator;
 }
-
+void vec_init_with_capacity(Vector *vec, size_t capacity, size_t elem_size,
+                            Allocator *allocator) {
+  vec_init(vec, elem_size, allocator);
+  vec->capacity = capacity;
+  vec->data = calloc(1, elem_size * capacity);
+}
 void vec_push(Vector *vec, void *element) {
   if (vec->length == vec->capacity) {
     size_t old_cap_bytes = vec->capacity * vec->element_size;

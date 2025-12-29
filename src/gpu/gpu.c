@@ -6,7 +6,7 @@
 #include "vk_mem_alloc.h"
 
 // --- Private Prototypes ---
-static int rate_device(VkPhysicalDevice dev);
+static int _rate_device(VkPhysicalDevice dev);
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL
 debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -80,7 +80,7 @@ bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info) {
 
   int bestScore = -1;
   for (uint32_t i = 0; i < count; i++) {
-    int score = rate_device(pdevs[i]);
+    int score = _rate_device(pdevs[i]);
     if (score > bestScore) {
       dev->physical_device = pdevs[i];
       bestScore = score;
@@ -287,7 +287,8 @@ void gpu_destroy(GPUDevice *dev) {
 }
 
 // --- Private Functions ---
-static int rate_device(VkPhysicalDevice dev) {
+
+static int _rate_device(VkPhysicalDevice dev) {
   VkPhysicalDeviceProperties props;
   vkGetPhysicalDeviceProperties(dev, &props);
   int score = 0;

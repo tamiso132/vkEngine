@@ -1,6 +1,10 @@
 #pragma once
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
+#include <volk.h>
+#include <vulkan/vulkan_core.h>
 
 typedef float f32;
 typedef double f64;
@@ -39,3 +43,10 @@ typedef uint64_t u64;
   LOG_MESSAGE(LOG_WARN, CLR_YLW, "WARN", fmt, ##__VA_ARGS__)
 #define LOG_ERROR(fmt, ...)                                                    \
   LOG_MESSAGE(LOG_ERROR, CLR_RED, "ERROR", fmt, ##__VA_ARGS__)
+
+inline void vk_check(VkResult err) {
+  if (err != VK_SUCCESS) {
+    LOG_ERROR("VkError: %d", err);
+    abort();
+  }
+}

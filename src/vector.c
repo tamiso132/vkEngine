@@ -38,6 +38,7 @@ void vec_push(Vector *vec, void *element) {
 void vec_remove_at(Vector *vec, u32 index) {
   memmove(&vec->data[index], &vec[index + 1],
           vec->element_size * (vec->length - index));
+  vec->length--;
 }
 
 void vec_free(Vector *vec) {

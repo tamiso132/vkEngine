@@ -12,19 +12,6 @@
 // --- Types ---
 typedef struct GPUDevice GPUDevice;
 
-// Handles (Opaque identifiers, DAXA style)
-typedef struct {
-  VkBuffer vk;
-  VmaAllocation alloc;
-  u64 size;
-} GPUBuffer;
-
-typedef struct {
-  VkImage vk;
-  VkImageView view;
-  VmaAllocation alloc;
-} GPUImage;
-
 // --- Config Structs (Builder Pattern) ---
 typedef struct {
   const char *app_name;

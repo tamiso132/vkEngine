@@ -2,8 +2,6 @@
 #include "resmanager.h"
 
 // --- Private Prototypes ---
-static void testtest();
-static void testing(int hey);
 static void _async_swap(ResourceManager *rm, AsyncBuffer *ab);
 
 void async_init(ResourceManager *rm, AsyncBuffer *ab, uint32_t bindless_id) {
@@ -39,13 +37,6 @@ void async_update(ResourceManager *rm, AsyncBuffer *ab, void *data,
 }
 
 // --- Private Functions ---
-static void testtest() {}
-
-// comment for function
-// hhh
-static void testing(int hey) {}
-
-// another comment
 static void _async_swap(ResourceManager *rm, AsyncBuffer *ab) {
   if (ab->front.id != 0) {
     rm_retire_buffer(rm, ab->front); // Send old buffer to global "cool down"

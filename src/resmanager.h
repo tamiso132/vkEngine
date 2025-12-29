@@ -21,15 +21,6 @@ typedef struct {
   ResType res_type : 1;
 } ResHandle;
 
-typedef struct RetiredResource {
-  ResType type;
-  union {
-    GPUBuffer buf; // Din struct som håller VkBuffer + VmaAllocation
-    GPUImage img;  // Din struct som håller VkImage + View + VmaAllocation
-  };
-  uint64_t frame_retired;
-} RetiredRes; // Presets for common use cases
-
 typedef enum RGImagePreset {
   RG_IMAGETYPE_TEXTURE,    // Sampled, Transfer Dst
   RG_IMAGETYPE_ATTACHMENT, // Color Attachment, Sampled
@@ -47,6 +38,31 @@ typedef struct {
   VkImageUsageFlags usage; // OR explicitly set usage (overrides preset if != 0)
   float scale; // Optional: Scale relative to swapchain (future proofing)
 } RGImageInfo;
+
+typedef struct {
+  ResHandle img_handle;
+
+  VkImageLayout src_layout;
+  VkImageLayout dst_layout;
+
+  VkPipelineStageFlags2 src_stage;
+  VkPipelineStageFlags2 dst_stage;
+
+  VkAccessFlags2 src_access;
+  VkAccessFlags2 dst_access;
+
+} ImageBarrierInfo;
+
+typedef struct {
+  ResHandle buf_handle;
+
+  VkPipelineStageFlags2 src_stage;
+  VkPipelineStageFlags2 dst_stage;
+
+  VkAccessFlags2 src_access;
+  VkAccessFlags2 dst_access;
+
+} BufferBarrierInfo;
 
 typedef struct {
   char name[50];
@@ -82,13 +98,22 @@ typedef struct ResourceManager ResourceManager;
 // PUBLIC FUNCTIONS
 void rm_init(ResourceManager *rm, GPUDevice *gpu);
 void rm_destroy(ResourceManager *rm);
+ResHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size,
+                           VkBufferUsageFlags usage,
+                           VkMemoryPropertyFlags memory);
 
 ResHandle rm_create_image(ResourceManager *rm, RGImageInfo info);
-void rm_process_retirement(ResourceManager *rm);
-void rm_retire_buffer(ResourceManager *rm, ResHandle handle);
+ResHandle rm_import_image(ResourceManager *rm, RGImageInfo *info, VkImage img,
+                          VkImageView view, VkImageLayout cur_layout);
+
+void rm_on_new_frame(ResourceManager *rm);
+void rm_buffer_sync(ResourceManager *rm, VkCommandBuffer cmd,
+                    BufferBarrierInfo *info);
+void rm_image_sync(ResourceManager *rm, VkCommandBuffer cmd,
+                   ImageBarrierInfo *info);
 
 // Getters
-GPUBuffer rm_get_buffer(ResourceManager *rm, ResHandle handle);
-VkImage rm_get_image(ResourceManager *rm, ResHandle handle);
+RBuffer *rm_get_buffer(ResourceManager *rm, ResHandle handle);
+RImage *rm_get_image(ResourceManager *rm, ResHandle handle);
 VkDescriptorSetLayout rm_get_bindless_layout(ResourceManager *rm);
 VkDescriptorSet rm_get_bindless_set(ResourceManager *rm);

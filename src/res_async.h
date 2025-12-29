@@ -12,3 +12,5 @@ typedef struct AsyncBuffer {
 // PUBLIC FUNCTIONS
 void async_init(ResourceManager *rm, AsyncBuffer *ab, uint32_t bindless_id);
 void async_sync(ResourceManager *rm, AsyncBuffer *ab);
+void async_update(ResourceManager *rm, AsyncBuffer *ab, void *data,
+                  uint64_t size);

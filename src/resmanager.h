@@ -1,11 +1,10 @@
 #pragma once
 
+#include <stdbool.h>
+
 #include "gpu/gpu.h"
 #include "shaders/shader_base.ini"
 #include "util.h"
-#include "vector.h"
-#include <stdbool.h>
-#include <vulkan/vulkan_core.h>
 
 typedef enum { RES_TYPE_BUFFER, RES_TYPE_IMAGE, RES_TYPE_COUNT } ResType;
 
@@ -97,6 +96,7 @@ typedef struct ResourceManager ResourceManager;
 
 // PUBLIC FUNCTIONS
 void rm_init(ResourceManager *rm, GPUDevice *gpu);
+
 void rm_destroy(ResourceManager *rm);
 ResHandle rm_create_buffer(ResourceManager *rm, const char *name, uint64_t size,
                            VkBufferUsageFlags usage,

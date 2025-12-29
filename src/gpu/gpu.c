@@ -5,6 +5,9 @@
 
 #include "vk_mem_alloc.h"
 
+// --- Private Prototypes ---
+static int rate_device(VkPhysicalDevice dev);
+
 static VKAPI_ATTR VkBool32 VKAPI_CALL
 debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
                VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -15,16 +18,6 @@ debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     fprintf(stderr, "[VALIDATION]: %s\n", pCallbackData->pMessage);
   }
   return VK_FALSE;
-}
-
-static int rate_device(VkPhysicalDevice dev) {
-  VkPhysicalDeviceProperties props;
-  vkGetPhysicalDeviceProperties(dev, &props);
-  int score = 0;
-  if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
-    score += 1000;
-  score += props.limits.maxImageDimension2D;
-  return score;
 }
 
 bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info) {
@@ -161,14 +154,17 @@ bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info) {
                                     .instance = dev->instance,
                                     .vulkanApiVersion = VK_API_VERSION_1_3,
                                     .pVulkanFunctions = &vmaFuncs};
-  vmaCreateAllocator(&vmaInfo, &dev->allocator);
+  vk_check(vmaCreateAllocator(&vmaInfo, &dev->allocator));
 
   // 6. Immediate Submit Context
   VkCommandPoolCreateInfo poolInfo = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
       .queueFamilyIndex = 0,
       .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT};
-  vkCreateCommandPool(dev->device, &poolInfo, NULL, &dev->imm_cmd_pool);
+
+  vk_check(
+      vkCreateCommandPool(dev->device, &poolInfo, NULL, &dev->imm_cmd_pool));
+
   VkCommandBufferAllocateInfo cmdInfo = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
       .commandPool = dev->imm_cmd_pool,
@@ -177,48 +173,10 @@ bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info) {
   vkAllocateCommandBuffers(dev->device, &cmdInfo, &dev->imm_cmd_buffer);
   VkFenceCreateInfo fInfo = {
       .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO}; // Not signaled initially
-  vkCreateFence(dev->device, &fInfo, NULL, &dev->imm_fence);
+
+  vk_check(vkCreateFence(dev->device, &fInfo, NULL, &dev->imm_fence));
 
   return true;
-}
-
-// --- Creation Helpers ---
-
-GPUBuffer gpu_create_buffer(GPUDevice *dev, GPUBufferInfo *info) {
-  GPUBuffer b = {0};
-  VkBufferCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                           .size = info->size,
-                           .usage = info->usage};
-  VmaAllocationCreateInfo ai = {.usage = info->memory_usage};
-  vmaCreateBuffer(dev->allocator, &ci, &ai, &b.vk, &b.alloc, NULL);
-  return b;
-}
-
-GPUImage gpu_create_image(GPUDevice *dev, GPUImageInfo *info) {
-  GPUImage img = {0};
-  VkImageCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-                          .imageType = VK_IMAGE_TYPE_2D,
-                          .extent = info->extent,
-                          .mipLevels = 1,
-                          .arrayLayers = 1,
-                          .format = info->format,
-                          .tiling = VK_IMAGE_TILING_OPTIMAL,
-                          .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                          .usage = info->usage,
-                          .samples = VK_SAMPLE_COUNT_1_BIT};
-  VmaAllocationCreateInfo ai = {.usage = VMA_MEMORY_USAGE_AUTO};
-  vmaCreateImage(dev->allocator, &ci, &ai, &img.vk, &img.alloc, NULL);
-
-  // Auto create view (DAXA style convenience)
-  VkImageViewCreateInfo vi = {
-      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-      .image = img.vk,
-      .viewType = VK_IMAGE_VIEW_TYPE_2D,
-      .format = info->format,
-      .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
-  vkCreateImageView(dev->device, &vi, NULL, &img.view);
-
-  return img;
 }
 
 void gpu_immediate_submit(GPUDevice *dev,
@@ -326,4 +284,15 @@ void gpu_destroy(GPUDevice *dev) {
   vkDestroyDevice(dev->device, NULL);
   vkDestroySurfaceKHR(dev->instance, dev->surface, NULL);
   vkDestroyInstance(dev->instance, NULL);
+}
+
+// --- Private Functions ---
+static int rate_device(VkPhysicalDevice dev) {
+  VkPhysicalDeviceProperties props;
+  vkGetPhysicalDeviceProperties(dev, &props);
+  int score = 0;
+  if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+    score += 1000;
+  score += props.limits.maxImageDimension2D;
+  return score;
 }

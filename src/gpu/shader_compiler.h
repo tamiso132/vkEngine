@@ -1,9 +1,8 @@
 #pragma once
 
+#include "util.h"
 #include <stdbool.h>
 #include <volk.h>
-
-// Vi använder en enkel enum istället för att inkludera glslang-headers överallt
 // PUBLIC FUNCTIONS
 typedef enum ShaderStage {
   SHADER_STAGE_VERTEX,
@@ -11,8 +10,10 @@ typedef enum ShaderStage {
   SHADER_STAGE_COMPUTE
 } ShaderStage;
 
-VkShaderModule compile_glsl_to_spirv(VkDevice device, const char *path,
-                                     ShaderStage stage);
+typedef struct {
+  VkShaderModule module;
+  const char **headers;
+  u32 count;
+} CompileResult;
 
-// Helper för att spara binärer om du vill cache-lagra SPIR-V i framtiden
-bool file_write_binary(const char *path, const void *data, size_t size);
+ CompileResult compile_glsl_to_spirv(VkDevice device, const char *path, ShaderStage stage);

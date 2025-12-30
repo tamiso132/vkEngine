@@ -134,7 +134,7 @@ Vector file_read_binary(const char *path) {
   fseek(f, 0, SEEK_SET);
 
   Vector vec = {};
-  vec_init_with_capacity(&vec, size, 1, NULL);
+  vec_init_with_capacity(&vec, size + 1, 1, NULL);
   fread(vec.data, 1, size, f);
   vec.length = size;
   fclose(f);

@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <volk.h>
 
@@ -24,31 +25,27 @@ typedef uint64_t u64;
 #define CLR_CYN "\033[0;36m"
 #define CLR_GRY "\033[0;90m"
 
-// Grundläggande makro-motor
-#define LOG_MESSAGE(level, color, label, fmt, ...)                             \
+// Use &__FILE__[offset] instead of __FILE__ + offset
+#define RELATIVE_FILE                                                          \
+  (strncmp(__FILE__, PROJECT_ROOT, sizeof(PROJECT_ROOT) - 1) == 0              \
+       ? &__FILE__[sizeof(PROJECT_ROOT) - 1]                                   \
+       : __FILE__)
+
+#define LOG_MESSAGE(color, label, fmt, ...)                                    \
   do {                                                                         \
-    time_t t = time(NULL);                                                     \
-    struct tm *tm_info = localtime(&t);                                        \
-    char time_buf[10];                                                         \
-    strftime(time_buf, 10, "%H:%M:%S", tm_info);                               \
-    fprintf(stderr,                                                            \
-            "%s %s%-5s" CLR_RESET " " CLR_GRY "%s:%d:" CLR_RESET " " fmt "\n", \
-            time_buf, color, label, __FILE__, __LINE__, ##__VA_ARGS__);        \
+    fprintf(stdout,                                                            \
+            CLR_GRY "%s:%d " CLR_RESET color "%-5s" CLR_RESET " " fmt "\n",    \
+            RELATIVE_FILE, __LINE__, label, ##__VA_ARGS__);                    \
   } while (0)
+#define LOG_TRACE(fmt, ...) LOG_MESSAGE(CLR_GRY, "TRACE", fmt, ##__VA_ARGS__)
+#define LOG_INFO(fmt, ...) LOG_MESSAGE(CLR_CYN, "INFO", fmt, ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...) LOG_MESSAGE(CLR_YLW, "WARN", fmt, ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) LOG_MESSAGE(CLR_RED, "ERROR", fmt, ##__VA_ARGS__)
 
-// Användarvänliga makron
-#define LOG_TRACE(fmt, ...)                                                    \
-  LOG_MESSAGE(LOG_TRACE, CLR_GRY, "TRACE", fmt, ##__VA_ARGS__)
-#define LOG_INFO(fmt, ...)                                                     \
-  LOG_MESSAGE(LOG_INFO, CLR_CYN, "INFO", fmt, ##__VA_ARGS__)
-#define LOG_WARN(fmt, ...)                                                     \
-  LOG_MESSAGE(LOG_WARN, CLR_YLW, "WARN", fmt, ##__VA_ARGS__)
-#define LOG_ERROR(fmt, ...)                                                    \
-  LOG_MESSAGE(LOG_ERROR, CLR_RED, "ERROR", fmt, ##__VA_ARGS__)
-
-inline void vk_check(VkResult err) {
+static inline void vk_check(VkResult err) {
   if (err != VK_SUCCESS) {
     LOG_ERROR("VkError: %d", err);
+
     abort();
   }
 }

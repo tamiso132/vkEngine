@@ -1,43 +1,61 @@
 #include "shader_compiler.h"
+#include "filewatch.h"
 #include <glslang/Include/glslang_c_interface.h>
+#include <glslang/Include/glslang_c_shader_types.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 // --- Private Prototypes ---
-static char *read_file_text(const char *path, size_t *out_len);
 static glsl_include_result_t *on_local_func_include(void *ctx,
                                                     const char *header_name,
                                                     const char *includer_name,
                                                     size_t include_depth);
+
 static glsl_include_result_t *on_system_func_include(void *ctx,
                                                      const char *header_name,
                                                      const char *includer_name,
                                                      size_t include_depth);
+
 static int on_free_include_result(void *ctx, glsl_include_result_t *result);
 static glslang_resource_t get_default_resources();
 
-VkShaderModule compile_glsl_to_spirv(VkDevice device, const char *path,
-                                     ShaderStage stage) {
+CompileResult compile_glsl_to_spirv(VkDevice device, const char *path,
+                                    ShaderStage stage) {
   size_t code_len;
-  char *code = read_file_text(path, &code_len);
-  if (!code)
-    return VK_NULL_HANDLE;
+  Vector code = file_read_binary(path);
+  ((char *)code.data)[code.length] =
+      '\0'; // TODO, dangerous code, should have a file string function instead
+
+  LOG_INFO("Code to be compiled: %s\n", (char *)code.data);
+  CompileResult result = {};
+
+  if (!code.data)
+    return result;
 
   glslang_stage_t glsl_stage = (stage == SHADER_STAGE_VERTEX)
                                    ? GLSLANG_STAGE_VERTEX
                                    : GLSLANG_STAGE_FRAGMENT;
   const glslang_resource_t res = get_default_resources();
 
-  const glslang_input_t input = {.language = GLSLANG_SOURCE_GLSL,
-                                 .stage = glsl_stage,
-                                 .client = GLSLANG_CLIENT_VULKAN,
-                                 .client_version = GLSLANG_TARGET_VULKAN_1_2,
-                                 .target_language_version =
-                                     GLSLANG_TARGET_SPV_1_5,
-                                 .code = code,
-                                 .default_version = 450,
-                                 .resource = &res,
-                                 .messages = GLSLANG_MSG_DEFAULT_BIT};
+  glsl_include_callbacks_t callbacks = {
+      .free_include_result = on_free_include_result,
+      .include_local = on_local_func_include,
+      .include_system = on_system_func_include};
+
+  const glslang_input_t input = {
+      .language = GLSLANG_SOURCE_GLSL,
+      .stage = glsl_stage,
+      .client = GLSLANG_CLIENT_VULKAN,
+      .client_version = GLSLANG_TARGET_VULKAN_1_3,
+      .target_language_version = GLSLANG_TARGET_SPV_1_6,
+      .target_language = GLSLANG_TARGET_SPV,
+      .code = code.data,
+      .default_version = 450,
+      .resource = &res,
+      .messages = GLSLANG_MSG_DEFAULT_BIT,
+      .callbacks = callbacks,
+      .callbacks_ctx = (void *)&result,
+  };
 
   glslang_shader_t *shader = glslang_shader_create(&input);
   if (!glslang_shader_preprocess(shader, &input) ||
@@ -45,8 +63,8 @@ VkShaderModule compile_glsl_to_spirv(VkDevice device, const char *path,
     printf("[Shader] Compile Error in %s:\n%s\n", path,
            glslang_shader_get_info_log(shader));
     glslang_shader_delete(shader);
-    free(code);
-    return VK_NULL_HANDLE;
+    free(code.data);
+    return result;
   }
 
   glslang_program_t *program = glslang_program_create();
@@ -62,31 +80,16 @@ VkShaderModule compile_glsl_to_spirv(VkDevice device, const char *path,
       .pCode = glslang_program_SPIRV_get_ptr(program)};
 
   VkShaderModule module;
-  if (vkCreateShaderModule(device, &info, NULL, &module) != VK_SUCCESS)
-    module = VK_NULL_HANDLE;
+  if (vkCreateShaderModule(device, &info, NULL, &result.module) != VK_SUCCESS)
+    result.module = VK_NULL_HANDLE;
 
   glslang_program_delete(program);
   glslang_shader_delete(shader);
-  free(code);
-  return module;
+  free(code.data);
+  return result;
 }
 
 // --- Private Functions ---
-static char *read_file_text(const char *path, size_t *out_len) {
-  FILE *f = fopen(path, "rb");
-  if (!f)
-    return NULL;
-  fseek(f, 0, SEEK_END);
-  size_t len = ftell(f);
-  fseek(f, 0, SEEK_SET);
-  char *buffer = malloc(len + 1);
-  fread(buffer, 1, len, f);
-  buffer[len] = '\0';
-  if (out_len)
-    *out_len = len;
-  fclose(f);
-  return buffer;
-}
 
 static glsl_include_result_t *on_local_func_include(void *ctx,
                                                     const char *header_name,
@@ -94,18 +97,34 @@ static glsl_include_result_t *on_local_func_include(void *ctx,
                                                     size_t include_depth) {
   glsl_include_result_t d;
   d.header_name = header_name;
+  LOG_INFO("%s", header_name);
+  LOG_INFO("%s", includer_name);
+  LOG_INFO("%ld", include_depth);
+
+  return NULL;
 }
 
 /* Callback for system file inclusion */
 static glsl_include_result_t *on_system_func_include(void *ctx,
                                                      const char *header_name,
                                                      const char *includer_name,
-                                                     size_t include_depth) {}
+                                                     size_t include_depth) {
+  glsl_include_result_t d;
+  d.header_name = header_name;
+  LOG_INFO("%s", header_name);
+  LOG_INFO("%s", includer_name);
+  LOG_INFO("%ld", include_depth);
+
+  return NULL;
+}
 
 /* Callback for include result destruction */
-static int on_free_include_result(void *ctx, glsl_include_result_t *result) {}
+static int on_free_include_result(void *ctx, glsl_include_result_t *result) {
+  // LOG_INFO("%s", result->header_name);
+  // LOG_INFO("%s", result->header_data);
+  return 0;
+}
 
-// Minimal resursdefinition (kan expanderas vid behov)
 static glslang_resource_t get_default_resources() {
   const glslang_resource_t default_resource = {
       .max_lights = 32,

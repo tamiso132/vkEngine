@@ -103,7 +103,7 @@ typedef struct {
 typedef struct ResourceManager ResourceManager;
 
 // PUBLIC FUNCTIONS
-void rm_init(ResourceManager *rm, GPUDevice *gpu);
+ResourceManager *rm_init(GPUDevice *gpu);
 
 void rm_destroy(ResourceManager *rm);
 

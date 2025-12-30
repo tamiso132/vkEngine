@@ -60,9 +60,12 @@ static void _init_bindless(ResourceManager *rm);
 
 static VkComponentMapping _vk_component_mapping();
 
-void rm_init(ResourceManager *rm, GPUDevice *gpu) {
+ResourceManager *rm_init(GPUDevice *gpu) {
+
+  ResourceManager *rm = calloc(sizeof(ResourceManager), 1);
   *rm = (ResourceManager){.gpu = gpu};
   _init_bindless(rm);
+  return rm;
 }
 
 void rm_destroy(ResourceManager *rm) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "filewatch.h"
 #include "util.h"
 #include <stdbool.h>
 #include <volk.h>
@@ -11,9 +12,17 @@ typedef enum ShaderStage {
 } ShaderStage;
 
 typedef struct {
+  // INFO
+  FileGroup *fg;
+  const char *shader_path;
+  const char *include_dir;
+
+  // Results
   VkShaderModule module;
-  const char **headers;
-  u32 count;
+
+  // internals
+  Vector _temp;
 } CompileResult;
 
- CompileResult compile_glsl_to_spirv(VkDevice device, const char *path, ShaderStage stage);
+void compile_glsl_to_spirv(VkDevice device, CompileResult *result,
+                           ShaderStage stage);

@@ -1,3 +1,5 @@
+#include "filewatch.h"
+#include "util.h"
 #define GLFW_INCLUDE_VULKAN
 #define VK_NO_PROTOTYPES
 #include <GLFW/glfw3.h>
@@ -12,7 +14,13 @@
 
 void glslang_compile_test(GPUDevice device) {
   const char *path = "shaders/triangle.frag";
-  compile_glsl_to_spirv(device.device, path, SHADER_STAGE_FRAGMENT);
+  FileManager *fm = fm_init();
+  FileGroup *fg = fg_init(fm);
+
+  CompileResult result = {
+      .fg = fg, .include_dir = str_get_dir(path), .shader_path = path};
+
+  compile_glsl_to_spirv(device.device, &result, SHADER_STAGE_FRAGMENT);
 }
 
 int main() {

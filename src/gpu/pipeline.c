@@ -7,9 +7,6 @@
 
 #include <glslang/Include/glslang_c_interface.h>
 
-// --- Globals ---
-FileWatcher *g_filewatcher = NULL;
-
 typedef struct Includes {
   const char **abs_paths;
   int count;
@@ -27,7 +24,6 @@ static VkShaderModule _create_shader_module(VkDevice device,
                                             const char *spirvPath);
 
 static GPUPipeline _build_internal(VkDevice device, GpBuilder *b);
-static void _on_shader_changed(const char *path, void *user_data);
 
 GpBuilder gp_init() {
   GpBuilder b = {0};

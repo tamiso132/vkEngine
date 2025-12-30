@@ -1,9 +1,11 @@
 #include "shader_compiler.h"
 #include "filewatch.h"
+#include "vector.h"
 #include <glslang/Include/glslang_c_interface.h>
 #include <glslang/Include/glslang_c_shader_types.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // --- Private Prototypes ---
 static glsl_include_result_t *on_local_func_include(void *ctx,
@@ -19,15 +21,12 @@ static glsl_include_result_t *on_system_func_include(void *ctx,
 static int on_free_include_result(void *ctx, glsl_include_result_t *result);
 static glslang_resource_t get_default_resources();
 
-CompileResult compile_glsl_to_spirv(VkDevice device, const char *path,
-                                    ShaderStage stage) {
-  size_t code_len;
-  Vector code = file_read_binary(path);
-  LOG_INFO("Code to be compiled: %s\n", (char *)code.data);
-  CompileResult result = {};
-
-  if (!code.data)
-    return result;
+void compile_glsl_to_spirv(VkDevice device, CompileResult *result,
+                           ShaderStage stage) {
+  FileHandle fhandle = fg_load_file(result->fg, result->shader_path);
+  const char *source = fg_get_file(result->fg, &fhandle);
+  vec_init_with_capacity(&result->_temp, 10, sizeof(glsl_include_result_t),
+                         NULL);
 
   glslang_stage_t glsl_stage = (stage == SHADER_STAGE_VERTEX)
                                    ? GLSLANG_STAGE_VERTEX
@@ -46,22 +45,22 @@ CompileResult compile_glsl_to_spirv(VkDevice device, const char *path,
       .client_version = GLSLANG_TARGET_VULKAN_1_3,
       .target_language_version = GLSLANG_TARGET_SPV_1_6,
       .target_language = GLSLANG_TARGET_SPV,
-      .code = code.data,
+      .code = source,
       .default_version = 450,
       .resource = &res,
       .messages = GLSLANG_MSG_DEFAULT_BIT,
       .callbacks = callbacks,
-      .callbacks_ctx = (void *)&result,
+      .callbacks_ctx = (void *)result,
   };
 
   glslang_shader_t *shader = glslang_shader_create(&input);
   if (!glslang_shader_preprocess(shader, &input) ||
       !glslang_shader_parse(shader, &input)) {
-    printf("[Shader] Compile Error in %s:\n%s\n", path,
-           glslang_shader_get_info_log(shader));
+
+    LOG_ERROR("[Shader] Compile Error in %s:\n",
+              glslang_shader_get_info_log(shader));
+
     glslang_shader_delete(shader);
-    free(code.data);
-    return result;
   }
 
   glslang_program_t *program = glslang_program_create();
@@ -77,13 +76,14 @@ CompileResult compile_glsl_to_spirv(VkDevice device, const char *path,
       .pCode = glslang_program_SPIRV_get_ptr(program)};
 
   VkShaderModule module;
-  if (vkCreateShaderModule(device, &info, NULL, &result.module) != VK_SUCCESS)
-    result.module = VK_NULL_HANDLE;
+  if (vkCreateShaderModule(device, &info, NULL, &result->module) != VK_SUCCESS)
+    result->module = VK_NULL_HANDLE;
 
   glslang_program_delete(program);
   glslang_shader_delete(shader);
-  free(code.data);
-  return result;
+
+  vec_free(&result->_temp);
+  LOG_INFO("Compiled Shader: %s", result->shader_path);
 }
 
 // --- Private Functions ---
@@ -94,13 +94,22 @@ static glsl_include_result_t *on_local_func_include(void *ctx,
                                                     size_t include_depth) {
 
   CompileResult *result = ctx;
-  glsl_include_result_t d;
-  d.header_name = header_name;
-  LOG_INFO("%s", header_name);
-  LOG_INFO("%s", includer_name);
-  LOG_INFO("%ld", include_depth);
 
-  return NULL;
+  char *include_path =
+      calloc(1, strlen(result->include_dir) + strlen(header_name) + 10);
+
+  sprintf(include_path, "%s/%s", result->include_dir, header_name);
+
+  FileHandle handle = fg_load_file(result->fg, include_path);
+  const char *source = fg_get_file(result->fg, &handle);
+
+  glsl_include_result_t include_result = {.header_data = source,
+                                          .header_length = strlen(source),
+                                          .header_name = header_name};
+  vec_push(&(result->_temp), &include_result);
+  int index = vec_len(&result->_temp) - 1;
+
+  return VEC_AT((&result->_temp), index, glsl_include_result_t);
 }
 
 /* Callback for system file inclusion */
@@ -109,7 +118,6 @@ static glsl_include_result_t *on_system_func_include(void *ctx,
                                                      const char *includer_name,
                                                      size_t include_depth) {
   glsl_include_result_t d;
-  fw_add_watch();
   d.header_name = header_name;
   LOG_INFO("%s", header_name);
   LOG_INFO("%s", includer_name);

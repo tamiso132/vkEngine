@@ -17,9 +17,7 @@ void glslang_compile_test(GPUDevice device) {
 
 int main() {
   // 1. Init Windowp
-  LOG_INFO("test");
-  LOG_WARN("test");
-  LOG_ERROR("test");
+
   if (!glfwInit())
     return -1;
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);

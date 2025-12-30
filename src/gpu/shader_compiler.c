@@ -23,9 +23,6 @@ CompileResult compile_glsl_to_spirv(VkDevice device, const char *path,
                                     ShaderStage stage) {
   size_t code_len;
   Vector code = file_read_binary(path);
-  ((char *)code.data)[code.length] =
-      '\0'; // TODO, dangerous code, should have a file string function instead
-
   LOG_INFO("Code to be compiled: %s\n", (char *)code.data);
   CompileResult result = {};
 
@@ -95,6 +92,8 @@ static glsl_include_result_t *on_local_func_include(void *ctx,
                                                     const char *header_name,
                                                     const char *includer_name,
                                                     size_t include_depth) {
+
+  CompileResult *result = ctx;
   glsl_include_result_t d;
   d.header_name = header_name;
   LOG_INFO("%s", header_name);
@@ -110,6 +109,7 @@ static glsl_include_result_t *on_system_func_include(void *ctx,
                                                      const char *includer_name,
                                                      size_t include_depth) {
   glsl_include_result_t d;
+  fw_add_watch();
   d.header_name = header_name;
   LOG_INFO("%s", header_name);
   LOG_INFO("%s", includer_name);

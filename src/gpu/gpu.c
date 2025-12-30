@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vulkan/vulkan_core.h>
 
 #include "vk_mem_alloc.h"
 
@@ -125,10 +126,15 @@ bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info) {
       .dynamicRendering = VK_TRUE,
       .pNext = &sync2};
 
+  VkPhysicalDeviceTimelineSemaphoreFeatures timeline = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
+      .timelineSemaphore = VK_TRUE,
+      .pNext = &dynR};
+
   VkPhysicalDeviceFeatures2 feats2 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
       .features.shaderInt64 = VK_TRUE, // Bra att ha
-      .pNext = &dynR};
+      .pNext = &timeline};
   const char *devExts[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
   VkDeviceCreateInfo dInfo = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                               .pNext = &feats2,

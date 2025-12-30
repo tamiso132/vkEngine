@@ -1,9 +1,9 @@
+#define GLFW_INCLUDE_VULKAN
+#define VK_NO_PROTOTYPES
+
 #include "filewatch.h"
 #include "gpu/pipeline.h"
 #include "util.h"
-#include <vulkan/vulkan_core.h>
-#define GLFW_INCLUDE_VULKAN
-#define VK_NO_PROTOTYPES
 #include <GLFW/glfw3.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +14,19 @@
 #include "gpu/pipeline_hotreload.h"
 #include "gpu/shader_compiler.h"
 #include "resmanager.h"
+#include "submit_manager.h"
+
+typedef struct {
+  float x, y, z;
+  float padding; // Mandatory: aligns the struct to 16 bytes
+} Vertex;
+
+// 2. Define the data
+const Vertex triangleVertices[] = {
+    {0.0f, -0.5f, 0.0f, 0.0f}, // Top
+    {0.5f, 0.5f, 0.0f, 0.0f},  // Bottom Right
+    {-0.5f, 0.5f, 0.0f, 0.0f}  // Bottom Left
+};
 
 void glslang_compile_test(GPUDevice device) {
   const char *path = "shaders/triangle.frag";
@@ -26,9 +39,12 @@ void glslang_compile_test(GPUDevice device) {
   shader_compile_glsl(device.device, &result, SHADER_STAGE_FRAGMENT);
 }
 
-void hotreload(ResourceManager *rm) {
+void triangle_hotreload_test(ResourceManager *rm, GLFWwindow *window,
+                             GPUSwapchain *swapchain) {
   const char *vs_path = "shaders/triangle.vert";
   const char *fs_path = "shaders/triangle.frag";
+
+  GPUDevice *device = rm_get_gpu(rm);
 
   M_Pipeline *pm = pm_init(rm);
 
@@ -43,7 +59,41 @@ void hotreload(ResourceManager *rm) {
   gp_set_color_formats(&b, &color_format, 1);
 
   PipelineHandle pip = pr_build_reg(reloader, &b, vs_path, fs_path);
+
+  SubmitManager sm =
+      submit_manager_create(device->device, device->graphics_queue, 1);
+
+  CmdBuffer cmd = cmd_init(device->device, device->graphics_family);
+
+  RGBufferInfo buffer_info = {.capacity = sizeof(Vertex) * 12,
+                              .mem = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                              .name = "TriangleVertices",
+                              .usage = VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT};
+
+  ResHandle vertex_handle = rm_create_buffer(rm, &buffer_info);
+
+  cmd_begin(device->device, cmd);
+
+  rm_buffer_upload(rm, cmd.buffer, vertex_handle, (void *)triangleVertices,
+                   sizeof(Vertex) * 12);
+
+  cmd_end(device->device, cmd);
+
+  VkSubmitInfo submitInfo = {.commandBufferCount = 1,
+                             .pCommandBuffers = &cmd.buffer,
+                             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO};
+
+  vkQueueSubmit(device->graphics_queue, 1, &submitInfo, NULL);
+
+  while (!glfwWindowShouldClose(window)) {
+    glfwPollEvents();
+
+    // if (gpu_swapchain_acquire(device, swapchain)) {
+    //  submit_begin_frame(sm);
+    // }
+  }
 }
+
 int main() {
   // 1. Init Windowp
 
@@ -70,13 +120,8 @@ int main() {
     exit(1);
   }
   ResourceManager *rm = rm_init(&device);
-  hotreload(rm);
-  return 1;
 
-  // 4. Init Managers
-  rm_init(&device);
-
-  // -------------------------------------
+  triangle_hotreload_test(rm, window, &swapchain);
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();

@@ -6,7 +6,6 @@
 #include <string.h>
 
 #include <glslang/Include/glslang_c_interface.h>
-#include <vulkan/vulkan_core.h>
 
 typedef struct PipelineManager {
 
@@ -38,7 +37,6 @@ GpBuilder gp_init(ResourceManager *rm, const char *name) {
   b.cull_mode = VK_CULL_MODE_NONE;
   b.front_face = VK_FRONT_FACE_CLOCKWISE;
   b.depth_op = VK_COMPARE_OP_LESS_OR_EQUAL;
-  b.bindless_layout = rm_get_bindless_layout(rm);
   b.push_const_size = 128;
   b.name = name;
   return b;
@@ -177,13 +175,14 @@ static PipelineHandle _build_internal(M_Pipeline *pm, GpBuilder *b) {
       .pDynamicStates = dyn_states};
 
   // 10. Layout
-  VkPushConstantRange push = {.stageFlags = VK_SHADER_STAGE_ALL,
-                              .size = b->push_const_size};
+  VkPushConstantRange push = {.stageFlags = VK_SHADER_STAGE_ALL, .size = 128};
+
+  VkDescriptorSetLayout layout = rm_get_bindless_layout(pm->res);
   VkPipelineLayoutCreateInfo pl = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-      .setLayoutCount = b->bindless_layout ? 1 : 0,
-      .pSetLayouts = b->bindless_layout ? &b->bindless_layout : NULL,
-      .pushConstantRangeCount = b->push_const_size ? 1 : 0,
+      .setLayoutCount = 1,
+      .pSetLayouts = &layout,
+      .pushConstantRangeCount = 1,
       .pPushConstantRanges = b->push_const_size ? &push : NULL};
 
   vk_check(vkCreatePipelineLayout(device, &pl, NULL, &p.layout));

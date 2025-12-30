@@ -3,7 +3,6 @@
 
 #include "resmanager.h"
 #include <stdbool.h>
-#include <vulkan/vulkan.h>
 
 // --- Types ---
 

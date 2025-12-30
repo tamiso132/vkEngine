@@ -5,7 +5,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <volk.h>
-#include <vulkan/vulkan_core.h>
 
 typedef uint32_t PipelineHandle;
 
@@ -56,7 +55,7 @@ M_Pipeline *pm_init(ResourceManager *rm);
 
 GPUDevice *pm_get_gpu(M_Pipeline *pm);
 
-GpBuilder gp_init(ResourceManager *rm, const char* name);
+GpBuilder gp_init(ResourceManager *rm, const char *name);
 
 void gp_set_shaders(GpBuilder *b, VkShaderModule vs, VkShaderModule fs);
 void gp_set_topology(GpBuilder *b, VkPrimitiveTopology topo);

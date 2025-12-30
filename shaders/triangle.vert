@@ -17,13 +17,7 @@ layout(push_constant) uniform PC {
 layout(location = 0) out vec3 outColor;
 
 void main() {
-        // 1. Pull Vertex Data manually using the ID and Vertex Index
-        // non-uniform index because vbo_idx changes per draw call
         vec3 pos = all_buffers[nonuniformEXT(pc.vbo_idx)].data[gl_VertexIndex];
-
         gl_Position = vec4(pos, 1.0);
-
-        // Debug color based on position
         outColor = pos + 0.5;
 }
-

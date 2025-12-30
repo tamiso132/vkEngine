@@ -1,6 +1,5 @@
 #include "resmanager.h"
 #include "gpu/gpu.h"
-#include "log.h"
 #include "shader_base.ini"
 #include "util.h"
 #include "vector.h"
@@ -8,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vulkan/vulkan_core.h>
 
 // --- Constants ---
 #define RM_MAX_RESOURCES 1024
@@ -36,7 +36,7 @@ typedef struct ResourceManager {
   Vector retired_res;
 
   VECTOR_TYPES(RBuffer, RImage)
-  Vector *resources[RES_TYPE_COUNT];
+  Vector resources[RES_TYPE_COUNT];
 
   // Bindless
   VkDescriptorPool descriptor_pool;
@@ -63,21 +63,23 @@ static VkComponentMapping _vk_component_mapping();
 ResourceManager *rm_init(GPUDevice *gpu) {
 
   ResourceManager *rm = calloc(sizeof(ResourceManager), 1);
-  *rm = (ResourceManager){.gpu = gpu};
+  vec_init(&rm->resources[RES_TYPE_IMAGE], sizeof(RImage), NULL);
+  vec_init(&rm->resources[RES_TYPE_BUFFER], sizeof(RBuffer), NULL);
+  rm->gpu = gpu;
   _init_bindless(rm);
   return rm;
 }
 
 void rm_destroy(ResourceManager *rm) {
-  Vector *buffers = rm->resources[RES_TYPE_BUFFER];
+  Vector *buffers = &rm->resources[RES_TYPE_BUFFER];
   for (size_t i = 0; i < vec_len(buffers); i++) {
     RBuffer *buffer = VEC_AT(buffers, i, RBuffer);
     vmaDestroyBuffer(rm->gpu->allocator, buffer->handle, buffer->alloc);
   }
-  Vector *images = rm->resources[RES_TYPE_IMAGE];
+  Vector *images = &rm->resources[RES_TYPE_IMAGE];
 
   for (u32 i = 0; i < RES_TYPE_COUNT; i++) {
-    vec_free(rm->resources[i]);
+    vec_free(&rm->resources[i]);
   }
 
   // 2. Destroy Bindless Context
@@ -103,10 +105,10 @@ ResHandle rm_create_buffer(ResourceManager *rm, RGBufferInfo *info) {
                   NULL);
 
   // Add to Manager & Update Bindless
-  uint32_t id = (uint32_t)vec_len(rm->resources[RES_TYPE_BUFFER]);
+  uint32_t id = (uint32_t)vec_len(&rm->resources[RES_TYPE_BUFFER]);
   ResHandle resHandle = {.id = id, .res_type = RES_TYPE_BUFFER};
 
-  vec_push(rm->resources[RES_TYPE_BUFFER], &buffer);
+  vec_push(&rm->resources[RES_TYPE_BUFFER], &buffer);
 
   VkDescriptorBufferInfo descriptorInfo = {};
   descriptorInfo.buffer = buffer.handle;
@@ -168,8 +170,8 @@ ResHandle rm_create_image(ResourceManager *rm, RGImageInfo info) {
     image.binding = RES_B_STORAGE_IMAGE;
   }
 
-  uint32_t id = vec_len(rm->resources[RES_TYPE_IMAGE]);
-  vec_push(rm->resources[RES_TYPE_IMAGE], &image);
+  uint32_t id = vec_len(&rm->resources[RES_TYPE_IMAGE]);
+  vec_push(&rm->resources[RES_TYPE_IMAGE], &image);
   ResHandle resHandle = {.id = id, .res_type = RES_TYPE_IMAGE};
 
   VkDescriptorImageInfo imageInfo = {.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
@@ -204,8 +206,8 @@ ResHandle rm_import_image(ResourceManager *rm, RGImageInfo *info, VkImage img,
       .subresourceRange = {}, // :TODO fix this, make some util for it
   };
 
-  uint32_t id = vec_len(rm->resources[RES_TYPE_IMAGE]);
-  vec_push(rm->resources[RES_TYPE_IMAGE], &image);
+  uint32_t id = vec_len(&rm->resources[RES_TYPE_IMAGE]);
+  vec_push(&rm->resources[RES_TYPE_IMAGE], &image);
   ResHandle resHandle = {.id = id, .res_type = RES_TYPE_IMAGE};
 
   return resHandle;
@@ -271,6 +273,12 @@ void rm_buffer_sync(ResourceManager *rm, VkCommandBuffer cmd,
 void rm_image_sync(ResourceManager *rm, VkCommandBuffer cmd,
                    ImageBarrierInfo *info) {
 
+  VkImageSubresourceRange subresourceRange = {
+      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .layerCount = 1,
+      .levelCount = 1,
+  };
+
   VkImageMemoryBarrier2 barrInfo = {
       .image = rm_get_image(rm, info->img_handle)->handle,
       .oldLayout = info->src_layout,
@@ -280,9 +288,11 @@ void rm_image_sync(ResourceManager *rm, VkCommandBuffer cmd,
       .dstAccessMask = info->dst_access,
       .newLayout = info->dst_layout,
       .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+      .subresourceRange = subresourceRange,
   };
 
-  VkDependencyInfo dependinfo = {.imageMemoryBarrierCount = 1,
+  VkDependencyInfo dependinfo = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                                 .imageMemoryBarrierCount = 1,
                                  .pImageMemoryBarriers = &barrInfo};
 
   vkCmdPipelineBarrier2(cmd, &dependinfo);
@@ -294,16 +304,16 @@ GPUDevice *rm_get_gpu(ResourceManager *rm) { return rm->gpu; }
 
 RBuffer *rm_get_buffer(ResourceManager *rm, ResHandle handle) {
   assert(handle.id == RES_TYPE_BUFFER);
-  assert(handle.id >= vec_len(rm->resources[handle.res_type]));
+  assert(handle.id < vec_len(&rm->resources[handle.res_type]));
 
-  return VEC_AT(rm->resources[handle.res_type], handle.id, RBuffer);
+  return VEC_AT(&rm->resources[handle.res_type], handle.id, RBuffer);
 }
 
 RImage *rm_get_image(ResourceManager *rm, ResHandle handle) {
   assert(handle.id == RES_TYPE_IMAGE);
-  assert(handle.id >= vec_len(rm->resources[handle.res_type]));
+  assert(handle.id >= vec_len(&rm->resources[handle.res_type]));
 
-  return VEC_AT(rm->resources[handle.res_type], handle.id, RImage);
+  return VEC_AT(&rm->resources[handle.res_type], handle.id, RImage);
 }
 
 VkDescriptorSetLayout rm_get_bindless_layout(ResourceManager *rm) {
@@ -343,7 +353,7 @@ static void _bindless_add(ResourceManager *rm, ResHandle handle,
                           VkDescriptorImageInfo *imageInfo,
                           VkDescriptorBufferInfo *bufferInfo) {
 
-  void *res = vec_at(rm->resources[handle.res_type], handle.id);
+  void *res = vec_at(&rm->resources[handle.res_type], handle.id);
 
   if (handle.res_type == RES_TYPE_IMAGE) {
     RImage *image = (RImage *)res;
@@ -370,12 +380,13 @@ static void _bindless_update(ResourceManager *rm, ResHandle handle,
                                 .pImageInfo = imageInfo,
                                 .pBufferInfo = bufferInfo};
 
-  void *res = vec_at(rm->resources[handle.res_type], handle.id);
+  void *res = vec_at(&rm->resources[handle.res_type], handle.id);
 
   if (handle.res_type == RES_TYPE_BUFFER) {
     RBuffer *buffer = (RBuffer *)res;
-    write.dstBinding = buffer->binding;
+    write.dstBinding = RES_B_STORAGE_BUFFER;
     write.dstArrayElement = buffer->bindlessIndex;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   }
 
   else {

@@ -9,6 +9,8 @@ add_sources(
     filewatch.c
     res_async.c
     vector.c
+    util.c
+    submit_manager.c
 )
 
 include_this()

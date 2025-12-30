@@ -37,51 +37,31 @@ typedef uint64_t u64;
             CLR_GRY "%s:%d " CLR_RESET color "%-5s" CLR_RESET " " fmt "\n",    \
             RELATIVE_FILE, __LINE__, label, ##__VA_ARGS__);                    \
   } while (0)
+
 #define LOG_TRACE(fmt, ...) LOG_MESSAGE(CLR_GRY, "TRACE", fmt, ##__VA_ARGS__)
 #define LOG_INFO(fmt, ...) LOG_MESSAGE(CLR_CYN, "INFO", fmt, ##__VA_ARGS__)
 #define LOG_WARN(fmt, ...) LOG_MESSAGE(CLR_YLW, "WARN", fmt, ##__VA_ARGS__)
 #define LOG_ERROR(fmt, ...) LOG_MESSAGE(CLR_RED, "ERROR", fmt, ##__VA_ARGS__)
 
-static inline void vk_check(VkResult err) {
-  if (err != VK_SUCCESS) {
-    LOG_ERROR("VkError: %d", err);
+typedef struct CmdBuffer {
+  VkCommandPool pool;
+  VkCommandBuffer buffer;
+} CmdBuffer;
 
-    abort();
-  }
-}
-/**
- * Returns a new heap-allocated substring.
- * start: index to begin at
- * len: number of characters to copy
- */
-static inline char *str_sub(const char *s, int start, int len) {
-  if (!s || strlen(s) < start)
-    return NULL;
+// PUBLIC FUNCTIONS
 
-  char *sub = malloc(len + 1);
-  if (!sub)
-    return NULL;
+CmdBuffer cmd_init(VkDevice device, u32 queue_fam);
 
-  memcpy(sub, s + start, len);
-  sub[len] = '\0';
-  return sub;
-}
+void cmd_begin(VkDevice device, CmdBuffer cmd);
 
-/**
- * Extract directory from path (Non-destructive)
- * Example: "src/main.c" -> returns "src/"
- */
-static inline char *str_get_dir(const char *path) {
-  char *last_slash = strrchr(path, '/');
-#ifdef _WIN32
-  char *last_back = strrchr(path, '\\');
-  if (last_back > last_slash)
-    last_slash = last_back;
-#endif
+void cmd_end(VkDevice device, CmdBuffer cmd);
 
-  if (!last_slash)
-    return strdup("");
+void vk_check(VkResult err);
 
-  int len = (int)(last_slash - path) + 1;
-  return str_sub(path, 0, len);
-}
+/** * Returns a new heap-allocated substring. * start: index to begin at * len:
+ * number of characters to copy */
+char *str_sub(const char *s, int start, int len);
+
+/** * Extract directory from path (Non-destructive) * Example: "src/main.c" ->
+ * returns "src/" */
+char *str_get_dir(const char *path);

@@ -1,7 +1,6 @@
 #include "res_async.h"
 #include "resmanager.h"
 #include <string.h>
-#include <vulkan/vulkan_core.h>
 
 typedef struct AsyncBuffer {
   // front and back buffer

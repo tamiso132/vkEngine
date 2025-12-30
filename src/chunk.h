@@ -1,3 +1,4 @@
+#pragma once
 #define CHUNK_SIZE 64
 #define WORDS_PER_CHUNK 4096
 

@@ -18,11 +18,11 @@ static glsl_include_result_t *on_system_func_include(void *ctx,
                                                      const char *includer_name,
                                                      size_t include_depth);
 
-static int on_free_include_result(void *ctx, glsl_include_result_t *result);
-static glslang_resource_t get_default_resources();
+static int _on_free_include_result(void *ctx, glsl_include_result_t *result);
+static glslang_resource_t _get_default_resources();
 
-void compile_glsl_to_spirv(VkDevice device, CompileResult *result,
-                           ShaderStage stage) {
+void shader_compile_glsl(VkDevice device, CompileResult *result,
+                         ShaderStage stage) {
   FileHandle fhandle = fg_load_file(result->fg, result->shader_path);
   const char *source = fg_get_file(result->fg, &fhandle);
   vec_init_with_capacity(&result->_temp, 10, sizeof(glsl_include_result_t),
@@ -31,10 +31,11 @@ void compile_glsl_to_spirv(VkDevice device, CompileResult *result,
   glslang_stage_t glsl_stage = (stage == SHADER_STAGE_VERTEX)
                                    ? GLSLANG_STAGE_VERTEX
                                    : GLSLANG_STAGE_FRAGMENT;
-  const glslang_resource_t res = get_default_resources();
+
+  const glslang_resource_t res = _get_default_resources();
 
   glsl_include_callbacks_t callbacks = {
-      .free_include_result = on_free_include_result,
+      .free_include_result = _on_free_include_result,
       .include_local = on_local_func_include,
       .include_system = on_system_func_include};
 
@@ -83,7 +84,6 @@ void compile_glsl_to_spirv(VkDevice device, CompileResult *result,
   glslang_shader_delete(shader);
 
   vec_free(&result->_temp);
-  LOG_INFO("Compiled Shader: %s", result->shader_path);
 }
 
 // --- Private Functions ---
@@ -127,13 +127,13 @@ static glsl_include_result_t *on_system_func_include(void *ctx,
 }
 
 /* Callback for include result destruction */
-static int on_free_include_result(void *ctx, glsl_include_result_t *result) {
+static int _on_free_include_result(void *ctx, glsl_include_result_t *result) {
   // LOG_INFO("%s", result->header_name);
   // LOG_INFO("%s", result->header_data);
   return 0;
 }
 
-static glslang_resource_t get_default_resources() {
+static glslang_resource_t _get_default_resources() {
   const glslang_resource_t default_resource = {
       .max_lights = 32,
       .max_clip_planes = 6,

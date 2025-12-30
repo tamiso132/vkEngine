@@ -24,7 +24,7 @@ void vec_init_with_capacity(Vector *vec, size_t capacity, size_t elem_size,
   vec->capacity = capacity;
   vec->data = calloc(1, elem_size * capacity);
 }
-void vec_push(Vector *vec, void *element) {
+u32 vec_push(Vector *vec, void *element) {
   if (vec->length == vec->capacity) {
     size_t old_cap_bytes = vec->capacity * vec->element_size;
     vec->capacity = vec->capacity == 0 ? 8 : vec->capacity * 2;
@@ -38,6 +38,8 @@ void vec_push(Vector *vec, void *element) {
   void *dest = (char *)vec->data + (vec->length * vec->element_size);
   memcpy(dest, element, vec->element_size);
   vec->length++;
+
+  return vec->length - 1;
 }
 
 void vec_remove_at(Vector *vec, u32 index) {

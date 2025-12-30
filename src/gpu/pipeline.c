@@ -1,42 +1,54 @@
 #include "pipeline.h"
-#include "filewatch.h"
+#include "resmanager.h"
 #include "util.h"
 #include "vector.h"
 
 #include <string.h>
 
 #include <glslang/Include/glslang_c_interface.h>
+#include <vulkan/vulkan_core.h>
 
-typedef struct Includes {
-  const char **abs_paths;
-  int count;
-} Includes;
+typedef struct PipelineManager {
 
-typedef struct {
-  VkDevice device;
-  GPUPipeline *target_pipeline;
-  GpBuilder config;
-  Includes ctx_include;
-} PipReloadCtx;
+  VECTOR_TYPES(GPUPipeline)
+  Vector pipelines;
+
+  ResourceManager *res;
+} M_Pipeline;
 
 // --- Private Prototypes ---
-static VkShaderModule _create_shader_module(VkDevice device,
-                                            const char *spirvPath);
 
-static GPUPipeline _build_internal(VkDevice device, GpBuilder *b);
+static PipelineHandle _build_internal(M_Pipeline *pm, GpBuilder *b);
 
-GpBuilder gp_init() {
+M_Pipeline *pm_init(ResourceManager *rm) {
+  M_Pipeline *pm = calloc(sizeof(M_Pipeline), 1);
+  vec_init(&pm->pipelines, sizeof(GPUPipeline), NULL);
+  pm->res = rm;
+
+  return pm;
+}
+
+GPUPipeline *pm_get_pipeline(M_Pipeline *pm, PipelineHandle handle) {
+  return VEC_AT(&pm->pipelines, handle, GPUPipeline);
+}
+
+GpBuilder gp_init(ResourceManager *rm, const char *name) {
   GpBuilder b = {0};
   b.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
   b.cull_mode = VK_CULL_MODE_NONE;
   b.front_face = VK_FRONT_FACE_CLOCKWISE;
   b.depth_op = VK_COMPARE_OP_LESS_OR_EQUAL;
+  b.bindless_layout = rm_get_bindless_layout(rm);
+  b.push_const_size = 128;
+  b.name = name;
   return b;
 }
 
-void gp_set_shaders(GpBuilder *b, const char *vs, const char *fs) {
-  b->vs_path = vs;
-  b->fs_path = fs;
+GPUDevice *pm_get_gpu(M_Pipeline *pm) { return rm_get_gpu(pm->res); }
+
+void gp_set_shaders(GpBuilder *b, VkShaderModule vs, VkShaderModule fs) {
+  b->vs = vs;
+  b->fs = fs;
 }
 
 void gp_set_topology(GpBuilder *b, VkPrimitiveTopology topo) {
@@ -68,13 +80,10 @@ void gp_enable_depth(GpBuilder *b, bool write, VkCompareOp op) {
 void gp_enable_blend(GpBuilder *b) { b->blend_enable = true; }
 
 void gp_set_layout(GpBuilder *b, VkDescriptorSetLayout bindless,
-                   uint32_t push_size) {
-  b->bindless_layout = bindless;
-  b->push_const_size = push_size;
-}
+                   uint32_t push_size) {}
 
-GPUPipeline gp_build(VkDevice device, GpBuilder *b) {
-  return _build_internal(device, b);
+PipelineHandle gp_build(M_Pipeline *pm, GpBuilder *b) {
+  return _build_internal(pm, b);
 }
 
 void gp_destroy(VkDevice device, GPUPipeline *p) {
@@ -85,28 +94,9 @@ void gp_destroy(VkDevice device, GPUPipeline *p) {
 
 // --- Private Functions ---
 
-static VkShaderModule _create_shader_module(VkDevice device,
-                                            const char *spirvPath) {
-  Vector source_vec = file_read_binary(spirvPath);
-  VkShaderModuleCreateInfo info = {
-      .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-      .codeSize = vec_len(&source_vec),
-      .pCode = source_vec.data,
-  };
-  vec_free(&source_vec);
-  VkShaderModule module = {};
-  vk_check(vkCreateShaderModule(device, &info, NULL, &module));
-
-  return module;
-}
-
-// --- Internal: Core Build Logic ---
-static GPUPipeline _build_internal(VkDevice device, GpBuilder *b) {
+static PipelineHandle _build_internal(M_Pipeline *pm, GpBuilder *b) {
   GPUPipeline p = {0};
-
-  // 1. Compile Shaders
-  VkShaderModule fs = _create_shader_module(device, b->fs_path);
-  VkShaderModule vs = _create_shader_module(device, b->vs_path);
+  VkDevice device = rm_get_gpu(pm->res)->device;
 
   VkPipelineShaderStageCreateInfo stages[2];
   uint32_t stage_count = 0;
@@ -114,13 +104,13 @@ static GPUPipeline _build_internal(VkDevice device, GpBuilder *b) {
   stages[stage_count++] = (VkPipelineShaderStageCreateInfo){
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
       .stage = VK_SHADER_STAGE_VERTEX_BIT,
-      .module = vs,
+      .module = b->vs,
       .pName = "main"};
 
   stages[stage_count++] = (VkPipelineShaderStageCreateInfo){
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
       .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-      .module = fs,
+      .module = b->fs,
       .pName = "main"};
 
   // 2. Vertex Input (Empty for Bindless/Pull)
@@ -227,8 +217,9 @@ static GPUPipeline _build_internal(VkDevice device, GpBuilder *b) {
   }
 
   // Cleanup Shaders
-  vkDestroyShaderModule(device, vs, NULL);
-  vkDestroyShaderModule(device, fs, NULL);
+  vkDestroyShaderModule(device, b->vs, NULL);
+  vkDestroyShaderModule(device, b->fs, NULL);
 
-  return p;
+  LOG_INFO("[Pipeline Created]:  %s", b->name);
+  return vec_push(&pm->pipelines, &p);
 }

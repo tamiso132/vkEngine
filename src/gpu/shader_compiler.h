@@ -4,7 +4,7 @@
 #include "util.h"
 #include <stdbool.h>
 #include <volk.h>
-// PUBLIC FUNCTIONS
+
 typedef enum ShaderStage {
   SHADER_STAGE_VERTEX,
   SHADER_STAGE_FRAGMENT,
@@ -24,5 +24,7 @@ typedef struct {
   Vector _temp;
 } CompileResult;
 
-void compile_glsl_to_spirv(VkDevice device, CompileResult *result,
-                           ShaderStage stage);
+// PUBLIC FUNCTIONS
+
+void shader_compile_glsl(VkDevice device, CompileResult *result,
+                         ShaderStage stage);

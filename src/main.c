@@ -1,5 +1,7 @@
 #include "filewatch.h"
+#include "gpu/pipeline.h"
 #include "util.h"
+#include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 #define VK_NO_PROTOTYPES
 #include <GLFW/glfw3.h>
@@ -9,6 +11,7 @@
 #include <glslang/Include/glslang_c_interface.h>
 
 #include "gpu/gpu.h"
+#include "gpu/pipeline_hotreload.h"
 #include "gpu/shader_compiler.h"
 #include "resmanager.h"
 
@@ -20,9 +23,27 @@ void glslang_compile_test(GPUDevice device) {
   CompileResult result = {
       .fg = fg, .include_dir = str_get_dir(path), .shader_path = path};
 
-  compile_glsl_to_spirv(device.device, &result, SHADER_STAGE_FRAGMENT);
+  shader_compile_glsl(device.device, &result, SHADER_STAGE_FRAGMENT);
 }
 
+void hotreload(ResourceManager *rm) {
+  const char *vs_path = "shaders/triangle.vert";
+  const char *fs_path = "shaders/triangle.frag";
+
+  M_Pipeline *pm = pm_init(rm);
+
+  FileManager *fm = fm_init();
+  M_PipelineReloader *reloader = pr_init(pm, fm);
+
+  VkFormat color_format = VK_FORMAT_R8G8B8A8_UNORM;
+
+  GpBuilder b = gp_init(rm, "TrianglePipeline");
+  gp_set_topology(&b, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+  gp_set_cull(&b, VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+  gp_set_color_formats(&b, &color_format, 1);
+
+  PipelineHandle pip = pr_build_reg(reloader, &b, vs_path, fs_path);
+}
 int main() {
   // 1. Init Windowp
 
@@ -48,13 +69,11 @@ int main() {
     printf("Failed to initialize glslang process.\n");
     exit(1);
   }
-
-  glslang_compile_test(device);
-
+  ResourceManager *rm = rm_init(&device);
+  hotreload(rm);
   return 1;
 
   // 4. Init Managers
-  ResourceManager *rm; // TODO, fix later
   rm_init(&device);
 
   // -------------------------------------

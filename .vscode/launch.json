@@ -7,7 +7,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/build/MiniDaxa",
             "args": [],
-            "stopAtEntry": true,
+            "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": false,

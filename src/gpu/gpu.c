@@ -1,9 +1,10 @@
 #include "gpu.h"
+#include "resmanager.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <vulkan/vulkan_core.h>
 
+#include "vector.h"
 #include "vk_mem_alloc.h"
 
 // --- Private Prototypes ---
@@ -18,6 +19,7 @@ debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
   if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
     fprintf(stderr, "[VALIDATION]: %s\n", pCallbackData->pMessage);
   }
+
   return VK_FALSE;
 }
 
@@ -185,102 +187,7 @@ bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info) {
   return true;
 }
 
-void gpu_immediate_submit(GPUDevice *dev,
-                          void (*callback)(VkCommandBuffer, void *),
-                          void *user_data) {
-  vkResetFences(dev->device, 1, &dev->imm_fence);
-  vkResetCommandBuffer(dev->imm_cmd_buffer, 0);
 
-  VkCommandBufferBeginInfo bi = {
-      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-      .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
-  vkBeginCommandBuffer(dev->imm_cmd_buffer, &bi);
-
-  callback(dev->imm_cmd_buffer, user_data);
-
-  vkEndCommandBuffer(dev->imm_cmd_buffer);
-
-  VkSubmitInfo si = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                     .commandBufferCount = 1,
-                     .pCommandBuffers = &dev->imm_cmd_buffer};
-  vkQueueSubmit(dev->graphics_queue, 1, &si, dev->imm_fence);
-  vkWaitForFences(dev->device, 1, &dev->imm_fence, VK_TRUE, UINT64_MAX);
-}
-
-// --- Swapchain Simplified ---
-bool gpu_swapchain_init(GPUDevice *dev, GPUSwapchain *sc, uint32_t w,
-                        uint32_t h) {
-  sc->format = VK_FORMAT_B8G8R8A8_SRGB; // Force for simplicity
-  sc->extent.width = w;
-  sc->extent.height = h;
-
-  VkSwapchainCreateInfoKHR ci = {
-      .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-      .surface = dev->surface,
-      .minImageCount = 3,
-      .imageFormat = sc->format,
-      .imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
-      .imageExtent = sc->extent,
-      .imageArrayLayers = 1,
-      .imageUsage =
-          VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-      .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
-      .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-      .presentMode = VK_PRESENT_MODE_FIFO_KHR,
-      .clipped = VK_TRUE};
-  if (vkCreateSwapchainKHR(dev->device, &ci, NULL, &sc->swapchain) !=
-      VK_SUCCESS)
-    return false;
-
-  // Fetch images
-  vkGetSwapchainImagesKHR(dev->device, sc->swapchain, &sc->image_count, NULL);
-  sc->images = malloc(sc->image_count * sizeof(VkImage));
-  sc->views = malloc(sc->image_count * sizeof(VkImageView));
-  vkGetSwapchainImagesKHR(dev->device, sc->swapchain, &sc->image_count,
-                          sc->images);
-
-  for (uint32_t i = 0; i < sc->image_count; i++) {
-    VkImageViewCreateInfo vi = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = sc->images[i],
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = sc->format,
-        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
-    vkCreateImageView(dev->device, &vi, NULL, &sc->views[i]);
-  }
-
-  // Sync
-  VkSemaphoreCreateInfo si = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-  VkFenceCreateInfo fi = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-                          .flags = VK_FENCE_CREATE_SIGNALED_BIT};
-  vkCreateSemaphore(dev->device, &si, NULL, &sc->acquire_sem);
-  vkCreateSemaphore(dev->device, &si, NULL, &sc->present_sem);
-  vkCreateFence(dev->device, &fi, NULL, &sc->frame_fence);
-
-  return true;
-}
-
-bool gpu_swapchain_acquire(GPUDevice *dev, GPUSwapchain *sc) {
-  vkWaitForFences(dev->device, 1, &sc->frame_fence, VK_TRUE, UINT64_MAX);
-  vkResetFences(dev->device, 1, &sc->frame_fence);
-  return vkAcquireNextImageKHR(dev->device, sc->swapchain, UINT64_MAX,
-                               sc->acquire_sem, VK_NULL_HANDLE,
-                               &sc->current_img_idx) == VK_SUCCESS;
-}
-
-void gpu_swapchain_present(GPUDevice *dev, GPUSwapchain *sc, VkQueue queue) {
-  VkPresentInfoKHR pi = {
-      .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-      .waitSemaphoreCount = 1,
-      .pWaitSemaphores =
-          &sc->present_sem, // Must match what the RenderGraph signaled
-      .swapchainCount = 1,
-      .pSwapchains = &sc->swapchain,
-      .pImageIndices = &sc->current_img_idx};
-  vkQueuePresentKHR(queue, &pi);
-}
-
-void gpu_swapchain_destroy(GPUDevice *dev, GPUSwapchain *sc) {}
 
 void gpu_destroy(GPUDevice *dev) {
   vkDeviceWaitIdle(dev->device);

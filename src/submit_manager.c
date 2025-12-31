@@ -1,27 +1,27 @@
 #include "submit_manager.h"
+#include "gpu/gpu.h"
+#include "gpu/swapchain.h"
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-// -----------------------------------------------------------------------------
-// DATA
-// -----------------------------------------------------------------------------
-
-typedef struct SubmitManager_T {
+typedef struct M_SubmitManager {
   VkDevice device;
   VkQueue queue;
   VkSemaphore timeline;
+  VkSemaphore binary_acquire;
 
   uint64_t frame_index;
   uint32_t frames_in_flight; // Hur många frames GPU får ligga efter
-} SubmitManager_T;
+} M_SubmitManager;
 
 // --- Private Prototypes ---
 
-SubmitManager submit_manager_create(VkDevice device, VkQueue queue,
-                                    uint32_t frames_in_flight) {
+M_SubmitManager *submit_manager_create(VkDevice device, VkQueue queue,
+                                       uint32_t frames_in_flight) {
 
-  SubmitManager mgr = calloc(1, sizeof(SubmitManager_T));
+  M_SubmitManager *mgr = calloc(1, sizeof(M_SubmitManager));
 
   mgr->device = device;
   mgr->queue = queue;
@@ -43,9 +43,13 @@ SubmitManager submit_manager_create(VkDevice device, VkQueue queue,
     return NULL;
   }
 
+  VkSemaphoreCreateInfo binary_info = {
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+
+  vkCreateSemaphore(device, &binary_info, NULL, &mgr->binary_acquire);
   return mgr;
 }
-void submit_manager_destroy(SubmitManager mgr) {
+void submit_manager_destroy(M_SubmitManager *mgr) {
   if (!mgr)
     return;
   vkDestroySemaphore(mgr->device, mgr->timeline, NULL);
@@ -56,26 +60,19 @@ void submit_manager_destroy(SubmitManager mgr) {
 // CPU SYNKRONISERING
 // -----------------------------------------------------------------------------
 
-void submit_begin_frame(SubmitManager mgr) {
-  // Öka frame index. Frame 1, Frame 2, osv.
-  // Detta blir vårt mål-värde för semaforen.
-  mgr->frame_index++;
+void submit_begin_frame(M_SubmitManager *mgr) {
 
-  // 1. Beräkna vilken frame som MÅSTE vara klar för att vi ska få återanvända
-  // resurser. Om vi är på frame 3 och har 2 frames in flight, måste frame 1
-  // vara klar.
+  mgr->frame_index++;
   if (mgr->frame_index <= mgr->frames_in_flight) {
     return; // Bufferten är inte full än, bara kör.
   }
 
   uint64_t wait_value = mgr->frame_index - mgr->frames_in_flight;
 
-  // 2. Kolla om GPU:n redan är klar (optimering för att slippa syscall)
   uint64_t current_val;
   vkGetSemaphoreCounterValue(mgr->device, mgr->timeline, &current_val);
 
   if (current_val < wait_value) {
-    // 3. GPU ligger efter, vänta på hosten.
     VkSemaphoreWaitInfo waitInfo = {.sType =
                                         VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
                                     .semaphoreCount = 1,
@@ -83,42 +80,86 @@ void submit_begin_frame(SubmitManager mgr) {
                                     .pValues = &wait_value};
     vkWaitSemaphores(mgr->device, &waitInfo, UINT64_MAX);
   }
+  mgr->frame_index++;
 }
 
-// -----------------------------------------------------------------------------
-// GPU SUBMISSION
-// -----------------------------------------------------------------------------
+void submit_acquire_swapchain(M_SubmitManager *mgr, GPUSwapchain *swapchain) {
 
-// is_last_in_frame: Sätt denna till true endast på sista submiten innan
-// Present.
-void submit_work(SubmitManager mgr, VkCommandBuffer cmd,
-                 bool is_last_in_frame) {
+  VkAcquireNextImageInfoKHR info = {
+      .sType = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR,
+      .swapchain = swapchain->swapchain,
+      .semaphore = mgr->binary_acquire,
+      .timeout = UINT64_MAX - 1,
+      .deviceMask = 1 << 0,
+  };
+
+  vkAcquireNextImage2KHR(mgr->device, &info, &swapchain->current_img_idx);
+}
+
+void submit_work(M_SubmitManager *mgr, GPUSwapchain *swapchain,
+                 VkCommandBuffer cmd, bool is_last_in_frame,
+                 bool is_first_submit) {
 
   VkCommandBufferSubmitInfo cmd_info = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
       .commandBuffer = cmd};
 
-  VkSemaphoreSubmitInfo signal_info = {
+  VkSemaphoreSubmitInfo wait_info = {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-      .semaphore = mgr->timeline,
-      .value = mgr->frame_index, // Vi signalerar att "Nu är frame X klar"
-      .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-      .deviceIndex = 0};
+      .semaphore = mgr->binary_acquire,
+      .stageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT};
+
+  VkSemaphoreSubmitInfo signal_info[2] = {
+      {
+          .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+          .semaphore = mgr->timeline,
+          .value = mgr->frame_index,
+          .stageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      },
+
+      {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+       .semaphore =
+           VEC_AT(&swapchain->imgs, swapchain->current_img_idx, PresentFrame)
+               ->sem_rend_done,
+       .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT}};
 
   VkSubmitInfo2 submit = {
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
       .commandBufferInfoCount = 1,
       .pCommandBufferInfos = &cmd_info,
 
-      // VIKTIGT: Vi väntar ALDRIG på något här.
-      // Eftersom det är samma kö, väntar operationerna automatiskt på varandra.
-      .waitSemaphoreInfoCount = 0,
+      // wait on aquire first submit
+      // TODO: optimize so only waits if it uses swapchain image
+      .waitSemaphoreInfoCount = is_first_submit ? 1 : 0,
+      .pWaitSemaphoreInfos = &wait_info,
 
       // Vi signalerar ENDAST om det är sista biten av framen.
-      .signalSemaphoreInfoCount = is_last_in_frame ? 1 : 0,
-      .pSignalSemaphoreInfos = is_last_in_frame ? &signal_info : NULL};
+      .signalSemaphoreInfoCount = is_last_in_frame ? 2 : 0,
+      .pSignalSemaphoreInfos = signal_info};
+
+  if (is_last_in_frame) {
+    LOG_INFO("[QueueSubmit]: Signal at %ld", signal_info[0].value);
+  }
 
   vkQueueSubmit2(mgr->queue, 1, &submit, VK_NULL_HANDLE);
+}
+
+void submit_present(M_SubmitManager *mgr, GPUSwapchain *swapchain) {
+
+  VkSemaphore *sem_rend_done =
+      &VEC_AT(&swapchain->imgs, swapchain->current_img_idx, PresentFrame)
+           ->sem_rend_done;
+
+  VkPresentInfoKHR present_info = {
+      .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+      .waitSemaphoreCount = 1,
+      .pWaitSemaphores = sem_rend_done,
+      .swapchainCount = 1,
+      .pSwapchains = &swapchain->swapchain,
+      .pImageIndices = &swapchain->current_img_idx,
+  };
+
+  vkQueuePresentKHR(mgr->queue, &present_info);
 }
 
 // --- Private Functions ---

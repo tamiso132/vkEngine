@@ -37,33 +37,34 @@ void pr_update_modifed(M_PipelineReloader *pr) {
     // Shader files are modified
     if (fg_is_modified(ctx->fg)) {
       GPUPipeline *pipeline = pm_get_pipeline(pr->pm, ctx->handle);
-      CompileResult result = {};
-      result.shader_path = pipeline->config.vs_path;
-      result.include_dir = str_get_dir(pipeline->config.vs_path);
-      result.fg = ctx->fg;
 
-      shader_compile_glsl(device->device, &result, SHADER_STAGE_VERTEX);
+      CompileResult vs_result = {};
+      vs_result.shader_path = pipeline->config.vs_path;
+      vs_result.include_dir = str_get_dir(pipeline->config.vs_path);
+      vs_result.fg = ctx->fg;
 
-      result.shader_path = pipeline->config.fs_path;
-      result.include_dir = str_get_dir(pipeline->config.fs_path);
-      result.fg = ctx->fg;
+      shader_compile_glsl(device->device, &vs_result, SHADER_STAGE_VERTEX);
 
-      shader_compile_glsl(device->device, &result, SHADER_STAGE_VERTEX);
+      CompileResult fs_result = {};
+      fs_result.shader_path = pipeline->config.fs_path;
+      fs_result.include_dir = str_get_dir(pipeline->config.fs_path);
+      fs_result.fg = ctx->fg;
+
+      shader_compile_glsl(device->device, &fs_result, SHADER_STAGE_FRAGMENT);
+      gp_set_shaders(&pipeline->config, vs_result.module, fs_result.module);
+      gp_rebuild(pr->pm, &pipeline->config, ctx->handle);
     }
   }
 }
 
-PipelineHandle pr_build_reg(M_PipelineReloader *pr, GpBuilder *b,
-                            const char *vs_path, const char *fs_path) {
+PipelineHandle pr_build_reg(M_PipelineReloader *pr, GpBuilder *b, const char *vs_path, const char *fs_path) {
   FileGroup *fg = fg_init(pr->fm);
 
   auto device = pm_get_gpu(pr->pm)->device;
 
-  CompileResult vs_result = {
-      .shader_path = vs_path, .include_dir = str_get_dir(vs_path), .fg = fg};
+  CompileResult vs_result = {.shader_path = vs_path, .include_dir = str_get_dir(vs_path), .fg = fg};
 
-  CompileResult fs_result = {
-      .shader_path = fs_path, .include_dir = str_get_dir(fs_path), .fg = fg};
+  CompileResult fs_result = {.shader_path = fs_path, .include_dir = str_get_dir(fs_path), .fg = fg};
 
   shader_compile_glsl(device, &vs_result, SHADER_STAGE_VERTEX);
   shader_compile_glsl(device, &fs_result, SHADER_STAGE_FRAGMENT);

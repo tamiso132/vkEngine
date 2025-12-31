@@ -6,8 +6,6 @@
 #include <stdint.h>
 #include <volk.h>
 
-typedef uint32_t PipelineHandle;
-
 typedef struct GpBuilder {
   // Shaders (Source paths for glsl)
   const char *name;
@@ -38,16 +36,13 @@ typedef struct GpBuilder {
 } GpBuilder;
 
 typedef struct {
-  VkPipeline pipeline;
-  VkPipelineLayout layout;
+  VkPipeline vk_handle;
   GpBuilder config;
 } GPUPipeline;
 
-typedef struct PipelineManager M_Pipeline;
 // PUBLIC FUNCTIONS
 
-PipelineHandle gp_build_with_modules(M_Pipeline *pm, GpBuilder *b,
-                                     VkShaderModule vs, VkShaderModule fs);
+void gp_rebuild(M_Pipeline *pm, GpBuilder *b, PipelineHandle handle);
 
 GPUPipeline *pm_get_pipeline(M_Pipeline *pm, PipelineHandle handle);
 
@@ -55,7 +50,11 @@ M_Pipeline *pm_init(ResourceManager *rm);
 
 GPUDevice *pm_get_gpu(M_Pipeline *pm);
 
+ResourceManager *pm_get_rm(M_Pipeline *pm);
+
 GpBuilder gp_init(ResourceManager *rm, const char *name);
+
+PipelineHandle gp_build_with_modules(M_Pipeline *pm, GpBuilder *b, VkShaderModule vs, VkShaderModule fs);
 
 void gp_set_shaders(GpBuilder *b, VkShaderModule vs, VkShaderModule fs);
 void gp_set_topology(GpBuilder *b, VkPrimitiveTopology topo);
@@ -64,11 +63,9 @@ void gp_set_depth_format(GpBuilder *b, VkFormat format);
 void gp_enable_depth(GpBuilder *b, bool write, VkCompareOp op);
 void gp_enable_blend(GpBuilder *b);
 
-void gp_set_color_formats(GpBuilder *b, const VkFormat *formats,
-                          uint32_t count);
+void gp_set_color_formats(GpBuilder *b, const VkFormat *formats, uint32_t count);
 
-void gp_set_layout(GpBuilder *b, VkDescriptorSetLayout bindless,
-                   uint32_t push_size);
+void gp_set_layout(GpBuilder *b, VkDescriptorSetLayout bindless, uint32_t push_size);
 
 PipelineHandle gp_build(M_Pipeline *pm, GpBuilder *b);
 

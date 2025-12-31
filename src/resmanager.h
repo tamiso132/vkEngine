@@ -2,11 +2,10 @@
 
 #include <stdbool.h>
 
+#include "common.h"
 #include "gpu/gpu.h"
 #include "shaders/shader_base.ini"
 #include "util.h"
-
-typedef enum { RES_TYPE_BUFFER, RES_TYPE_IMAGE, RES_TYPE_COUNT } ResType;
 
 typedef enum {
   RES_B_SAMPLED_IMAGE = BINDING_SAMPLED,
@@ -14,11 +13,6 @@ typedef enum {
   RES_B_STORAGE_BUFFER = BINDING_STORAGE_BUFFER,
   RES_B_COUNT,
 } res_b;
-
-typedef struct {
-  u32 id : 31;
-  ResType res_type : 1;
-} ResHandle;
 
 typedef enum RGImagePreset {
   RG_IMAGETYPE_TEXTURE,    // Sampled, Transfer Dst
@@ -35,7 +29,7 @@ typedef struct {
   VkFormat format;
   RGImagePreset preset;    // Use a preset to auto-fill usage
   VkImageUsageFlags usage; // OR explicitly set usage (overrides preset if != 0)
-  float scale; // Optional: Scale relative to swapchain (future proofing)
+  float scale;             // Optional: Scale relative to swapchain (future proofing)
 } RGImageInfo;
 
 typedef struct {
@@ -100,40 +94,25 @@ typedef struct {
   res_b binding;
 } RImage;
 
-typedef struct ResourceManager ResourceManager;
-
 // PUBLIC FUNCTIONS
-ResourceManager *rm_init(GPUDevice *gpu);
 
+u32 rm_get_buffer_descriptor_index(ResourceManager *rm, ResHandle buffer);
+ResourceManager *rm_init(GPUDevice *gpu);
+void rm_on_new_frame(ResourceManager *rm);
 void rm_destroy(ResourceManager *rm);
 
 ResHandle rm_create_buffer(ResourceManager *rm, RGBufferInfo *info);
-
-void rm_resize_image(ResourceManager *rm, ResHandle handle, uint32_t width,
-                     uint32_t height);
+void rm_buffer_upload(ResourceManager *rm, VkCommandBuffer cmd, ResHandle handle, void *data, u32 size);
+void rm_buffer_sync(ResourceManager *rm, VkCommandBuffer cmd, BufferBarrierInfo *info);
 
 ResHandle rm_create_image(ResourceManager *rm, RGImageInfo info);
-
-ResHandle rm_import_image(ResourceManager *rm, RGImageInfo *info, VkImage img,
-                          VkImageView view, VkImageLayout cur_layout);
-
-void rm_on_new_frame(ResourceManager *rm);
-
-void rm_buffer_upload(ResourceManager *rm, VkCommandBuffer cmd,
-                      ResHandle handle, void *data, u32 size);
-
-void rm_buffer_sync(ResourceManager *rm, VkCommandBuffer cmd,
-                    BufferBarrierInfo *info);
-
-void rm_image_sync(ResourceManager *rm, VkCommandBuffer cmd,
-                   ImageBarrierInfo *info);
+void rm_resize_image(ResourceManager *rm, ResHandle handle, uint32_t width, uint32_t height);
+ResHandle rm_import_image(ResourceManager *rm, RGImageInfo *info, VkImage img, VkImageView view);
+void rm_image_sync(ResourceManager *rm, VkCommandBuffer cmd, ImageBarrierInfo *info);
 
 GPUDevice *rm_get_gpu(ResourceManager *rm);
-
 RBuffer *rm_get_buffer(ResourceManager *rm, ResHandle handle);
-
 RImage *rm_get_image(ResourceManager *rm, ResHandle handle);
-
 VkDescriptorSetLayout rm_get_bindless_layout(ResourceManager *rm);
-
 VkDescriptorSet rm_get_bindless_set(ResourceManager *rm);
+VkPipelineLayout rm_get_pipeline_layout(ResourceManager *rm);

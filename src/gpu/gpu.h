@@ -1,6 +1,8 @@
 #pragma once
 #define VK_NO_PROTOTYPES
 
+#include "vector.h"
+
 #include "util.h"
 #include "vk_mem_alloc.h"
 #include "volk.h"
@@ -51,43 +53,8 @@ struct GPUDevice {
   VkFence imm_fence;
 };
 
-typedef struct GPUSwapchain {
-  VkSwapchainKHR swapchain;
-  VkFormat format;
-  VkExtent2D extent;
-  VkImage *images;    // array
-  VkImageView *views; // array
-  uint32_t image_count;
-
-  // Sync per frame
-  VkSemaphore acquire_sem;
-  VkSemaphore present_sem;
-  VkFence frame_fence;
-  uint32_t current_img_idx;
-} GPUSwapchain;
-
 // PUBLIC FUNCTIONS
 
-void gpu_immediate_submit(GPUDevice *dev,
-                          void (*callback)(VkCommandBuffer, void *),
-                          void *user_data);
-
-bool gpu_swapchain_init(GPUDevice *dev, GPUSwapchain *sc, uint32_t w,
-                        uint32_t h);
-
 bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info);
-
-void gpu_immediate_submit(GPUDevice *dev,
-                          void (*callback)(VkCommandBuffer, void *),
-                          void *user_data);
-
-bool gpu_swapchain_init(GPUDevice *dev, GPUSwapchain *sc, uint32_t w,
-                        uint32_t h);
-
-bool gpu_swapchain_acquire(GPUDevice *dev, GPUSwapchain *sc);
-
-void gpu_swapchain_present(GPUDevice *dev, GPUSwapchain *sc, VkQueue queue);
-
-void gpu_swapchain_destroy(GPUDevice *dev, GPUSwapchain *sc);
 
 void gpu_destroy(GPUDevice *dev);

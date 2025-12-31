@@ -53,7 +53,11 @@ add_executable(${PROJECT_NAME}
 
 add_compile_definitions(PROJECT_ROOT="${CMAKE_SOURCE_DIR}/")
 
-target_include_directories(${PROJECT_NAME} PRIVATE src shaders ${INCLUDE_DIRECTORIES_ENGINE} ${CMAKE_CURRENT_SOURCE_DIR} thirdparty/hashmap.c)
+target_include_directories(${PROJECT_NAME} PRIVATE 
+shaders
+${INCLUDE_DIRECTORIES_ENGINE}
+${CMAKE_CURRENT_SOURCE_DIR}
+thirdparty/hashmap.c)
 
 
 

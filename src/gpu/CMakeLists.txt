@@ -4,4 +4,5 @@ add_sources(
     pipeline.c
     shader_compiler.c
     pipeline_hotreload.c
+    swapchain.c
 )

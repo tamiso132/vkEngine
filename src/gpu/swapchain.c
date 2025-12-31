@@ -65,8 +65,8 @@ void swapchain_resize(GPUDevice *dev, ResourceManager *rm, GPUSwapchain *sc, VkE
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev->physical_device, dev->surface, &caps);
 
   VkSwapchainKHR old_sc = sc->swapchain;
-  sc->extent.width = extent->width;
-  sc->extent.height = extent->height;
+  sc->extent = caps.currentExtent;
+  *extent = caps.currentExtent;
 
   // Create new using old as reference
   if (!create_vulkan_swapchain(dev, sc, old_sc)) {
@@ -107,7 +107,7 @@ void swapchain_resize(GPUDevice *dev, ResourceManager *rm, GPUSwapchain *sc, VkE
                               .height = sc->extent.height,
                               .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT};
 
-    rm_import_existing_image(rm, frame->handle, swap_images[i], view, extent, false);
+    rm_import_existing_image(rm, frame->handle, swap_images[i], view, *extent, false);
   }
   sc->current_img_idx = 0;
 }

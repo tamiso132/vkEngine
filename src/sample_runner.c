@@ -29,7 +29,7 @@ void run_sample(Sample *sample, Managers *mg, GPUDevice *device, GLFWwindow *win
       vkDeviceWaitIdle(device->device);
 
       VkExtent2D new_extent = {.width = width, .height = height};
-      swapchain_resize(device, mg->rm, swapchain, new_extent);
+      swapchain_resize(device, mg->rm, swapchain, &new_extent);
 
       // Låt samplet veta att vi har ändrat storlek (fixa depth/render targets)
       if (sample->on_resize) {
@@ -47,14 +47,6 @@ void run_sample(Sample *sample, Managers *mg, GPUDevice *device, GLFWwindow *win
     submit_acquire_swapchain(mg->sm, swapchain);
 
     cmd_begin(device->device, cmd);
-
-    // Setup Viewport & Scissor (Dynamic State) automatiskt
-    VkViewport vp = {0, 0, (float)width, (float)height, 0.0f, 1.0f};
-    vkCmdSetViewport(cmd.buffer, 0, 1, &vp);
-    VkRect2D sc = {{0, 0}, {width, height}};
-    vkCmdSetScissor(cmd.buffer, 0, 1, &sc);
-
-    // Globala bindningar
     cmd_bind_bindless(cmd, mg->rm, swapchain->extent);
 
     // Transition: Swapchain -> Render Target
@@ -67,25 +59,10 @@ void run_sample(Sample *sample, Managers *mg, GPUDevice *device, GLFWwindow *win
                                       .dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
     rm_image_sync(mg->rm, cmd.buffer, &color_barrier);
 
-    // Begin Rendering (Dynamic Rendering)
-    RenderingBeginInfo begin_info = {
-        .colors = &swap_img,
-        .colors_count = 1,
-        .w = swapchain->extent.width,
-        .h = swapchain->extent.height,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .clear_color = {0.05f, 0.05f, 0.05f, 1.0f} // Snygg mörkgrå
-    };
-    cmd_begin_rendering(cmd, mg->rm, &begin_info);
-
-    // --- KÖR SAMPLE LOGIK ---
     if (sample->render) {
       sample->render(sample, &ctx);
     }
     // ------------------------
-
-    cmd_end_rendering(cmd);
 
     // Transition: Render Target -> Present
     ImageBarrierInfo present_barrier = {.img_handle = swap_img,

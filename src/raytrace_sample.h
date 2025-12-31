@@ -1,4 +1,4 @@
 #pragma once
+
 #include "sample_interface.h"
 // PUBLIC FUNCTIONS
-Sample create_triangle_sample();

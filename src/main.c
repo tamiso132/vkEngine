@@ -17,10 +17,13 @@
 int main() {
   // 1. Init Windowp
 
+  u32 width = 800;
+  u32 height = 600;
+
   if (!glfwInit())
     return -1;
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  GLFWwindow *window = glfwCreateWindow(800, 600, "RenderGraph Demo", NULL, NULL);
+  GLFWwindow *window = glfwCreateWindow(width, height, "RenderGraph Demo", NULL, NULL);
 
   // 2. Init GPU
   GPUDevice device;
@@ -40,7 +43,7 @@ int main() {
   init_managers(&mg, &device);
 
   GPUSwapchain swapchain;
-  swapchain_init(&device, mg.rm, &swapchain, 800, 600);
+  swapchain_init(&device, mg.rm, &swapchain, &width, &height);
   Sample sample = create_triangle_sample();
   run_sample(&sample, &mg, &device, window, &swapchain);
 

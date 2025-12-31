@@ -1,3 +1,4 @@
+#include "common.h"
 #include "gpu/gpu.h"
 #include "gpu/swapchain.h"
 #include "sample_interface.h"
@@ -49,6 +50,20 @@ void tri_init(Sample *self, SampleContext *ctx) {
 }
 
 void tri_render(Sample *self, SampleContext *ctx) {
+
+  // Begin Rendering (Dynamic Rendering)
+  ResHandle img = swapchain_get_image(ctx->swapchain);
+  RenderingBeginInfo begin_info = {
+      .colors = &img,
+      .colors_count = 1,
+      .w = ctx->swapchain->extent.width,
+      .h = ctx->swapchain->extent.height,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .clear_color = {0.05f, 0.05f, 0.05f} // Snygg mörkgrå
+  };
+  cmd_begin_rendering(ctx->cmd, ctx->mg->rm, &begin_info);
+
   TriangleData *data = (TriangleData *)self->user_data;
 
   PushTriangle push = {.vertex_id = rm_get_buffer_descriptor_index(ctx->mg->rm, data->vbo)};
@@ -57,6 +72,8 @@ void tri_render(Sample *self, SampleContext *ctx) {
 
   cmd_bind_pipeline(ctx->cmd, ctx->mg->pm, &bind);
   vkCmdDraw(ctx->cmd.buffer, 3, 1, 0, 0);
+
+  cmd_end_rendering(ctx->cmd);
 }
 
 void tri_resize(Sample *self, SampleContext *ctx) {}

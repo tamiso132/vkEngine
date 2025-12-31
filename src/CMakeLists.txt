@@ -11,6 +11,8 @@ add_sources(
     vector.c
     util.c
     submit_manager.c
+    sample_runner.c
+    triangle_sample.c
 )
 
 include_this()

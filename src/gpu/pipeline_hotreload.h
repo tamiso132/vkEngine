@@ -1,13 +1,12 @@
 #pragma once
 #include "filewatch.h"
 #include "pipeline.h"
-// PUBLIC FUNCTIONS
+
 typedef struct M_PipelineReloader M_PipelineReloader;
 
+// PUBLIC FUNCTIONS
 M_PipelineReloader *pr_init(M_Pipeline *pm, FileManager *fm);
-
-PipelineHandle pr_build_reg(M_PipelineReloader *pr, GpBuilder *b,
-                            const char *vs_path, const char *fs_path);
-
 void pr_update_modifed(M_PipelineReloader *pr);
-void gp_register_hotreload(M_Pipeline *pm);
+
+PipelineHandle pr_build_reg_cs(M_PipelineReloader *pr, CpConfig *b, const char *cs_path);
+PipelineHandle pr_build_reg(M_PipelineReloader *pr, GpConfig *b, const char *vs_path, const char *fs_path);

@@ -106,6 +106,8 @@ void rm_buffer_upload(ResourceManager *rm, VkCommandBuffer cmd, ResHandle handle
 void rm_buffer_sync(ResourceManager *rm, VkCommandBuffer cmd, BufferBarrierInfo *info);
 
 ResHandle rm_create_image(ResourceManager *rm, RGImageInfo info);
+void rm_import_existing_image(ResourceManager *rm, ResHandle handle, VkImage raw_img, VkImageView view,
+                              VkExtent2D new_extent, bool delete_img);
 void rm_resize_image(ResourceManager *rm, ResHandle handle, uint32_t width, uint32_t height);
 ResHandle rm_import_image(ResourceManager *rm, RGImageInfo *info, VkImage img, VkImageView view);
 void rm_image_sync(ResourceManager *rm, VkCommandBuffer cmd, ImageBarrierInfo *info);

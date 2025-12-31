@@ -138,7 +138,7 @@ void submit_work(M_SubmitManager *mgr, GPUSwapchain *swapchain,
       .pSignalSemaphoreInfos = signal_info};
 
   if (is_last_in_frame) {
-    LOG_INFO("[QueueSubmit]: Signal at %ld", signal_info[0].value);
+   // LOG_INFO("[QueueSubmit]: Signal at %ld", signal_info[0].value);
   }
 
   vkQueueSubmit2(mgr->queue, 1, &submit, VK_NULL_HANDLE);

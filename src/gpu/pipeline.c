@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include <glslang/Include/glslang_c_interface.h>
+#include <vulkan/vulkan_core.h>
 
 typedef struct M_Pipeline {
 
@@ -17,8 +18,9 @@ typedef struct M_Pipeline {
 } M_Pipeline;
 
 // --- Private Prototypes ---
+static VkPipeline _create_cs_pipeline(M_Pipeline *pm, VkDevice device, VkShaderModule cs_shader);
 
-static VkPipeline _build_internal(M_Pipeline *pm, GpBuilder *b);
+static VkPipeline _build_internal(M_Pipeline *pm, GpConfig *b);
 
 M_Pipeline *pm_init(ResourceManager *rm) {
   M_Pipeline *pm = calloc(sizeof(M_Pipeline), 1);
@@ -34,8 +36,8 @@ GPUPipeline *pm_get_pipeline(M_Pipeline *pm, PipelineHandle handle) {
 
 ResourceManager *pm_get_rm(M_Pipeline *pm) { return pm->res; }
 
-GpBuilder gp_init(ResourceManager *rm, const char *name) {
-  GpBuilder b = {0};
+GpConfig gp_init(ResourceManager *rm, const char *name) {
+  GpConfig b = {0};
   b.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
   b.cull_mode = VK_CULL_MODE_NONE;
   b.front_face = VK_FRONT_FACE_CLOCKWISE;
@@ -47,50 +49,72 @@ GpBuilder gp_init(ResourceManager *rm, const char *name) {
 
 GPUDevice *pm_get_gpu(M_Pipeline *pm) { return rm_get_gpu(pm->res); }
 
-void gp_set_shaders(GpBuilder *b, VkShaderModule vs, VkShaderModule fs) {
+void gp_set_shaders(GpConfig *b, VkShaderModule vs, VkShaderModule fs) {
   b->vs = vs;
   b->fs = fs;
 }
 
-void gp_set_topology(GpBuilder *b, VkPrimitiveTopology topo) { b->topology = topo; }
-void gp_set_cull(GpBuilder *b, VkCullModeFlags mode, VkFrontFace front) {
+void gp_set_topology(GpConfig *b, VkPrimitiveTopology topo) { b->topology = topo; }
+void gp_set_cull(GpConfig *b, VkCullModeFlags mode, VkFrontFace front) {
   b->cull_mode = mode;
   b->front_face = front;
 }
 
-void gp_set_color_formats(GpBuilder *b, const VkFormat *formats, uint32_t count) {
+void gp_set_color_formats(GpConfig *b, const VkFormat *formats, uint32_t count) {
   if (count > 4)
     count = 4;
   b->color_count = count;
   memcpy(b->color_formats, formats, count * sizeof(VkFormat));
 }
 
-void gp_set_depth_format(GpBuilder *b, VkFormat format) { b->depth_format = format; }
+void gp_set_depth_format(GpConfig *b, VkFormat format) { b->depth_format = format; }
 
-void gp_enable_depth(GpBuilder *b, bool write, VkCompareOp op) {
+void gp_enable_depth(GpConfig *b, bool write, VkCompareOp op) {
   b->depth_test = true;
   b->depth_write = write;
   b->depth_op = op;
 }
 
-void gp_enable_blend(GpBuilder *b) { b->blend_enable = true; }
+void gp_enable_blend(GpConfig *b) { b->blend_enable = true; }
 
-void gp_set_layout(GpBuilder *b, VkDescriptorSetLayout bindless, uint32_t push_size) {}
+void gp_set_layout(GpConfig *b, VkDescriptorSetLayout bindless, uint32_t push_size) {}
 
-PipelineHandle gp_build(M_Pipeline *pm, GpBuilder *b) {
+PipelineHandle gp_build(M_Pipeline *pm, GpConfig *b) {
   VkPipeline pipeline = _build_internal(pm, b);
-  GPUPipeline p = {.vk_handle = pipeline, .config = *b};
+  GPUPipeline p = {.vk_handle = pipeline, .gp_config = *b, .type = PIPELINE_TYPE_GRAPHIC};
+
   return vec_push(&pm->pipelines, &p);
 }
 
-void gp_rebuild(M_Pipeline *pm, GpBuilder *b, PipelineHandle handle) {
+void gp_rebuild(M_Pipeline *pm, GpConfig *b, PipelineHandle handle) {
   GPUPipeline *p = VEC_AT(&pm->pipelines, handle, GPUPipeline);
 
   VkPipeline pipeline = _build_internal(pm, b);
   vkDestroyPipeline(rm_get_gpu(pm->res)->device, p->vk_handle, NULL);
 
   p->vk_handle = pipeline;
-  p->config = *b;
+  p->gp_config = *b;
+}
+
+void cp_set_shader_path(CpConfig *config, const char *path) { config->cs_path = path; }
+void cp_set_shader(CpConfig *config, VkShaderModule module) { config->module = module; }
+
+PipelineHandle cp_build(M_Pipeline *pm, CpConfig *config) {
+
+  VkPipeline pipeline = _create_cs_pipeline(pm, rm_get_gpu(pm->res)->device, config->module);
+  GPUPipeline p = {.vk_handle = pipeline, .cp_config = *config, .type = PIPELINE_TYPE_COMPUTE};
+  return vec_push(&pm->pipelines, &p);
+}
+
+void cp_rebuild(M_Pipeline *pm, CpConfig *config, PipelineHandle handle) {
+
+  VkDevice device = rm_get_gpu(pm->res)->device;
+
+  VkPipeline pipeline = _create_cs_pipeline(pm, device, config->module);
+
+  GPUPipeline *gpu_pipeline = VEC_AT(&pm->pipelines, handle, GPUPipeline);
+  vkDestroyPipeline(device, gpu_pipeline->vk_handle, NULL);
+  gpu_pipeline->vk_handle = pipeline;
 }
 
 void gp_destroy(VkDevice device, GPUPipeline *p) {
@@ -100,7 +124,24 @@ void gp_destroy(VkDevice device, GPUPipeline *p) {
 
 // --- Private Functions ---
 
-static VkPipeline _build_internal(M_Pipeline *pm, GpBuilder *b) {
+static VkPipeline _create_cs_pipeline(M_Pipeline *pm, VkDevice device, VkShaderModule cs_shader) {
+  VkPipelineShaderStageCreateInfo stage_info = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+      .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+      .module = cs_shader,
+      .pName = "main" // The entry point function name in GLSL
+  };
+
+  VkComputePipelineCreateInfo pipeline_info = {.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+                                               .stage = stage_info,
+                                               .layout = rm_get_pipeline_layout(pm->res)};
+
+  VkPipeline pipeline = {};
+  vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &pipeline);
+  return pipeline;
+}
+
+static VkPipeline _build_internal(M_Pipeline *pm, GpConfig *b) {
   VkDevice device = rm_get_gpu(pm->res)->device;
 
   VkPipelineShaderStageCreateInfo stages[2];

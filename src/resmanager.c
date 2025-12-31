@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vulkan/vulkan_core.h>
 
 // --- Constants ---
 #define RM_MAX_RESOURCES 1024
@@ -117,6 +118,20 @@ ResHandle rm_create_buffer(ResourceManager *rm, RGBufferInfo *info) {
 // I resmanager.c
 
 void rm_resize_image(ResourceManager *rm, ResHandle handle, uint32_t width, uint32_t height) {}
+
+void rm_import_existing_image(ResourceManager *rm, ResHandle handle, VkImage raw_img, VkImageView view,
+                              VkExtent2D new_extent, bool delete_img) {
+  RImage *img = rm_get_image(rm, handle);
+
+  vkDestroyImageView(rm->gpu->device, img->view, NULL);
+
+  if (delete_img)
+    vmaDestroyImage(rm->gpu->allocator, img->handle, img->alloc);
+
+  img->extent = new_extent;
+  img->handle = raw_img;
+  img->view = view;
+}
 
 ResHandle rm_create_image(ResourceManager *rm, RGImageInfo info) {
   RImage image;

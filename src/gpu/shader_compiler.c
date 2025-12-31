@@ -17,9 +17,19 @@ static glsl_include_result_t *on_system_func_include(void *ctx, const char *head
 static int _on_free_include_result(void *ctx, glsl_include_result_t *result);
 static glslang_resource_t _get_default_resources();
 
-void shader_compile_glsl(VkDevice device, CompileResult *result, ShaderStage stage) {
+ShaderError shader_compile_glsl(VkDevice device, CompileResult *result, ShaderStage stage) {
+  ShaderError status = SHADER_SUCCESS;
+  glslang_shader_t *shader = NULL;
+  glslang_program_t *program = NULL;
+
+  // 1. Load File
   FileHandle fhandle = fg_load_file(result->fg, result->shader_path);
   const char *source = fg_get_file(result->fg, &fhandle);
+
+  if (!source) {
+    return SHADER_ERR_FILE_IO;
+  }
+
   vec_init_with_capacity(&result->_temp, 10, sizeof(glsl_include_result_t), NULL);
 
   glslang_stage_t glsl_stage = (stage == SHADER_STAGE_VERTEX) ? GLSLANG_STAGE_VERTEX : GLSLANG_STAGE_FRAGMENT;
@@ -45,31 +55,48 @@ void shader_compile_glsl(VkDevice device, CompileResult *result, ShaderStage sta
       .callbacks_ctx = (void *)result,
   };
 
-  glslang_shader_t *shader = glslang_shader_create(&input);
+  // 2. Compile (Preprocess & Parse)
+  shader = glslang_shader_create(&input);
+
   if (!glslang_shader_preprocess(shader, &input) || !glslang_shader_parse(shader, &input)) {
-
-    LOG_ERROR("[Shader] Compile Error in %s:\n", glslang_shader_get_info_log(shader));
-
-    glslang_shader_delete(shader);
+    LOG_ERROR("[Shader] Compile Error in %s:\n%s", result->shader_path, glslang_shader_get_info_log(shader));
+    status = SHADER_ERR_COMPILE;
+    goto cleanup;
   }
 
-  glslang_program_t *program = glslang_program_create();
+  // 3. Link
+  program = glslang_program_create();
   glslang_program_add_shader(program, shader);
-  glslang_program_link(program, GLSLANG_MSG_SPV_RULES_BIT | GLSLANG_MSG_VULKAN_RULES_BIT);
+
+  if (!glslang_program_link(program, GLSLANG_MSG_SPV_RULES_BIT | GLSLANG_MSG_VULKAN_RULES_BIT)) {
+    LOG_ERROR("[Shader] Link Error in %s:\n%s", result->shader_path, glslang_program_get_info_log(program));
+    status = SHADER_ERR_LINK;
+    goto cleanup;
+  }
+
+  // 4. Generate SPIR-V
   glslang_program_SPIRV_generate(program, glsl_stage);
 
   VkShaderModuleCreateInfo info = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
                                    .codeSize = glslang_program_SPIRV_get_size(program) * sizeof(unsigned int),
                                    .pCode = glslang_program_SPIRV_get_ptr(program)};
 
-  VkShaderModule module;
-  if (vkCreateShaderModule(device, &info, NULL, &result->module) != VK_SUCCESS)
+  // 5. Create Vulkan Module
+  if (vkCreateShaderModule(device, &info, NULL, &result->module) != VK_SUCCESS) {
     result->module = VK_NULL_HANDLE;
+    status = SHADER_ERR_VULKAN;
+    goto cleanup;
+  }
 
-  glslang_program_delete(program);
-  glslang_shader_delete(shader);
-
+cleanup:
+  // Resource cleanup runs on both success and failure
+  if (program)
+    glslang_program_delete(program);
+  if (shader)
+    glslang_shader_delete(shader);
   vec_free(&result->_temp);
+
+  return status;
 }
 
 // --- Private Functions ---

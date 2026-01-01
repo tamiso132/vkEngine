@@ -1,12 +1,15 @@
+#ifdef __STDC__
+#pragma once
+#endif
+
 #include "shader_base.glsl"
 
-typedef struct ALIGN ( 16 ) PushTriangle {
-        u32 vertex_id;
-} PushTriangle;
+SHARED_STRUCT(PushTriangle, 16){
+u32 vertex_id;
+} ;
 
-typedef struct ALIGN ( 16 ) PushComputeTriangle {
-        u32 vbo_idx;
-        vec2 extent;
-} PushComputeTriangle;
-
-void testtest() {}
+SHARED_STRUCT(PushComputeTriangle, 16){
+vec4 data;
+vec2 extent;
+u32 img_id;
+} ;

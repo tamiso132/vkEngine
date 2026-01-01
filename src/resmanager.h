@@ -7,6 +7,8 @@
 #include "shaders/shader_base.glsl"
 #include "util.h"
 
+#define SHADER_STAGES VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT
+
 // SYNCRONIZATION
 typedef enum {
   ACCESS_READ = 1 << 0,
@@ -107,7 +109,6 @@ typedef struct {
   bool is_imported;
   VkImageUsageFlags usage;
   VkExtent2D extent;
-  VkImageLayout layout;
   VkFormat format;
 
   VkImage handle;
@@ -120,6 +121,10 @@ typedef struct {
 } RImage;
 
 // PUBLIC FUNCTIONS
+
+u32 rm_get_image_index(ResourceManager *rm, ResHandle image);
+
+u32 rm_get_buffer_image_index(ResourceManager *rm, ResHandle buffer);
 
 u32 rm_get_buffer_descriptor_index(ResourceManager *rm, ResHandle buffer);
 ResourceManager *rm_init(GPUDevice *gpu);

@@ -49,7 +49,9 @@ typedef struct ResourceManager {
 } ResourceManager;
 
 // --- Private Prototypes ---
+static void _create_image_full(ResourceManager *rm, RImage *image);
 static void _retire_buffer(ResourceManager *rm, ResHandle handle);
+static void _reset_image_sync(RImage *image);
 static void _retire_image(ResourceManager *rm, ResHandle handle);
 static void _bindless_add(ResourceManager *rm, ResHandle handle, VkDescriptorImageInfo *imageInfo,
                           VkDescriptorBufferInfo *bufferInfo);
@@ -65,6 +67,7 @@ ResourceManager *rm_init(GPUDevice *gpu) {
   ResourceManager *rm = calloc(sizeof(ResourceManager), 1);
   vec_init(&rm->resources[RES_TYPE_IMAGE], sizeof(RImage), NULL);
   vec_init(&rm->resources[RES_TYPE_BUFFER], sizeof(RBuffer), NULL);
+  vec_init(&rm->retired_res, sizeof(RetiredRes), NULL);
   rm->gpu = gpu;
   _init_bindless(rm);
   return rm;
@@ -116,14 +119,20 @@ ResHandle rm_create_buffer(ResourceManager *rm, RGBufferInfo *info) {
 }
 // I resmanager.c
 
-void rm_resize_image(ResourceManager *rm, ResHandle handle, uint32_t width, uint32_t height) {}
+void rm_resize_image(ResourceManager *rm, ResHandle handle, uint32_t width, uint32_t height) {
+  _retire_image(rm, handle);
+
+  RImage *image = rm_get_image(rm, handle);
+  image->extent.width = width;
+  image->extent.height = height;
+
+  _create_image_full(rm, image);
+}
 
 void rm_import_existing_image(ResourceManager *rm, ResHandle handle, VkImage raw_img, VkImageView view,
                               VkExtent2D new_extent, bool delete_img) {
   RImage *img = rm_get_image(rm, handle);
-  img->sync = (SyncDef){
-      .access = VK_ACCESS_2_NONE, .layout = VK_IMAGE_LAYOUT_UNDEFINED, .stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT};
-
+  _reset_image_sync(img);
   vkDestroyImageView(rm->gpu->device, img->view, NULL);
 
   if (delete_img)
@@ -135,54 +144,30 @@ void rm_import_existing_image(ResourceManager *rm, ResHandle handle, VkImage raw
 }
 
 ResHandle rm_create_image(ResourceManager *rm, RGImageInfo info) {
-  RImage image = {.sync = {.access = VK_ACCESS_2_NONE,
-                           .stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
-                           .layout = VK_IMAGE_LAYOUT_UNDEFINED}};
+  RImage image = {};
+  _reset_image_sync(&image);
   assert(info.name);
-  strncpy(image.name, info.name, strlen(info.name));
+  image.name = strdup(info.name);
 
   VkImageUsageFlags usage = info.usage;
 
-  VkImageCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-                          .imageType = VK_IMAGE_TYPE_2D,
-                          .extent = {.width = info.width, .height = info.height, .depth = 1},
-                          .mipLevels = 1,
-                          .arrayLayers = 1,
-                          .format = info.format,
-                          .tiling = VK_IMAGE_TILING_OPTIMAL,
-                          .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                          .usage = info.usage,
-                          .samples = VK_SAMPLE_COUNT_1_BIT};
-
-  VmaAllocationCreateInfo ai = {.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
-
-  vmaCreateImage(rm->gpu->allocator, &ci, &ai, &image.handle, &image.alloc, NULL);
-
-  image.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  image.sync.layout = VK_IMAGE_LAYOUT_UNDEFINED;
   image.extent = (VkExtent2D){.width = info.width, .height = info.height};
-  image.usage = info.usage;
+  image.usage = info.usage | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
   image.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; // TODO: fix this
-  VkImageViewCreateInfo viewInfo = {
-      .image = image.handle,
-      .viewType = VK_IMAGE_VIEW_TYPE_2D,
-      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-      .components = _vk_component_mapping(),
-      .format = image.format,
-      .subresourceRange =
-          (VkImageSubresourceRange){
-              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-              .layerCount = 1,
-              .levelCount = 1,
-          },
-  };
+  image.format = info.format;
+
+  _create_image_full(rm, &image);
 
   bool is_sampled = (usage & VK_IMAGE_USAGE_SAMPLED_BIT);
   bool is_storage = (usage & VK_IMAGE_USAGE_STORAGE_BIT);
 
   if (is_sampled) {
     image.binding = RES_B_SAMPLED_IMAGE;
+    image.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
   } else {
     image.binding = RES_B_STORAGE_IMAGE;
+    image.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
   }
 
   uint32_t id = vec_len(&rm->resources[RES_TYPE_IMAGE]);
@@ -204,11 +189,10 @@ ResHandle rm_import_image(ResourceManager *rm, RGImageInfo *info, VkImage img, V
       .name = strdup(info->name),
       .view = view,
       .handle = img,
-      .layout = VK_IMAGE_LAYOUT_UNDEFINED,
       .extent = (VkExtent2D){.width = info->width, .height = info->height},
       .usage = info->usage,
   };
-  image.name = strdup(info->name);
+  _reset_image_sync(&image);
 
   uint32_t id = vec_push(&rm->resources[RES_TYPE_IMAGE], &image);
   ResHandle resHandle = {.id = id, .res_type = RES_TYPE_IMAGE};
@@ -261,11 +245,46 @@ u32 rm_get_buffer_descriptor_index(ResourceManager *rm, ResHandle buffer) {
   return rm_get_buffer(rm, buffer)->bindlessIndex;
 }
 
+u32 rm_get_image_index(ResourceManager *rm, ResHandle image) { return rm_get_image(rm, image)->bindlessIndex; }
+
 VkDescriptorSetLayout rm_get_bindless_layout(ResourceManager *rm) { return rm->bindless_layout; }
 
 VkDescriptorSet rm_get_bindless_set(ResourceManager *rm) { return rm->bindless_set; }
 
 // --- Private Functions ---
+
+static void _create_image_full(ResourceManager *rm, RImage *image) {
+
+  _reset_image_sync(image);
+  VkImageCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                          .imageType = VK_IMAGE_TYPE_2D,
+                          .extent = {.width = image->extent.width, .height = image->extent.height, .depth = 1},
+                          .mipLevels = 1,
+                          .arrayLayers = 1,
+                          .format = image->format,
+                          .tiling = VK_IMAGE_TILING_OPTIMAL,
+                          .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                          .usage = image->usage,
+                          .samples = VK_SAMPLE_COUNT_1_BIT};
+
+  VmaAllocationCreateInfo ai = {.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+
+  vmaCreateImage(rm->gpu->allocator, &ci, &ai, &image->handle, &image->alloc, NULL);
+  VkImageViewCreateInfo viewInfo = {
+      .image = image->handle,
+      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .components = _vk_component_mapping(),
+      .format = image->format,
+      .subresourceRange =
+          (VkImageSubresourceRange){
+              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+              .layerCount = 1,
+              .levelCount = 1,
+          },
+  };
+  vkCreateImageView(rm->gpu->device, &viewInfo, NULL, &image->view);
+}
 
 static void _retire_buffer(ResourceManager *rm, ResHandle handle) {
 
@@ -275,6 +294,11 @@ static void _retire_buffer(ResourceManager *rm, ResHandle handle) {
   rb.buffer.handle = buffer->handle;
 
   vec_push(&rm->retired_res, &rb);
+}
+
+static void _reset_image_sync(RImage *image) {
+  image->sync = (SyncDef){
+      .layout = VK_IMAGE_LAYOUT_UNDEFINED, .access = VK_ACCESS_2_NONE, .stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT};
 }
 
 static void _retire_image(ResourceManager *rm, ResHandle handle) {
@@ -318,6 +342,7 @@ static void _bindless_update(ResourceManager *rm, ResHandle handle, VkDescriptor
 
   if (handle.res_type == RES_TYPE_BUFFER) {
     RBuffer *buffer = (RBuffer *)res;
+
     write.dstBinding = RES_B_STORAGE_BUFFER;
     write.dstArrayElement = buffer->bindlessIndex;
     write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -326,8 +351,10 @@ static void _bindless_update(ResourceManager *rm, ResHandle handle, VkDescriptor
   else {
     RImage *image = (RImage *)res;
 
+    write.descriptorType = image->type;
     write.dstBinding = image->binding;
     write.dstArrayElement = image->bindlessIndex;
+    imageInfo->imageLayout = VK_IMAGE_LAYOUT_GENERAL; // TODO, fix later
   }
 
   vkUpdateDescriptorSets(rm->gpu->device, 1, &write, 0, NULL);
@@ -378,7 +405,7 @@ static void _init_bindless(ResourceManager *rm) {
                                     .pSetLayouts = &rm->bindless_layout};
   vkAllocateDescriptorSets(rm->gpu->device, &ai, &rm->bindless_set);
 
-  VkPushConstantRange push = {.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS, .size = 128};
+  VkPushConstantRange push = {.stageFlags = SHADER_STAGES, .size = 128};
 
   VkDescriptorSetLayout layout = rm->bindless_layout;
   VkPipelineLayoutCreateInfo pl = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,

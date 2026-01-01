@@ -5,15 +5,18 @@ add_subdirectory(gpu)
 
 add_sources(
     resmanager.c
-    rendergraph.c
+    submit_manager.c
     filewatch.c
+    rendergraph.c
+    
+    command.c
+    sample_runner.c
     res_async.c
     vector.c
     util.c
-    submit_manager.c
-    sample_runner.c
+
     triangle_sample.c
-    command.c
+    raytrace_sample.c
 )
 
 include_this()

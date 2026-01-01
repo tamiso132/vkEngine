@@ -33,6 +33,8 @@ ShaderError shader_compile_glsl(VkDevice device, CompileResult *result, ShaderSt
   vec_init_with_capacity(&result->_temp, 10, sizeof(glsl_include_result_t), NULL);
 
   glslang_stage_t glsl_stage = (stage == SHADER_STAGE_VERTEX) ? GLSLANG_STAGE_VERTEX : GLSLANG_STAGE_FRAGMENT;
+  if (stage == SHADER_STAGE_COMPUTE)
+    glsl_stage = GLSLANG_STAGE_COMPUTE;
 
   const glslang_resource_t res = _get_default_resources();
 
@@ -58,7 +60,13 @@ ShaderError shader_compile_glsl(VkDevice device, CompileResult *result, ShaderSt
   // 2. Compile (Preprocess & Parse)
   shader = glslang_shader_create(&input);
 
-  if (!glslang_shader_preprocess(shader, &input) || !glslang_shader_parse(shader, &input)) {
+  if (!glslang_shader_preprocess(shader, &input)) {
+    LOG_ERROR("[Shader] Compile Error in %s:\n%s", result->shader_path, glslang_shader_get_info_log(shader));
+    status = SHADER_ERR_COMPILE;
+    goto cleanup;
+  }
+
+  if (!glslang_shader_parse(shader, &input)) {
     LOG_ERROR("[Shader] Compile Error in %s:\n%s", result->shader_path, glslang_shader_get_info_log(shader));
     status = SHADER_ERR_COMPILE;
     goto cleanup;
@@ -126,10 +134,8 @@ static glsl_include_result_t *on_system_func_include(void *ctx, const char *head
                                                      size_t include_depth) {
   glsl_include_result_t d;
   d.header_name = header_name;
-  LOG_INFO("%s", header_name);
-  LOG_INFO("%s", includer_name);
-  LOG_INFO("%ld", include_depth);
-
+  LOG_INFO("Including file: %s", header_name);
+  abort();
   return NULL;
 }
 

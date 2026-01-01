@@ -1,3 +1,4 @@
+#include "raytrace_sample.h"
 #define GLFW_INCLUDE_VULKAN
 #define VK_NO_PROTOTYPES
 
@@ -44,7 +45,8 @@ int main() {
 
   GPUSwapchain swapchain;
   swapchain_init(&device, mg.rm, &swapchain, &width, &height);
-  Sample sample = create_triangle_sample();
+  // Sample sample = create_triangle_sample();
+  Sample sample = create_raytrace_sample();
   run_sample(&sample, &mg, &device, window, &swapchain);
 
   vkDeviceWaitIdle(device.device);

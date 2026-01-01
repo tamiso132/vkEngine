@@ -10,13 +10,12 @@
 // --- Private Prototypes ---
 static int _rate_device(VkPhysicalDevice dev);
 
-static VKAPI_ATTR VkBool32 VKAPI_CALL
-debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-               VkDebugUtilsMessageTypeFlagsEXT messageType,
-               const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-               void *pUserData) {
+static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                                     VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                                     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+                                                     void *pUserData) {
   // Filter out "VERBOSE" if you want less noise
-  if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+  if (messageSeverity > VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
     fprintf(stderr, "[VALIDATION]: %s\n", pCallbackData->pMessage);
   }
 
@@ -43,33 +42,29 @@ bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info) {
   // Layers
   const char *layers[] = {"VK_LAYER_KHRONOS_validation"};
 
-  VkDebugUtilsMessengerCreateInfoEXT debugInfo = {
-      .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-      .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-      .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                     VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-      .pfnUserCallback = debug_callback};
+  VkDebugUtilsMessengerCreateInfoEXT debugInfo = {.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+                                                  .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                                                                     VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                                                                     VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+                                                  .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                                                                 VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                                                                 VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+                                                  .pfnUserCallback = debug_callback};
 
-  VkInstanceCreateInfo instInfo = {
-      .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-      .pNext = info->enable_validation ? &debugInfo : NULL,
-      .enabledExtensionCount = glfwCount + 1,
-      .ppEnabledExtensionNames = enabledExts,
-      .enabledLayerCount = info->enable_validation ? 1 : 0,
-      .ppEnabledLayerNames = layers,
-      .pApplicationInfo =
-          &(VkApplicationInfo){.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-                               .apiVersion = VK_API_VERSION_1_3}};
+  VkInstanceCreateInfo instInfo = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+                                   .pNext = info->enable_validation ? &debugInfo : NULL,
+                                   .enabledExtensionCount = glfwCount + 1,
+                                   .ppEnabledExtensionNames = enabledExts,
+                                   .enabledLayerCount = info->enable_validation ? 1 : 0,
+                                   .ppEnabledLayerNames = layers,
+                                   .pApplicationInfo = &(VkApplicationInfo){.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+                                                                            .apiVersion = VK_API_VERSION_1_3}};
   if (vkCreateInstance(&instInfo, NULL, &dev->instance) != VK_SUCCESS)
     return false;
   volkLoadInstance(dev->instance);
 
   if (info->enable_validation) {
-    vkCreateDebugUtilsMessengerEXT(dev->instance, &debugInfo, NULL,
-                                   &dev->debug_messenger);
+    vkCreateDebugUtilsMessengerEXT(dev->instance, &debugInfo, NULL, &dev->debug_messenger);
   }
   // 2. Surface
   if (window)
@@ -93,20 +88,16 @@ bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info) {
 
   // 4. Logical Device (Simplified: 1 Queue for everything)
   float prio = 1.0f;
-  VkDeviceQueueCreateInfo qInfo = {
-      .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-      .queueFamilyIndex =
-          0, // In robust code, find family with Graphics | Present
-      .queueCount = 1,
-      .pQueuePriorities = &prio};
+  VkDeviceQueueCreateInfo qInfo = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                   .queueFamilyIndex = 0, // In robust code, find family with Graphics | Present
+                                   .queueCount = 1,
+                                   .pQueuePriorities = &prio};
 
   VkPhysicalDeviceDescriptorIndexingFeatures indexing_features = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
-      .shaderSampledImageArrayNonUniformIndexing =
-          VK_TRUE,                       // textures[non_const_idx]
-      .runtimeDescriptorArray = VK_TRUE, // textures[] (obestämd storlek)
-      .descriptorBindingPartiallyBound =
-          VK_TRUE, // Inte alla slots måste vara fyllda
+      .shaderSampledImageArrayNonUniformIndexing = VK_TRUE, // textures[non_const_idx]
+      .runtimeDescriptorArray = VK_TRUE,                    // textures[] (obestämd storlek)
+      .descriptorBindingPartiallyBound = VK_TRUE,           // Inte alla slots måste vara fyllda
       .descriptorBindingVariableDescriptorCount = VK_TRUE,
       .shaderStorageBufferArrayNonUniformIndexing = VK_TRUE,
       .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
@@ -123,20 +114,19 @@ bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info) {
       .pNext = &indexing_features // <--- Kedja här
   };
 
-  VkPhysicalDeviceDynamicRenderingFeatures dynR = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
-      .dynamicRendering = VK_TRUE,
-      .pNext = &sync2};
+  VkPhysicalDeviceDynamicRenderingFeatures dynR = {.sType =
+                                                       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
+                                                   .dynamicRendering = VK_TRUE,
+                                                   .pNext = &sync2};
 
   VkPhysicalDeviceTimelineSemaphoreFeatures timeline = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
       .timelineSemaphore = VK_TRUE,
       .pNext = &dynR};
 
-  VkPhysicalDeviceFeatures2 feats2 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-      .features.shaderInt64 = VK_TRUE, // Bra att ha
-      .pNext = &timeline};
+  VkPhysicalDeviceFeatures2 feats2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                                      .features.shaderInt64 = VK_TRUE, // Bra att ha
+                                      .pNext = &timeline};
   const char *devExts[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
   VkDeviceCreateInfo dInfo = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                               .pNext = &feats2,
@@ -145,8 +135,7 @@ bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info) {
                               .enabledExtensionCount = 1,
                               .ppEnabledExtensionNames = devExts};
 
-  if (vkCreateDevice(dev->physical_device, &dInfo, NULL, &dev->device) !=
-      VK_SUCCESS)
+  if (vkCreateDevice(dev->physical_device, &dInfo, NULL, &dev->device) != VK_SUCCESS)
     return false;
   volkLoadDevice(dev->device);
 
@@ -165,29 +154,23 @@ bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info) {
   vk_check(vmaCreateAllocator(&vmaInfo, &dev->allocator));
 
   // 6. Immediate Submit Context
-  VkCommandPoolCreateInfo poolInfo = {
-      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-      .queueFamilyIndex = 0,
-      .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT};
+  VkCommandPoolCreateInfo poolInfo = {.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+                                      .queueFamilyIndex = 0,
+                                      .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT};
 
-  vk_check(
-      vkCreateCommandPool(dev->device, &poolInfo, NULL, &dev->imm_cmd_pool));
+  vk_check(vkCreateCommandPool(dev->device, &poolInfo, NULL, &dev->imm_cmd_pool));
 
-  VkCommandBufferAllocateInfo cmdInfo = {
-      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-      .commandPool = dev->imm_cmd_pool,
-      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-      .commandBufferCount = 1};
+  VkCommandBufferAllocateInfo cmdInfo = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                                         .commandPool = dev->imm_cmd_pool,
+                                         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                         .commandBufferCount = 1};
   vkAllocateCommandBuffers(dev->device, &cmdInfo, &dev->imm_cmd_buffer);
-  VkFenceCreateInfo fInfo = {
-      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO}; // Not signaled initially
+  VkFenceCreateInfo fInfo = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO}; // Not signaled initially
 
   vk_check(vkCreateFence(dev->device, &fInfo, NULL, &dev->imm_fence));
 
   return true;
 }
-
-
 
 void gpu_destroy(GPUDevice *dev) {
   vkDeviceWaitIdle(dev->device);

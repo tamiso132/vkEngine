@@ -4,9 +4,7 @@
 
 void *default_alloc(size_t size, void *ctx) { return malloc(size); }
 
-void *default_realloc(void *ptr, size_t old, size_t new_s, void *ctx) {
-  return realloc(ptr, new_s);
-}
+void *default_realloc(void *ptr, size_t old, size_t new_s, void *ctx) { return realloc(ptr, new_s); }
 void default_free(void *ptr, void *ctx) { free(ptr); }
 
 Allocator std_allocator = {default_alloc, default_realloc, default_free, NULL};
@@ -18,8 +16,7 @@ void vec_init(Vector *vec, size_t elem_size, Allocator *allocator) {
   vec->element_size = elem_size;
   vec->allocator = allocator ? allocator : &std_allocator;
 }
-void vec_init_with_capacity(Vector *vec, size_t capacity, size_t elem_size,
-                            Allocator *allocator) {
+void vec_init_with_capacity(Vector *vec, size_t capacity, size_t elem_size, Allocator *allocator) {
   vec_init(vec, elem_size, allocator);
   vec->capacity = capacity;
   vec->data = calloc(1, elem_size * capacity);
@@ -30,8 +27,7 @@ u32 vec_push(Vector *vec, void *element) {
     vec->capacity = vec->capacity == 0 ? 8 : vec->capacity * 2;
     size_t new_cap_bytes = vec->capacity * vec->element_size;
 
-    vec->data = vec->allocator->realloc(vec->data, old_cap_bytes, new_cap_bytes,
-                                        vec->allocator->ctx);
+    vec->data = vec->allocator->realloc(vec->data, old_cap_bytes, new_cap_bytes, vec->allocator->ctx);
   }
 
   // memcpy is necessary for generic types in C
@@ -43,14 +39,11 @@ u32 vec_push(Vector *vec, void *element) {
 }
 
 void vec_remove_at(Vector *vec, u32 index) {
-  memmove(&vec->data[index], &vec[index + 1],
-          vec->element_size * (vec->length - index));
+  memmove(&vec->data[index], &vec[index + 1], vec->element_size * (vec->length - index));
   vec->length--;
 }
 
-void vec_free(Vector *vec) {
-  vec->allocator->free(vec->data, vec->allocator->ctx);
-}
+void vec_free(Vector *vec) { vec->allocator->free(vec->data, vec->allocator->ctx); }
 
 void vec_clear(Vector *vec) {
   memset(vec->data, 0, vec->length * vec->element_size);
@@ -58,8 +51,8 @@ void vec_clear(Vector *vec) {
 }
 
 void vec_realloc_capacity(Vector *vec, size_t new_cap) {
-  vec->allocator->realloc(vec->data, vec->element_size * vec->capacity,
-                          new_cap * vec->element_size, vec->allocator->ctx);
+  vec->allocator->realloc(vec->data, vec->element_size * vec->capacity, new_cap * vec->element_size,
+                          vec->allocator->ctx);
 }
 
 void *vec_at(Vector *vec, size_t index) {

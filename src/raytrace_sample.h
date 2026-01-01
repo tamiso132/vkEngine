@@ -3,4 +3,4 @@
 #include "sample_interface.h"
 // PUBLIC FUNCTIONS
 
-Sample create_raytrace_sample();
+ Sample create_raytrace_sample();

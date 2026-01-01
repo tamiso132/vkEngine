@@ -1,11 +1,9 @@
-
 #include "command.h"
 #include "common.h"
 #include "gpu/gpu.h"
 #include "gpu/pipeline.h"
 #include "resmanager.h"
 #include "vector.h"
-#include <vulkan/vulkan_core.h>
 
 typedef struct {
   VkPipelineStageFlags2 stage;
@@ -108,6 +106,7 @@ void cmd_bind_bindless(CmdBuffer cmd, ResourceManager *rm, VkExtent2D extent) {
   VkPipelineLayout pip_layout = rm_get_pipeline_layout(rm);
 
   vkCmdBindDescriptorSets(cmd.buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pip_layout, 0, 1, &set, 0, NULL);
+  vkCmdBindDescriptorSets(cmd.buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pip_layout, 0, 1, &set, 0, NULL);
 
   VkViewport viewport = {.width = extent.width, .height = extent.height, .minDepth = 0.0f, .maxDepth = 1.0f};
   VkRect2D scissor = {.extent = extent, .offset = {}};
@@ -120,7 +119,10 @@ void cmd_bind_pipeline(CmdBuffer cmd, M_Pipeline *pm, BindPipelineInfo *info) {
   GPUPipeline *pipeline = pm_get_pipeline(pm, info->handle);
   VkPipelineLayout layout = rm_get_pipeline_layout(pm_get_rm(pm));
 
-  vkCmdBindPipeline(cmd.buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->vk_handle);
+  VkPipelineBindPoint point =
+      pipeline->type == PIPELINE_TYPE_COMPUTE ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
+
+  vkCmdBindPipeline(cmd.buffer, point, pipeline->vk_handle);
 
   VkPushConstantsInfo push_info = {.sType = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO,
                                    .layout = layout,
@@ -129,10 +131,53 @@ void cmd_bind_pipeline(CmdBuffer cmd, M_Pipeline *pm, BindPipelineInfo *info) {
                                    .pValues = info->p_push};
   // VkCommandBuffer commandBuffer, VkPipelineLayout layout, VkShaderStageFlags stageFlags, uint32_t offset, uint32_t
   // size, const void* pValues
-  vkCmdPushConstants(cmd.buffer, layout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, info->push_size, info->p_push);
+
+  vkCmdPushConstants(cmd.buffer, layout, SHADER_STAGES, 0, info->push_size, info->p_push);
 }
 
 void cmd_end_rendering(CmdBuffer cmd) { vkCmdEndRendering(cmd.buffer); }
+
+void cmd_image_copy_to_image(CmdBuffer cmd, ResourceManager *rm, ResHandle src_handle, ResHandle dst_handle) {
+  RImage *src_img = rm_get_image(rm, src_handle);
+  RImage *dst_img = rm_get_image(rm, dst_handle);
+
+  if (src_img->sync.layout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+    cmd_sync_image(cmd, rm, src_handle, STATE_TRANSFER, ACCESS_READ);
+  }
+
+  if (dst_img->sync.layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+    cmd_sync_image(cmd, rm, dst_handle, STATE_TRANSFER, ACCESS_WRITE);
+  }
+  VkOffset3D bound[] = {{}, (VkOffset3D){.x = src_img->extent.width, .y = src_img->extent.height, .z = 1}};
+
+  VkImageBlit2 blitInfo = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
+      .srcSubresource =
+          {
+              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+              .layerCount = 1,
+          },
+      .srcOffsets = {bound[0], bound[1]},
+      .dstSubresource =
+          {
+              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+              .layerCount = 1,
+          },
+      .dstOffsets = {bound[0], bound[1]},
+  };
+
+  VkBlitImageInfo2 info = {
+      .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
+      .dstImageLayout = dst_img->sync.layout,
+      .dstImage = dst_img->handle,
+      .srcImageLayout = src_img->sync.layout,
+      .srcImage = src_img->handle,
+      .pRegions = &blitInfo,
+      .regionCount = 1,
+  };
+
+  vkCmdBlitImage2(cmd.buffer, &info);
+}
 
 void cmd_sync_image(CmdBuffer cmd, ResourceManager *rm, ResHandle img_handle, ResourceState dst_state,
                     AccessType dst_access) {

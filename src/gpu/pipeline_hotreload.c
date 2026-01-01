@@ -77,22 +77,26 @@ void pr_update_modifed(M_PipelineReloader *pr) {
 }
 
 // TODO, remove vkPipeline, and only use handles
-PipelineHandle pr_build_reg_cs(M_PipelineReloader *pr, CpConfig *b, const char *cs_path) {
+PipelineHandle pr_build_reg_cs(M_PipelineReloader *pr, CpConfig b) {
+  if (!b.cs_path) {
+    LOG_ERROR("[SHADER_COMPILATION] Compute Config has a Null path");
+    abort();
+  }
+
   FileGroup *fg = fg_init(pr->fm);
 
   auto device = pm_get_gpu(pr->pm)->device;
 
-  CompileResult cs_result = {.shader_path = cs_path, .include_dir = str_get_dir(cs_path), .fg = fg};
+  CompileResult cs_result = {.shader_path = b.cs_path, .include_dir = str_get_dir(b.cs_path), .fg = fg};
 
   if (shader_compile_glsl(device, &cs_result, SHADER_STAGE_COMPUTE) != SHADER_SUCCESS) {
-    LOG_ERROR("[SHADER_COMPILATION] Failed to compile: [%s,]", cs_path);
+    LOG_ERROR("[SHADER_COMPILATION] Failed to compile: [%s,]", b.cs_path);
     abort();
   }
 
-  cp_set_shader_path(b, cs_path);
-  cp_set_shader(b, cs_result.module);
+  cp_set_shader(&b, cs_result.module);
 
-  PipelineHandle pip_handle = cp_build(pr->pm, b);
+  PipelineHandle pip_handle = cp_build(pr->pm, &b);
   ReloadCtx rel = {.fg = fg, .handle = pip_handle};
   vec_push(&pr->reg_pips, &rel);
 

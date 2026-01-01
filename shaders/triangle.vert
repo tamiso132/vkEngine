@@ -2,7 +2,7 @@
 #extension GL_ARB_shading_language_include : require
 #extension GL_EXT_nonuniform_qualifier : require
 
-#include "shader_base.ini"
+#include "shader_base.glsl"
 // --- Bindless Resources ---
 // Binding 1 defined in resmanager.c as "Storage Buffers"
 layout(set = 0, binding = BINDING_STORAGE_BUFFER) readonly buffer Verts {

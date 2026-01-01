@@ -1,7 +1,6 @@
 #include "resmanager.h"
 #include "common.h"
 #include "gpu/gpu.h"
-#include "shader_base.ini"
 #include "util.h"
 #include "vector.h"
 #include <assert.h>
@@ -90,7 +89,7 @@ void rm_destroy(ResourceManager *rm) {
 }
 
 ResHandle rm_create_buffer(ResourceManager *rm, RGBufferInfo *info) {
-  RBuffer buffer = {};
+  RBuffer buffer = {.sync = {.access = VK_ACCESS_2_NONE, .stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT}};
   strcpy(buffer.name, info->name);
   // Create GPU Resource
   GPUBufferInfo bufferInfo = {.size = info->capacity, .usage = info->usage, .memory_usage = info->mem};
@@ -122,6 +121,8 @@ void rm_resize_image(ResourceManager *rm, ResHandle handle, uint32_t width, uint
 void rm_import_existing_image(ResourceManager *rm, ResHandle handle, VkImage raw_img, VkImageView view,
                               VkExtent2D new_extent, bool delete_img) {
   RImage *img = rm_get_image(rm, handle);
+  img->sync = (SyncDef){
+      .access = VK_ACCESS_2_NONE, .layout = VK_IMAGE_LAYOUT_UNDEFINED, .stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT};
 
   vkDestroyImageView(rm->gpu->device, img->view, NULL);
 
@@ -134,7 +135,9 @@ void rm_import_existing_image(ResourceManager *rm, ResHandle handle, VkImage raw
 }
 
 ResHandle rm_create_image(ResourceManager *rm, RGImageInfo info) {
-  RImage image;
+  RImage image = {.sync = {.access = VK_ACCESS_2_NONE,
+                           .stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+                           .layout = VK_IMAGE_LAYOUT_UNDEFINED}};
   assert(info.name);
   strncpy(image.name, info.name, strlen(info.name));
 
@@ -232,65 +235,6 @@ void rm_on_new_frame(ResourceManager *rm) {
       i--;
     }
   }
-}
-
-void rm_buffer_upload(ResourceManager *rm, VkCommandBuffer cmd, ResHandle handle, void *data, u32 size) {
-  RBuffer *buffer = rm_get_buffer(rm, handle);
-  // TODO, a check if the buffer is big enough,
-  // otherwise might need to return result about needing to resize the buffer
-  if (buffer->mem == VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
-    // TODO, create staging buffer, then copy over all stuff
-  } else {
-    void *gpu_ptr = {};
-    vk_check(vmaMapMemory(rm->gpu->allocator, buffer->alloc, &gpu_ptr));
-
-    memcpy(gpu_ptr, data, size);
-  }
-};
-
-void rm_buffer_sync(ResourceManager *rm, VkCommandBuffer cmd, BufferBarrierInfo *info) {
-  rm_get_buffer(rm, info->buf_handle);
-
-  VkBufferMemoryBarrier2 barrInfo = {
-      .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-      .buffer = rm_get_buffer(rm, info->buf_handle)->handle,
-      .srcStageMask = info->src_stage,
-      .srcAccessMask = info->src_access,
-      .dstStageMask = info->dst_stage,
-      .dstAccessMask = info->dst_access,
-      .size = VK_WHOLE_SIZE,
-  };
-
-  VkDependencyInfo dependInfo = {
-      .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrInfo};
-
-  vkCmdPipelineBarrier2(cmd, &dependInfo);
-}
-
-void rm_image_sync(ResourceManager *rm, VkCommandBuffer cmd, ImageBarrierInfo *info) {
-
-  VkImageSubresourceRange subresourceRange = {
-      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-      .layerCount = 1,
-      .levelCount = 1,
-  };
-
-  VkImageMemoryBarrier2 barrInfo = {
-      .image = rm_get_image(rm, info->img_handle)->handle,
-      .oldLayout = info->src_layout,
-      .srcStageMask = info->src_stage,
-      .srcAccessMask = info->src_access,
-      .dstStageMask = info->dst_stage,
-      .dstAccessMask = info->dst_access,
-      .newLayout = info->dst_layout,
-      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-      .subresourceRange = subresourceRange,
-  };
-
-  VkDependencyInfo dependinfo = {
-      .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrInfo};
-
-  vkCmdPipelineBarrier2(cmd, &dependinfo);
 }
 
 // --- Implementation: Getters ---

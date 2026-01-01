@@ -4,8 +4,31 @@
 
 #include "common.h"
 #include "gpu/gpu.h"
-#include "shaders/shader_base.ini"
+#include "shaders/shader_base.glsl"
 #include "util.h"
+
+// SYNCRONIZATION
+typedef enum {
+  ACCESS_READ = 1 << 0,
+  ACCESS_WRITE = 1 << 1,
+} AccessType;
+
+typedef enum {
+  STATE_UNDEFINED,
+  STATE_SHADER,
+  STATE_TRANSFER,
+  STATE_COLOR,
+  STATE_DEPTH,
+  STATE_VERTEX,
+  STATE_PRESENT,
+  STATE_MAX_ENUM
+} ResourceState;
+
+typedef struct {
+  VkAccessFlags2 access;
+  VkPipelineStageFlags2 stage;
+  VkImageLayout layout;
+} SyncDef;
 
 typedef enum {
   RES_B_SAMPLED_IMAGE = BINDING_SAMPLED,
@@ -75,6 +98,7 @@ typedef struct {
   VkBufferUsageFlags usage;
   res_b binding;
   VkDescriptorType type;
+  SyncDef sync;
 } RBuffer;
 
 typedef struct {
@@ -92,6 +116,7 @@ typedef struct {
 
   u32 bindlessIndex;
   res_b binding;
+  SyncDef sync;
 } RImage;
 
 // PUBLIC FUNCTIONS

@@ -5,8 +5,8 @@
 #ifdef __STDC__
 // --- C Side ---
 #include "common.h"
+#include <cglm/cglm.h>
 #include <stdalign.h>
-
 #define ALIGN(number) __attribute__((aligned(number)))
 
 #else

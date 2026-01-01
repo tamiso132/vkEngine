@@ -30,48 +30,13 @@
 #define LOG_WARN(fmt, ...) LOG_MESSAGE(CLR_YLW, "WARN", fmt, ##__VA_ARGS__)
 #define LOG_ERROR(fmt, ...) LOG_MESSAGE(CLR_RED, "ERROR", fmt, ##__VA_ARGS__)
 
-typedef struct CmdBuffer {
-  VkCommandPool pool;
-  VkCommandBuffer buffer;
-} CmdBuffer;
-
-typedef struct RenderingBeginInfo {
-  ResHandle *colors;
-  u32 colors_count;
-
-  VkAttachmentLoadOp loadOp;
-  VkAttachmentStoreOp storeOp;
-
-  vec3 clear_color;
-  u32 w;
-  u32 h;
-
-} RenderingBeginInfo;
-
-typedef struct BindPipelineInfo {
-  PipelineHandle handle;
-  void *p_push;
-  u32 push_size;
-
-} BindPipelineInfo;
-
 // PUBLIC FUNCTIONS
-
-CmdBuffer cmd_init(VkDevice device, u32 queue_fam);
-
-void cmd_begin(VkDevice device, CmdBuffer cmd);
-void cmd_end(VkDevice device, CmdBuffer cmd);
-
-void cmd_begin_rendering(CmdBuffer cmd, ResourceManager *rm, RenderingBeginInfo *info);
-void cmd_end_rendering(CmdBuffer cmd);
-
-void cmd_bind_bindless(CmdBuffer cmd, ResourceManager *rm, VkExtent2D extent);
-void cmd_bind_pipeline(CmdBuffer cmd, M_Pipeline *pm, BindPipelineInfo *info);
 
 void vk_check(VkResult err);
 
 /** * Returns a new heap-allocated substring. * start: index to begin at * len: number of characters to copy */
-char *str_sub(const char *s, int start, int len);
+/** * Returns a new heap-allocated substring. * start: index to begin at * len: number of characters to copy */ char *
+str_sub(const char *s, int start, int len);
 
 /** * Extract directory from path (Non-destructive) * Example: "src/main.c" -> returns "src/" */ char *
 str_get_dir(const char *path);

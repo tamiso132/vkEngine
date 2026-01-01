@@ -1,10 +1,11 @@
+#include "command.h"
 #include "common.h"
 #include "gpu/gpu.h"
 #include "gpu/swapchain.h"
 #include "sample_interface.h"
 #include <stdlib.h>
 
-#include "shaders/triangle.h"
+#include "shaders/triangle.glsl"
 #include "triangle_sample.h"
 // Definiera vertex-struktur
 typedef struct {
@@ -45,8 +46,7 @@ void tri_init(Sample *self, SampleContext *ctx) {
                               .usage = VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT};
 
   data->vbo = rm_create_buffer(mg->rm, &buffer_info);
-
-  rm_buffer_upload(mg->rm, ctx->cmd.buffer, data->vbo, (void *)vertices, sizeof(TriangleVertex) * 12);
+  cmd_buffer_upload(ctx->cmd, mg->rm, data->vbo, (void *)vertices, sizeof(TriangleVertex) * 12);
 }
 
 void tri_render(Sample *self, SampleContext *ctx) {

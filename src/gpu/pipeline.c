@@ -47,6 +47,11 @@ GpConfig gp_init(ResourceManager *rm, const char *name) {
   return b;
 }
 
+CpConfig cp_init(const char *name) {
+  CpConfig config = {};
+  return config;
+}
+
 GPUDevice *pm_get_gpu(M_Pipeline *pm) { return rm_get_gpu(pm->res); }
 
 void gp_set_shaders(GpConfig *b, VkShaderModule vs, VkShaderModule fs) {

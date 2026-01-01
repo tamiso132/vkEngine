@@ -57,19 +57,19 @@ typedef struct {
 
 // PUBLIC FUNCTIONS
 
-void cp_set_shader(CpConfig *config, VkShaderModule module);
-
-PipelineHandle cp_build(M_Pipeline *pm, CpConfig *config);
-
-void cp_rebuild(M_Pipeline *pm, CpConfig *config, PipelineHandle handle);
-void cp_set_shader_path(CpConfig *config, const char *path);
-PipelineHandle cp_build_with_shader(M_Pipeline *pm, CpConfig *config, VkShaderModule cs_shader);
-
 M_Pipeline *pm_init(ResourceManager *rm);
 GPUDevice *pm_get_gpu(M_Pipeline *pm);
 ResourceManager *pm_get_rm(M_Pipeline *pm);
 GPUPipeline *pm_get_pipeline(M_Pipeline *pm, PipelineHandle handle);
 
+// P COMPUTE BUILDER
+CpConfig cp_init(const char *name);
+void cp_set_shader(CpConfig *config, VkShaderModule module);
+void cp_set_shader_path(CpConfig *config, const char *path);
+PipelineHandle cp_build(M_Pipeline *pm, CpConfig *config);
+void cp_rebuild(M_Pipeline *pm, CpConfig *config, PipelineHandle handle);
+
+// P GRAPHIC BUILDER
 GpConfig gp_init(ResourceManager *rm, const char *name);
 void gp_set_shaders(GpConfig *b, VkShaderModule vs, VkShaderModule fs);
 void gp_set_topology(GpConfig *b, VkPrimitiveTopology topo);

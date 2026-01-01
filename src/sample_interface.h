@@ -1,4 +1,5 @@
 #pragma once
+#include "command.h"
 #include "gpu/gpu.h"
 #include "gpu/pipeline_hotreload.h"
 #include "submit_manager.h"
@@ -33,7 +34,9 @@ typedef struct Sample {
   void *user_data;
 
   void (*init)(struct Sample *self, SampleContext *ctx);
+  void (*pre_render)(struct Sample *self, SampleContext *ctx);
   void (*render)(struct Sample *self, SampleContext *ctx);
+  void (*post_render)(struct Sample *self, SampleContext *ctx);
   void (*on_resize)(struct Sample *self, SampleContext *ctx);
 
   void (*destroy)(struct Sample *self, Managers *mg);

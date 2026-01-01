@@ -1,4 +1,6 @@
+#include "command.h"
 #include "gpu/pipeline_hotreload.h"
+#include "resmanager.h"
 #include "sample_interface.h"
 #include <GLFW/glfw3.h>
 
@@ -51,13 +53,15 @@ void run_sample(Sample *sample, Managers *mg, GPUDevice *device, GLFWwindow *win
 
     // Transition: Swapchain -> Render Target
     ResHandle swap_img = swapchain_get_image(swapchain);
-    ImageBarrierInfo color_barrier = {.img_handle = swap_img,
-                                      .src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                      .src_layout = VK_IMAGE_LAYOUT_UNDEFINED,
-                                      .dst_access = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
-                                      .dst_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                      .dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
-    rm_image_sync(mg->rm, cmd.buffer, &color_barrier);
+    // ImageBarrierInfo color_barrier = {.img_handle = swap_img,
+    //                                   .src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+    //                                   .src_layout = VK_IMAGE_LAYOUT_UNDEFINED,
+    //                                   .dst_access = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
+    //                                   .dst_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    //                                   .dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
+    // rm_image_sync(mg->rm, cmd.buffer, &color_barrier);
+
+    cmd_sync_image(cmd, mg->rm, swap_img, STATE_COLOR, ACCESS_READ);
 
     if (sample->render) {
       sample->render(sample, &ctx);
@@ -65,14 +69,14 @@ void run_sample(Sample *sample, Managers *mg, GPUDevice *device, GLFWwindow *win
     // ------------------------
 
     // Transition: Render Target -> Present
-    ImageBarrierInfo present_barrier = {.img_handle = swap_img,
-                                        .src_access = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
-                                        .src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                        .src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                        .dst_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                        .dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
-    rm_image_sync(mg->rm, cmd.buffer, &present_barrier);
-
+    // ImageBarrierInfo present_barrier = {.img_handle = swap_img,
+    //                                     .src_access = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
+    //                                     .src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    //                                     .src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    //                                     .dst_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+    //                                     .dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
+    // rm_image_sync(mg->rm, cmd.buffer, &present_barrier);
+    cmd_sync_image(cmd, mg->rm, swap_img, STATE_PRESENT, ACCESS_READ);
     cmd_end(device->device, cmd);
 
     // Submit & Present

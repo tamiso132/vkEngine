@@ -13,6 +13,7 @@ add_sources(
     submit_manager.c
     sample_runner.c
     triangle_sample.c
+    command.c
 )
 
 include_this()

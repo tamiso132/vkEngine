@@ -4,10 +4,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "system_manager.h"
+
 #include "vector.h"
 #include "vk_mem_alloc.h"
 
 // --- Private Prototypes ---
+static bool on_system_init(void *config, u32 *memory_req);
+static void on_system_destroy();
+static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info);
+static void gpu_destroy(M_GPU *dev);
 static int _rate_device(VkPhysicalDevice dev);
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -22,8 +28,27 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverity
   return VK_FALSE;
 }
 
-bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info) {
-  memset(dev, 0, sizeof(GPUDevice));
+SystemFunc gpu_system_get_func() { return (SystemFunc){.on_init = on_system_init, .on_shutdown = on_system_destroy}; }
+
+// --- Private Functions ---
+
+static bool on_system_init(void *config, u32 *mem_req) {
+
+  SYSTEM_HELPER_MEM(mem_req, M_GPU);
+
+  GPUSystemInfo *c = config;
+  M_GPU *device = m_system_get(SYSTEM_TYPE_GPU);
+
+  return gpu_init(device, c->window, &c->info);
+}
+
+static void on_system_destroy() {
+  M_GPU *device = m_system_get(SYSTEM_TYPE_GPU);
+  gpu_destroy(device);
+}
+
+static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info) {
+  memset(dev, 0, sizeof(M_GPU));
 
   // 1. Volk & Instance
   if (volkInitialize() != VK_SUCCESS)
@@ -172,7 +197,7 @@ bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info) {
   return true;
 }
 
-void gpu_destroy(GPUDevice *dev) {
+static void gpu_destroy(M_GPU *dev) {
   vkDeviceWaitIdle(dev->device);
   vmaDestroyAllocator(dev->allocator);
   vkDestroyCommandPool(dev->device, dev->imm_cmd_pool, NULL);
@@ -181,8 +206,6 @@ void gpu_destroy(GPUDevice *dev) {
   vkDestroySurfaceKHR(dev->instance, dev->surface, NULL);
   vkDestroyInstance(dev->instance, NULL);
 }
-
-// --- Private Functions ---
 
 static int _rate_device(VkPhysicalDevice dev) {
   VkPhysicalDeviceProperties props;

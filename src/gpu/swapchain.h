@@ -1,6 +1,7 @@
 #pragma once
 #include "gpu.h"
 #include "resmanager.h"
+#include "vector.h"
 
 // PUBLIC FUNCTIONS
 typedef struct SwapPresent {
@@ -8,20 +9,19 @@ typedef struct SwapPresent {
   VkSemaphore sem_rend_done;
 } PresentFrame;
 
-typedef struct GPUSwapchain {
+typedef struct M_Swapchain {
   VkSwapchainKHR swapchain;
   VkFormat format;
   VkExtent2D extent;
 
+  VECTOR_TYPES(PresentFrame)
   Vector imgs;
 
   uint32_t current_img_idx;
-} GPUSwapchain;
+} M_Swapchain;
 
- bool swapchain_init(GPUDevice *dev, ResourceManager *rm, GPUSwapchain *sc, uint32_t *w, uint32_t *h);
+typedef struct GPUSwapchainSystemInfo {
+} GPUSwapchainSystemInfo;
 
- void swapchain_resize(GPUDevice *dev, ResourceManager *rm, GPUSwapchain *sc, VkExtent2D *extent);
-
- ResHandle swapchain_get_image(GPUSwapchain *sc);
-
- void swapchain_destroy(GPUDevice *dev, GPUSwapchain *sc);
+ResHandle swapchain_get_image(M_Swapchain *sc);
+void swapchain_destroy(GPUDevice *dev, M_Swapchain *sc);

@@ -14,9 +14,31 @@ typedef int64_t i64;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
-
-
 typedef enum { RES_TYPE_BUFFER, RES_TYPE_IMAGE, RES_TYPE_COUNT } ResType;
+
+typedef enum SystemType {
+  SYSTEM_TYPE_GPU,
+  SYSTEM_TYPE_RESOURCE,
+  SYSTEM_TYPE_SWAPCHAIN,
+  SYSTEM_TYPE_FILESYSTEM,
+  SYSTEM_TYPE_PIPELINE,
+  SYSTEM_TYPE_HOTRELOAD,
+  SYSTEM_TYPE_SUBMIT,
+  SYSTEM_TYPE_COUNT,
+} SystemType;
+
+#define ASSERT_DEBUG true
+
+#if ASSERT_DEBUG == true
+// DEBUG MODE: Generate the "Trait" variable
+#define SYSTEM_DECLARE_ID(type_struct, enum_id)                                                                        \
+  typedef struct type_struct type_struct;                                                                              \
+  static const SystemType _ID_##type_struct = enum_id
+
+#else
+// RELEASE MODE: Generate nothing
+#define SYSTEM_DECLARE_ID(type_struct, enum_id)
+#endif
 
 typedef struct {
   u32 id : 31;
@@ -26,5 +48,9 @@ typedef struct {
 typedef uint32_t PipelineHandle;
 
 // MANAGERS
-typedef struct ResourceManager ResourceManager;
-typedef struct M_Pipeline M_Pipeline;
+SYSTEM_DECLARE_ID(M_GPU, SYSTEM_TYPE_GPU);
+SYSTEM_DECLARE_ID(M_Resource, SYSTEM_TYPE_RESOURCE);
+SYSTEM_DECLARE_ID(M_Pipeline, SYSTEM_TYPE_PIPELINE);
+SYSTEM_DECLARE_ID(M_Swapchain, SYSTEM_TYPE_SWAPCHAIN);
+SYSTEM_DECLARE_ID(M_File, SYSTEM_TYPE_FILESYSTEM);
+SYSTEM_DECLARE_ID(M_PipelineReloader, SYSTEM_TYPE_HOTRELOAD);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common.h"
 #include "gpu/gpu.h"
 #include "resmanager.h"
 #include <stdbool.h>
@@ -57,9 +58,9 @@ typedef struct {
 
 // PUBLIC FUNCTIONS
 
-M_Pipeline *pm_init(ResourceManager *rm);
-GPUDevice *pm_get_gpu(M_Pipeline *pm);
-ResourceManager *pm_get_rm(M_Pipeline *pm);
+M_Pipeline *pm_init();
+M_GPU *pm_get_gpu(M_Pipeline *pm);
+M_Resource *pm_get_rm(M_Pipeline *pm);
 GPUPipeline *pm_get_pipeline(M_Pipeline *pm, PipelineHandle handle);
 
 // P COMPUTE BUILDER
@@ -67,10 +68,10 @@ CpConfig cp_init(const char *name);
 void cp_set_shader(CpConfig *config, VkShaderModule module);
 void cp_set_shader_path(CpConfig *config, const char *path);
 PipelineHandle cp_build(M_Pipeline *pm, CpConfig *config);
-void cp_rebuild(M_Pipeline *pm, CpConfig *config, PipelineHandle handle);
+void cp_rebuild(CpConfig *config, PipelineHandle handle);
 
 // P GRAPHIC BUILDER
-GpConfig gp_init(ResourceManager *rm, const char *name);
+GpConfig gp_init(M_Resource *rm, const char *name);
 void gp_set_shaders(GpConfig *b, VkShaderModule vs, VkShaderModule fs);
 void gp_set_topology(GpConfig *b, VkPrimitiveTopology topo);
 void gp_set_cull(GpConfig *b, VkCullModeFlags mode, VkFrontFace front);
@@ -79,7 +80,7 @@ void gp_enable_depth(GpConfig *b, bool write, VkCompareOp op);
 void gp_enable_blend(GpConfig *b);
 void gp_set_color_formats(GpConfig *b, const VkFormat *formats, uint32_t count);
 void gp_set_layout(GpConfig *b, VkDescriptorSetLayout bindless, uint32_t push_size);
-void gp_rebuild(M_Pipeline *pm, GpConfig *b, PipelineHandle handle);
+void gp_rebuild(GpConfig *b, PipelineHandle handle);
 PipelineHandle gp_build(M_Pipeline *pm, GpConfig *b);
 
 void gp_destroy(VkDevice device, GPUPipeline *p);

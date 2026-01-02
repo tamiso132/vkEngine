@@ -1,12 +1,22 @@
 #include "swapchain.h"
 #include "common.h"
+#include "gpu/gpu.h"
 #include "resmanager.h"
 #include <vulkan/vulkan_core.h>
 
 // --- Private Prototypes ---
-static bool create_vulkan_swapchain(GPUDevice *dev, GPUSwapchain *sc, VkSwapchainKHR old_swapchain);
+static bool create_vulkan_swapchain(GPUDevice *dev, M_Swapchain *sc, VkSwapchainKHR old_swapchain);
 
-bool swapchain_init(GPUDevice *dev, ResourceManager *rm, GPUSwapchain *sc, uint32_t *w, uint32_t *h) {
+bool _system_init(void *config, u32 *mem_req) {
+  SYSTEM_HELPER_MEM(mem_req, M_Swapchain);
+  GPUDevice *dev = m_system_get(SYSTEM_TYPE_GPU);
+  M_Swapchain *sc = m_system_get(SYSTEM_TYPE_SWAPCHAIN);
+  M_Resource *rm = m_system_get(SYSTEM_TYPE_RESOURCE);
+
+  return swapchain_init(dev, rm, sc, , uint32_t *h)
+}
+
+bool swapchain_init(GPUDevice *dev, M_Resource *rm, M_Swapchain *sc, uint32_t *w, uint32_t *h) {
   VkSurfaceCapabilitiesKHR caps = {};
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev->physical_device, dev->surface, &caps);
   *w = caps.currentExtent.width;
@@ -59,7 +69,7 @@ bool swapchain_init(GPUDevice *dev, ResourceManager *rm, GPUSwapchain *sc, uint3
   return true;
 }
 
-void swapchain_resize(GPUDevice *dev, ResourceManager *rm, GPUSwapchain *sc, VkExtent2D *extent) {
+void swapchain_resize(GPUDevice *dev, M_Resource *rm, M_Swapchain *sc, VkExtent2D *extent) {
 
   VkSurfaceCapabilitiesKHR caps = {};
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev->physical_device, dev->surface, &caps);
@@ -112,14 +122,14 @@ void swapchain_resize(GPUDevice *dev, ResourceManager *rm, GPUSwapchain *sc, VkE
   sc->current_img_idx = 0;
 }
 
-ResHandle swapchain_get_image(GPUSwapchain *sc) { return VEC_AT(&sc->imgs, sc->current_img_idx, PresentFrame)->handle; }
+ResHandle swapchain_get_image(M_Swapchain *sc) { return VEC_AT(&sc->imgs, sc->current_img_idx, PresentFrame)->handle; }
 
-void swapchain_destroy(GPUDevice *dev, GPUSwapchain *sc) {}
+void swapchain_destroy(GPUDevice *dev, M_Swapchain *sc) {}
 
 // --- Private Functions ---
 
 // Helper to create the actual VkSwapchainKHR object (avoids code duplication)
-static bool create_vulkan_swapchain(GPUDevice *dev, GPUSwapchain *sc, VkSwapchainKHR old_swapchain) {
+static bool create_vulkan_swapchain(GPUDevice *dev, M_Swapchain *sc, VkSwapchainKHR old_swapchain) {
   VkSwapchainCreateInfoKHR ci = {
       .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
       .surface = dev->surface,

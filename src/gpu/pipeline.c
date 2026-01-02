@@ -1,5 +1,6 @@
 #include "pipeline.h"
 #include "common.h"
+#include "gpu/gpu.h"
 #include "resmanager.h"
 #include "util.h"
 #include "vector.h"
@@ -14,7 +15,6 @@ typedef struct M_Pipeline {
   VECTOR_TYPES(GPUPipeline)
   Vector pipelines;
 
-  ResourceManager *res;
 } M_Pipeline;
 
 // --- Private Prototypes ---
@@ -22,10 +22,9 @@ static VkPipeline _create_cs_pipeline(M_Pipeline *pm, VkDevice device, VkShaderM
 
 static VkPipeline _build_internal(M_Pipeline *pm, GpConfig *b);
 
-M_Pipeline *pm_init(ResourceManager *rm) {
+M_Pipeline *pm_init() {
   M_Pipeline *pm = calloc(sizeof(M_Pipeline), 1);
   vec_init(&pm->pipelines, sizeof(GPUPipeline), NULL);
-  pm->res = rm;
 
   return pm;
 }
@@ -34,9 +33,7 @@ GPUPipeline *pm_get_pipeline(M_Pipeline *pm, PipelineHandle handle) {
   return VEC_AT(&pm->pipelines, handle, GPUPipeline);
 }
 
-ResourceManager *pm_get_rm(M_Pipeline *pm) { return pm->res; }
-
-GpConfig gp_init(ResourceManager *rm, const char *name) {
+GpConfig gp_init(M_Resource *rm, const char *name) {
   GpConfig b = {0};
   b.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
   b.cull_mode = VK_CULL_MODE_NONE;
@@ -51,8 +48,6 @@ CpConfig cp_init(const char *name) {
   CpConfig config = {};
   return config;
 }
-
-GPUDevice *pm_get_gpu(M_Pipeline *pm) { return rm_get_gpu(pm->res); }
 
 void gp_set_shaders(GpConfig *b, VkShaderModule vs, VkShaderModule fs) {
   b->vs = vs;
@@ -91,9 +86,9 @@ PipelineHandle gp_build(M_Pipeline *pm, GpConfig *b) {
   return vec_push(&pm->pipelines, &p);
 }
 
-void gp_rebuild(M_Pipeline *pm, GpConfig *b, PipelineHandle handle) {
+void gp_rebuild(GpConfig *b, PipelineHandle handle) {
+  auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
   GPUPipeline *p = VEC_AT(&pm->pipelines, handle, GPUPipeline);
-
   VkPipeline pipeline = _build_internal(pm, b);
   vkDestroyPipeline(rm_get_gpu(pm->res)->device, p->vk_handle, NULL);
 
@@ -111,9 +106,9 @@ PipelineHandle cp_build(M_Pipeline *pm, CpConfig *config) {
   return vec_push(&pm->pipelines, &p);
 }
 
-void cp_rebuild(M_Pipeline *pm, CpConfig *config, PipelineHandle handle) {
-
-  VkDevice device = rm_get_gpu(pm->res)->device;
+void cp_rebuild(CpConfig *config, PipelineHandle handle) {
+  auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
+  VkDevice device = rm_get_gpu(pm)->device;
 
   VkPipeline pipeline = _create_cs_pipeline(pm, device, config->module);
 

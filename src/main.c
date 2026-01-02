@@ -1,3 +1,4 @@
+#include "common.h"
 #include "raytrace_sample.h"
 #define GLFW_INCLUDE_VULKAN
 #define VK_NO_PROTOTYPES
@@ -13,8 +14,8 @@
 #include "gpu/swapchain.h"
 #include "resmanager.h"
 #include "sample_interface.h"
+#include "system_manager.h"
 #include "triangle_sample.h"
-
 int main() {
   // 1. Init Windowp
 
@@ -26,13 +27,12 @@ int main() {
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   GLFWwindow *window = glfwCreateWindow(width, height, "RenderGraph Demo", NULL, NULL);
 
-  // 2. Init GPU
-  GPUDevice device;
-  if (!gpu_init(&device, window, &(GPUInstanceInfo){.enable_validation = true})) {
-    printf("GPU Init Failed\n");
-    return 1;
-  }
+  GPUSystemInfo gpu_info = {.window = window,
+                            .info = (GPUInstanceInfo){.app_name = "RenderGraph Demo", .enable_validation = true}};
 
+  m_system_register(gpu_system_get_func(), SYSTEM_TYPE_GPU, &gpu_info);
+
+  ResourceManager *manager = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, ResourceManager);
   // 3. Init Swapchain
 
   if (!glslang_initialize_process()) {
@@ -51,7 +51,7 @@ int main() {
 
   vkDeviceWaitIdle(device.device);
 
-  rm_destroy(mg.rm);
+  _destroy(mg.rm);
   swapchain_destroy(&device, &swapchain);
   gpu_destroy(&device);
 

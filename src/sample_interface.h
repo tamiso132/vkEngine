@@ -5,7 +5,7 @@
 #include "submit_manager.h"
 
 typedef struct {
-  ResourceManager *rm;
+  ResourceMa *rm;
   M_SubmitManager *sm;
   M_Pipeline *pm;
   M_PipelineReloader *reloader;

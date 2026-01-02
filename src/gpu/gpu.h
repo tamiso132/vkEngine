@@ -3,6 +3,7 @@
 
 #include "vector.h"
 
+#include "system_manager.h"
 #include "util.h"
 #include "vk_mem_alloc.h"
 #include "volk.h"
@@ -10,7 +11,6 @@
 #include <stdbool.h>
 
 // --- Types ---
-typedef struct GPUDevice GPUDevice;
 
 // --- Config Structs (Builder Pattern) ---
 typedef struct {
@@ -18,22 +18,8 @@ typedef struct {
   bool enable_validation;
 } GPUInstanceInfo;
 
-typedef struct {
-  size_t size;
-  VkBufferUsageFlags usage;
-  VmaMemoryUsage memory_usage; // e.g., VMA_MEMORY_USAGE_AUTO
-  const char *debug_name;
-} GPUBufferInfo;
-
-typedef struct {
-  VkFormat format;
-  VkExtent3D extent;
-  VkImageUsageFlags usage;
-  const char *debug_name;
-} GPUImageInfo;
-
 // --- The Main Device Context ---
-struct GPUDevice {
+struct M_GPU {
   VkInstance instance;
   VkDevice device;
   VkPhysicalDevice physical_device;
@@ -53,8 +39,12 @@ struct GPUDevice {
   VkFence imm_fence;
 };
 
+typedef struct GPUSystemInfo {
+  GLFWwindow *window;
+  GPUInstanceInfo info;
+} GPUSystemInfo;
+
 // PUBLIC FUNCTIONS
 
-bool gpu_init(GPUDevice *dev, GLFWwindow *window, GPUInstanceInfo *info);
-
-void gpu_destroy(GPUDevice *dev);
+SystemFunc gpu_system_get_func();
+SystemFunc gpu_system_func();

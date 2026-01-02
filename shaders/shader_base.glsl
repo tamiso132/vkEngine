@@ -29,7 +29,7 @@
         struct name
 
 // Type mappings
-#define u8 uint  // ⚠️ See packing warning below
+#define u8 uint
 #define i8 int
 #define u32 uint
 #define i32 int

@@ -11,9 +11,9 @@ typedef struct AsyncBuffer {
 } AsyncBuffer;
 
 // --- Private Prototypes ---
-static void _async_swap(ResourceManager *rm, AsyncBuffer *ab);
+static void _async_swap(ResourceMa *rm, AsyncBuffer *ab);
 
-void async_init(ResourceManager *rm, RGBufferInfo *info, AsyncBuffer *ab) {
+void async_init(ResourceMa *rm, RGBufferInfo *info, AsyncBuffer *ab) {
 
   memset(ab, 0, sizeof(AsyncBuffer) * 2);
 
@@ -23,7 +23,7 @@ void async_init(ResourceManager *rm, RGBufferInfo *info, AsyncBuffer *ab) {
   ab->upload_fence = NULL;
 }
 
-void async_check_upload_ready(ResourceManager *rm, AsyncBuffer *ab) {
+void async_check_upload_ready(ResourceMa *rm, AsyncBuffer *ab) {
   if (!ab->is_uploading)
     return;
 
@@ -32,7 +32,7 @@ void async_check_upload_ready(ResourceManager *rm, AsyncBuffer *ab) {
   }
 }
 
-void async_update(ResourceManager *rm, CmdBuffer cmd, AsyncBuffer *ab, VkFence *fence, void *data, uint64_t size) {
+void async_update(ResourceMa *rm, CmdBuffer cmd, AsyncBuffer *ab, VkFence *fence, void *data, uint64_t size) {
   async_check_upload_ready(rm, ab);
   u32 inactive = !((bool)ab->active_b_index);
 
@@ -48,7 +48,7 @@ ResHandle async_get_active_handle(AsyncBuffer *ab) { return ab->buffers[ab->acti
 
 // --- Private Functions ---
 
-static void _async_swap(ResourceManager *rm, AsyncBuffer *ab) {
+static void _async_swap(ResourceMa *rm, AsyncBuffer *ab) {
   ab->is_uploading = false;
   ab->active_b_index = !ab->active_b_index;
 }

@@ -4,22 +4,22 @@
 #include <stdbool.h>
 
 #define INVALID_INDEX UINT32_MAX
-#define INVALID_HANDLE                                                         \
+#define INVALID_HANDLE                                                                                                 \
   (FileHandle) { INVALID_INDEX }
 
 typedef struct {
   uint32_t index; // Slot in the manager
 } FileHandle;
 
-typedef struct FileManager FileManager;
+typedef struct M_File M_File;
 typedef struct SubManager FileGroup;
 
 // PUBLIC FUNCTIONS
 
-void fm_poll(FileManager *fm);
-FileManager *fm_init();
+void fm_poll(M_File *fm);
+M_File *fm_init();
 
-FileGroup *fg_init(FileManager *fm);
+FileGroup *fg_init(M_File *fm);
 bool fg_is_modified(FileGroup *sm);
 FileHandle fg_load_file(FileGroup *sm, const char *path);
 const char *fg_get_file(FileGroup *sm, FileHandle *handle);

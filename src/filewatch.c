@@ -80,9 +80,7 @@ FileGroup *fg_init(FileManager *fm) {
   return fg;
 }
 
-bool fg_is_modified(FileGroup *sm) {
-  return (sm->fm->dirty_mask & sm->care_mask) != 0;
-}
+bool fg_is_modified(FileGroup *sm) { return (sm->fm->dirty_mask & sm->care_mask) != 0; }
 
 FileHandle fg_load_file(FileGroup *sm, const char *path) {
   FileHandle handle = _load_file(sm->fm, path);

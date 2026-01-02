@@ -3,41 +3,37 @@
 #include "gpu/gpu.h"
 #include "gpu/shader_compiler.h"
 #include "pipeline.h"
+#include "system_manager.h"
 #include "util.h"
 #include "vector.h"
-
 typedef struct {
   FileGroup *fg;
   PipelineHandle handle;
 } ReloadCtx;
 
-typedef struct PipelineReloader {
-  M_Pipeline *pm;
-  FileManager *fm;
+typedef struct M_HotReload {
+  FileGroup *fm;
+  VECTOR_TYPES(ReloadCtx) Vector reg_pips;
 
-  VECTOR_TYPES(ReloadCtx)
-  Vector reg_pips;
-
-} M_PipelineReloader;
+} M_HotReload;
 
 // --- Private Prototypes ---
 
-M_PipelineReloader *pr_init(M_Pipeline *pm, FileManager *fm) {
-  M_PipelineReloader *m_reloader = calloc(sizeof(M_PipelineReloader), 1);
-  m_reloader->fm = fm;
-  m_reloader->pm = pm;
+M_HotReload *pr_init(M_Pipeline *pm) {
+  M_HotReload *m_reloader = calloc(sizeof(M_HotReload), 1);
   vec_init(&m_reloader->reg_pips, sizeof(ReloadCtx), NULL);
   return m_reloader;
 }
 // TODO, remove vkPipeline, and only use handles
-void pr_update_modifed(M_PipelineReloader *pr) {
-  GPUDevice *device = pm_get_gpu(pr->pm);
+void pr_update_modifed(M_HotReload *pr) {
+  auto *device = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+  auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
   for (u32 i = 0; i < vec_len(&pr->reg_pips); i++) {
     ReloadCtx *ctx = VEC_AT(&pr->reg_pips, i, ReloadCtx);
 
     // Shader files are modified
     if (fg_is_modified(ctx->fg)) {
-      GPUPipeline *pipeline = pm_get_pipeline(pr->pm, ctx->handle);
+      GPUPipeline *pipeline = pm_get_pipeline(pm, ctx->handle);
       if (pipeline->type == PIPELINE_TYPE_GRAPHIC) {
         CompileResult vs_result = {};
         vs_result.shader_path = pipeline->gp_config.vs_path;
@@ -58,7 +54,7 @@ void pr_update_modifed(M_PipelineReloader *pr) {
         }
 
         gp_set_shaders(&pipeline->gp_config, vs_result.module, fs_result.module);
-        gp_rebuild(pr->pm, &pipeline->gp_config, ctx->handle);
+        gp_rebuild(&pipeline->gp_config, ctx->handle);
       } else {
         CompileResult cs_result = {};
         cs_result.shader_path = pipeline->cp_config.cs_path;
@@ -70,22 +66,22 @@ void pr_update_modifed(M_PipelineReloader *pr) {
         }
 
         cp_set_shader(&pipeline->cp_config, cs_result.module);
-        cp_rebuild(pr->pm, &pipeline->cp_config, ctx->handle);
+        cp_rebuild(&pipeline->cp_config, ctx->handle);
       }
     }
   }
 }
 
 // TODO, remove vkPipeline, and only use handles
-PipelineHandle pr_build_reg_cs(M_PipelineReloader *pr, CpConfig b) {
+PipelineHandle pr_build_reg_cs(M_HotReload *pr, CpConfig b) {
   if (!b.cs_path) {
     LOG_ERROR("[SHADER_COMPILATION] Compute Config has a Null path");
     abort();
   }
 
-  FileGroup *fg = fg_init(pr->fm);
+  FileGroup *fg = fg_init(pr);
 
-  auto device = pm_get_gpu(pr->pm)->device;
+  auto device = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
 
   CompileResult cs_result = {.shader_path = b.cs_path, .include_dir = str_get_dir(b.cs_path), .fg = fg};
 
@@ -102,7 +98,7 @@ PipelineHandle pr_build_reg_cs(M_PipelineReloader *pr, CpConfig b) {
 
   return pip_handle;
 }
-PipelineHandle pr_build_reg(M_PipelineReloader *pr, GpConfig *b, const char *vs_path, const char *fs_path) {
+PipelineHandle pr_build_reg(M_HotReload *pr, GpConfig *b, const char *vs_path, const char *fs_path) {
   FileGroup *fg = fg_init(pr->fm);
 
   auto device = pm_get_gpu(pr->pm)->device;

@@ -17,6 +17,8 @@ add_sources(
 
     triangle_sample.c
     raytrace_sample.c
+
+    system_manager.c
 )
 
 include_this()

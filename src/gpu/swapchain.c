@@ -2,74 +2,16 @@
 #include "common.h"
 #include "gpu/gpu.h"
 #include "resmanager.h"
-#include <vulkan/vulkan_core.h>
 
 // --- Private Prototypes ---
-static bool create_vulkan_swapchain(GPUDevice *dev, M_Swapchain *sc, VkSwapchainKHR old_swapchain);
+static void _destroy(M_GPU *dev, M_Swapchain *sc);
+static bool _system_init(void *config, u32 *mem_req);
+static bool _init(M_GPU *dev, M_Resource *rm, M_Swapchain *sc, uint32_t *w, uint32_t *h);
+static bool _create_vulkan_swapchain(M_GPU *dev, M_Swapchain *sc, VkSwapchainKHR old_swapchain);
 
-bool _system_init(void *config, u32 *mem_req) {
-  SYSTEM_HELPER_MEM(mem_req, M_Swapchain);
-  GPUDevice *dev = m_system_get(SYSTEM_TYPE_GPU);
-  M_Swapchain *sc = m_system_get(SYSTEM_TYPE_SWAPCHAIN);
-  M_Resource *rm = m_system_get(SYSTEM_TYPE_RESOURCE);
+SystemFunc swapchain_system_get_func() { return (SystemFunc){.on_init = _system_init}; }
 
-  return swapchain_init(dev, rm, sc, , uint32_t *h)
-}
-
-bool swapchain_init(GPUDevice *dev, M_Resource *rm, M_Swapchain *sc, uint32_t *w, uint32_t *h) {
-  VkSurfaceCapabilitiesKHR caps = {};
-  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev->physical_device, dev->surface, &caps);
-  *w = caps.currentExtent.width;
-  *h = caps.currentExtent.height;
-  sc->format = VK_FORMAT_B8G8R8A8_SRGB;
-  sc->extent.width = *w;
-  sc->extent.height = *h;
-
-  if (!create_vulkan_swapchain(dev, sc, VK_NULL_HANDLE))
-    return false;
-
-  // --- INITIAL SETUP (New Handles) ---
-  uint32_t image_count = 0;
-  vkGetSwapchainImagesKHR(dev->device, sc->swapchain, &image_count, NULL);
-  VkImage swap_images[image_count];
-  vkGetSwapchainImagesKHR(dev->device, sc->swapchain, &image_count, swap_images);
-
-  vec_init_with_capacity(&sc->imgs, image_count, sizeof(PresentFrame), NULL);
-
-  for (uint32_t i = 0; i < image_count; i++) {
-    PresentFrame present = {};
-
-    // Create View
-    VkImageViewCreateInfo vi = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                                .image = swap_images[i],
-                                .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                                .format = sc->format,
-                                .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
-
-    VkImageView view = {};
-    vkCreateImageView(dev->device, &vi, NULL, &view);
-
-    // Create Semaphore
-    VkSemaphoreCreateInfo info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-    vkCreateSemaphore(dev->device, &info, NULL, &present.sem_rend_done);
-
-    // Import NEW Resource
-    RGImageInfo image_info = {.name = "SwapchainImage",
-                              .format = sc->format,
-                              .width = sc->extent.width,
-                              .height = sc->extent.height,
-                              .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT};
-
-    present.handle = rm_import_image(rm, &image_info, swap_images[i], view);
-
-    vec_push(&sc->imgs, &present);
-  }
-
-  sc->current_img_idx = 0;
-  return true;
-}
-
-void swapchain_resize(GPUDevice *dev, M_Resource *rm, M_Swapchain *sc, VkExtent2D *extent) {
+void swapchain_resize(M_GPU *dev, M_Resource *rm, M_Swapchain *sc, VkExtent2D *extent) {
 
   VkSurfaceCapabilitiesKHR caps = {};
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev->physical_device, dev->surface, &caps);
@@ -79,7 +21,7 @@ void swapchain_resize(GPUDevice *dev, M_Resource *rm, M_Swapchain *sc, VkExtent2
   *extent = caps.currentExtent;
 
   // Create new using old as reference
-  if (!create_vulkan_swapchain(dev, sc, old_sc)) {
+  if (!_create_vulkan_swapchain(dev, sc, old_sc)) {
     // Handle error (panic?)
     return;
   }
@@ -124,12 +66,74 @@ void swapchain_resize(GPUDevice *dev, M_Resource *rm, M_Swapchain *sc, VkExtent2
 
 ResHandle swapchain_get_image(M_Swapchain *sc) { return VEC_AT(&sc->imgs, sc->current_img_idx, PresentFrame)->handle; }
 
-void swapchain_destroy(GPUDevice *dev, M_Swapchain *sc) {}
-
 // --- Private Functions ---
 
+static void _destroy(M_GPU *dev, M_Swapchain *sc) {}
+
+static bool _system_init(void *config, u32 *mem_req) {
+  SYSTEM_HELPER_MEM(mem_req, M_Swapchain);
+  auto *dev = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+  auto *sc = SYSTEM_GET(SYSTEM_TYPE_SWAPCHAIN, M_Swapchain);
+  M_Resource *rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
+  VkExtent2D extent = {};
+  return _init(dev, rm, sc, &extent.width, &extent.height);
+}
+
+static bool _init(M_GPU *dev, M_Resource *rm, M_Swapchain *sc, uint32_t *w, uint32_t *h) {
+  VkSurfaceCapabilitiesKHR caps = {};
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev->physical_device, dev->surface, &caps);
+  *w = caps.currentExtent.width;
+  *h = caps.currentExtent.height;
+  sc->format = VK_FORMAT_B8G8R8A8_SRGB;
+  sc->extent.width = *w;
+  sc->extent.height = *h;
+
+  if (!_create_vulkan_swapchain(dev, sc, VK_NULL_HANDLE))
+    return false;
+
+  // --- INITIAL SETUP (New Handles) ---
+  uint32_t image_count = 0;
+  vkGetSwapchainImagesKHR(dev->device, sc->swapchain, &image_count, NULL);
+  VkImage swap_images[image_count];
+  vkGetSwapchainImagesKHR(dev->device, sc->swapchain, &image_count, swap_images);
+
+  vec_init_with_capacity(&sc->imgs, image_count, sizeof(PresentFrame), NULL);
+
+  for (uint32_t i = 0; i < image_count; i++) {
+    PresentFrame present = {};
+
+    // Create View
+    VkImageViewCreateInfo vi = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                                .image = swap_images[i],
+                                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                                .format = sc->format,
+                                .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+
+    VkImageView view = {};
+    vkCreateImageView(dev->device, &vi, NULL, &view);
+
+    // Create Semaphore
+    VkSemaphoreCreateInfo info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    vkCreateSemaphore(dev->device, &info, NULL, &present.sem_rend_done);
+
+    // Import NEW Resource
+    RGImageInfo image_info = {.name = "SwapchainImage",
+                              .format = sc->format,
+                              .width = sc->extent.width,
+                              .height = sc->extent.height,
+                              .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT};
+
+    present.handle = rm_import_image(rm, &image_info, swap_images[i], view);
+
+    vec_push(&sc->imgs, &present);
+  }
+
+  sc->current_img_idx = 0;
+  return true;
+}
+
 // Helper to create the actual VkSwapchainKHR object (avoids code duplication)
-static bool create_vulkan_swapchain(GPUDevice *dev, M_Swapchain *sc, VkSwapchainKHR old_swapchain) {
+static bool _create_vulkan_swapchain(M_GPU *dev, M_Swapchain *sc, VkSwapchainKHR old_swapchain) {
   VkSwapchainCreateInfoKHR ci = {
       .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
       .surface = dev->surface,

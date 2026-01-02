@@ -33,7 +33,7 @@ typedef struct {
 } SyncDef;
 
 typedef enum {
-  RES_B_SAMPLED_IMAGE = BINDING_SAMPLED,
+  RES_B_SAMPLED_IMAGE = BINDING_SAMPLED_IMAGE,
   RES_B_STORAGE_IMAGE = BINDING_STORAGE_IMAGE,
   RES_B_STORAGE_BUFFER = BINDING_STORAGE_BUFFER,
   RES_B_COUNT,
@@ -143,7 +143,6 @@ void rm_resize_image(M_Resource *rm, ResHandle handle, uint32_t width, uint32_t 
 ResHandle rm_import_image(M_Resource *rm, RGImageInfo *info, VkImage img, VkImageView view);
 void rm_image_sync(M_Resource *rm, VkCommandBuffer cmd, ImageBarrierInfo *info);
 
-GPUDevice *rm_get_gpu(M_Resource *rm);
 RBuffer *rm_get_buffer(M_Resource *rm, ResHandle handle);
 RImage *rm_get_image(M_Resource *rm, ResHandle handle);
 VkDescriptorSetLayout rm_get_bindless_layout(M_Resource *rm);

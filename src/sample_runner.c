@@ -1,15 +1,33 @@
 #include "command.h"
+#include "common.h"
 #include "gpu/pipeline_hotreload.h"
+#include "gpu/swapchain.h"
 #include "resmanager.h"
 #include "sample_interface.h"
+#include "submit_manager.h"
+#include "system_manager.h"
 #include <GLFW/glfw3.h>
+// --- Private Prototypes ---
 
-void run_sample(Sample *sample, Managers *mg, GPUDevice *device, GLFWwindow *window, GPUSwapchain *swapchain) {
+void run_sample(Sample *sample, GLFWwindow *window) {
   // 1. Initiera samplet
+  auto *device = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+  auto *swapchain = SYSTEM_GET(SYSTEM_TYPE_SWAPCHAIN, M_Swapchain);
+  auto *sm = SYSTEM_GET(SYSTEM_TYPE_SUBMIT, M_Submit);
+  auto *rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
+  auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
+  auto *pr = SYSTEM_GET(SYSTEM_TYPE_HOTRELOAD, M_HotReload);
 
   CmdBuffer cmd = cmd_init(device->device, device->graphics_family);
   int width = 0, height = 0;
-  SampleContext ctx = {.mg = mg, .device = device, .swapchain = swapchain, .extent = swapchain->extent, .cmd = cmd};
+  SampleContext ctx = {
+      .cmd = cmd,
+      .gpu = device,
+      .extent = swapchain->extent,
+      .pm = pm,
+      .pr = pr,
+      .rm = rm,
+  };
 
   if (sample->init) {
     sample->init(sample, &ctx);
@@ -31,7 +49,7 @@ void run_sample(Sample *sample, Managers *mg, GPUDevice *device, GLFWwindow *win
       vkDeviceWaitIdle(device->device);
 
       VkExtent2D new_extent = {.width = width, .height = height};
-      swapchain_resize(device, mg->rm, swapchain, &new_extent);
+      swapchain_resize(device, rm, swapchain, &new_extent);
 
       // Låt samplet veta att vi har ändrat storlek (fixa depth/render targets)
       if (sample->on_resize) {
@@ -40,16 +58,15 @@ void run_sample(Sample *sample, Managers *mg, GPUDevice *device, GLFWwindow *win
       continue;
     }
 
-    // Hot-reload system
-    fm_poll(mg->fm);
-    pr_update_modifed(mg->reloader);
-
     // Börja ramen
-    submit_begin_frame(mg->sm);
-    submit_acquire_swapchain(mg->sm, swapchain);
+    m_system_update();
+    sm_begin_frame(sm);
+    sm_acquire_swapchain(sm, swapchain);
+
+    ctx.swap_img = swapchain_get_image(swapchain);
 
     cmd_begin(device->device, cmd);
-    cmd_bind_bindless(cmd, mg->rm, swapchain->extent);
+    cmd_bind_bindless(cmd, rm, swapchain->extent);
 
     // Transition: Swapchain -> Render Target
     ResHandle swap_img = swapchain_get_image(swapchain);
@@ -59,9 +76,9 @@ void run_sample(Sample *sample, Managers *mg, GPUDevice *device, GLFWwindow *win
     //                                   .dst_access = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
     //                                   .dst_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     //                                   .dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
-    // rm_image_sync(mg->rm, cmd.buffer, &color_barrier);
+    // rm_image_sync(rm, cmd.buffer, &color_barrier);
 
-    cmd_sync_image(cmd, mg->rm, swap_img, STATE_COLOR, ACCESS_READ);
+    cmd_sync_image(cmd, rm, swap_img, STATE_COLOR, ACCESS_READ);
 
     if (sample->render) {
       sample->render(sample, &ctx);
@@ -75,20 +92,21 @@ void run_sample(Sample *sample, Managers *mg, GPUDevice *device, GLFWwindow *win
     //                                     .src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     //                                     .dst_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
     //                                     .dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
-    // rm_image_sync(mg->rm, cmd.buffer, &present_barrier);
-    cmd_sync_image(cmd, mg->rm, swap_img, STATE_PRESENT, ACCESS_READ);
+    // rm_image_sync(rm, cmd.buffer, &present_barrier);
+    cmd_sync_image(cmd, rm, swap_img, STATE_PRESENT, ACCESS_READ);
     cmd_end(device->device, cmd);
 
     // Submit & Present
-    submit_work(mg->sm, swapchain, cmd.buffer, true, true);
-    submit_present(mg->sm, swapchain);
+    sm_work(sm, swapchain, cmd.buffer, true, true);
+    sm_present(sm, swapchain);
   }
 
   vkDeviceWaitIdle(device->device);
 
   if (sample->destroy) {
-    sample->destroy(sample, mg);
+    sample->destroy(sample);
   }
 
   // cmd_destroy(device->device, cmd); // Om du har en sådan funktion
 }
+// --- Private Functions ---

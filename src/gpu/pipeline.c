@@ -1,6 +1,7 @@
 #include "pipeline.h"
 #include "common.h"
 #include "gpu/gpu.h"
+#include "gpu/swapchain.h"
 #include "resmanager.h"
 #include "util.h"
 #include "vector.h"
@@ -8,7 +9,6 @@
 #include <string.h>
 
 #include <glslang/Include/glslang_c_interface.h>
-#include <vulkan/vulkan_core.h>
 
 typedef struct M_Pipeline {
 
@@ -18,22 +18,19 @@ typedef struct M_Pipeline {
 } M_Pipeline;
 
 // --- Private Prototypes ---
+static bool _system_init(void *config, u32 *mem_req);
+static void _init(M_Pipeline *pm);
 static VkPipeline _create_cs_pipeline(M_Pipeline *pm, VkDevice device, VkShaderModule cs_shader);
 
 static VkPipeline _build_internal(M_Pipeline *pm, GpConfig *b);
 
-M_Pipeline *pm_init() {
-  M_Pipeline *pm = calloc(sizeof(M_Pipeline), 1);
-  vec_init(&pm->pipelines, sizeof(GPUPipeline), NULL);
-
-  return pm;
-}
+SystemFunc pm_system_get_func() { return (SystemFunc){.on_init = _system_init}; }
 
 GPUPipeline *pm_get_pipeline(M_Pipeline *pm, PipelineHandle handle) {
   return VEC_AT(&pm->pipelines, handle, GPUPipeline);
 }
 
-GpConfig gp_init(M_Resource *rm, const char *name) {
+GpConfig gp_init(const char *name) {
   GpConfig b = {0};
   b.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
   b.cull_mode = VK_CULL_MODE_NONE;
@@ -88,9 +85,10 @@ PipelineHandle gp_build(M_Pipeline *pm, GpConfig *b) {
 
 void gp_rebuild(GpConfig *b, PipelineHandle handle) {
   auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
+  auto *dev = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
   GPUPipeline *p = VEC_AT(&pm->pipelines, handle, GPUPipeline);
   VkPipeline pipeline = _build_internal(pm, b);
-  vkDestroyPipeline(rm_get_gpu(pm->res)->device, p->vk_handle, NULL);
+  vkDestroyPipeline(dev->device, p->vk_handle, NULL);
 
   p->vk_handle = pipeline;
   p->gp_config = *b;
@@ -100,20 +98,21 @@ void cp_set_shader_path(CpConfig *config, const char *path) { config->cs_path = 
 void cp_set_shader(CpConfig *config, VkShaderModule module) { config->module = module; }
 
 PipelineHandle cp_build(M_Pipeline *pm, CpConfig *config) {
+  auto *dev = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
 
-  VkPipeline pipeline = _create_cs_pipeline(pm, rm_get_gpu(pm->res)->device, config->module);
+  VkPipeline pipeline = _create_cs_pipeline(pm, dev->device, config->module);
   GPUPipeline p = {.vk_handle = pipeline, .cp_config = *config, .type = PIPELINE_TYPE_COMPUTE};
   return vec_push(&pm->pipelines, &p);
 }
 
 void cp_rebuild(CpConfig *config, PipelineHandle handle) {
   auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
-  VkDevice device = rm_get_gpu(pm)->device;
+  auto *dev = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
 
-  VkPipeline pipeline = _create_cs_pipeline(pm, device, config->module);
+  VkPipeline pipeline = _create_cs_pipeline(pm, dev->device, config->module);
 
   GPUPipeline *gpu_pipeline = VEC_AT(&pm->pipelines, handle, GPUPipeline);
-  vkDestroyPipeline(device, gpu_pipeline->vk_handle, NULL);
+  vkDestroyPipeline(dev->device, gpu_pipeline->vk_handle, NULL);
   gpu_pipeline->vk_handle = pipeline;
 }
 
@@ -124,7 +123,18 @@ void gp_destroy(VkDevice device, GPUPipeline *p) {
 
 // --- Private Functions ---
 
+static bool _system_init(void *config, u32 *mem_req) {
+  SYSTEM_HELPER_MEM(mem_req, M_Pipeline);
+  auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
+  _init(pm);
+  return true;
+}
+
+static void _init(M_Pipeline *pm) { vec_init(&pm->pipelines, sizeof(GPUPipeline), NULL); }
+
 static VkPipeline _create_cs_pipeline(M_Pipeline *pm, VkDevice device, VkShaderModule cs_shader) {
+  auto *rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
+
   VkPipelineShaderStageCreateInfo stage_info = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
       .stage = VK_SHADER_STAGE_COMPUTE_BIT,
@@ -134,7 +144,7 @@ static VkPipeline _create_cs_pipeline(M_Pipeline *pm, VkDevice device, VkShaderM
 
   VkComputePipelineCreateInfo pipeline_info = {.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
                                                .stage = stage_info,
-                                               .layout = rm_get_pipeline_layout(pm->res)};
+                                               .layout = rm_get_pipeline_layout(rm)};
 
   VkPipeline pipeline = {};
   vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &pipeline);
@@ -142,7 +152,9 @@ static VkPipeline _create_cs_pipeline(M_Pipeline *pm, VkDevice device, VkShaderM
 }
 
 static VkPipeline _build_internal(M_Pipeline *pm, GpConfig *b) {
-  VkDevice device = rm_get_gpu(pm->res)->device;
+  auto *dev = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+  auto *rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
+  VkDevice device = dev->device;
 
   VkPipelineShaderStageCreateInfo stages[2];
   uint32_t stage_count = 0;
@@ -230,7 +242,7 @@ static VkPipeline _build_internal(M_Pipeline *pm, GpConfig *b) {
                                              .pDepthStencilState = &ds,
                                              .pColorBlendState = &cb,
                                              .pDynamicState = &dyn,
-                                             .layout = rm_get_pipeline_layout(pm->res)};
+                                             .layout = rm_get_pipeline_layout(rm)};
 
   VkPipeline pipeline = {};
   if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &createInfo, NULL, &pipeline) != VK_SUCCESS) {

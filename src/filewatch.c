@@ -1,4 +1,5 @@
 #include "filewatch.h"
+#include "gpu/gpu.h"
 #include "vector.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -23,58 +24,30 @@ typedef struct {
   uint32_t version;
 } FileEntry;
 
-typedef struct FileManager {
+typedef struct M_File {
   uint64_t dirty_mask;
 
   VECTOR_TYPES(FileEntry)
   Vector entries;
-} FileManager;
+} M_File;
 
 typedef struct SubManager {
-  FileManager *fm;
+  M_File *fm;
   uint64_t care_mask;
 } FileGroup;
 
 // --- Private Prototypes ---
-static const char *_get_source(FileManager *fm, FileHandle *handle);
-static FileHandle _load_file(FileManager *fm, const char *path);
+static bool _poll();
+static void *_init(M_File *fm);
+static bool _system_init(void *config, u32 *mem_req);
+static const char *_get_source(M_File *fm, FileHandle *handle);
+static FileHandle _load_file(M_File *fm, const char *path);
 static time_t get_file_time(const char *path);
 
-// --- Core API ---
-
-FileManager *fm_init() {
-  FileManager *fm = calloc(sizeof(FileManager), 1);
-  vec_init(&fm->entries, sizeof(FileEntry), NULL);
-  return fm;
-}
-void fm_poll(FileManager *fm) {
-  fm->dirty_mask = 0; // Reset per-frame mask
-  FileEntry *entries = (FileEntry *)fm->entries.data;
-
-  for (size_t i = 0; i < fm->entries.length; i++) {
-    FileEntry *e = &entries[i];
-    time_t disk_time = get_file_time(e->path);
-
-    if (disk_time != 0 && disk_time != e->last_mod) {
-      Vector next = file_read_binary(e->path);
-      if (next.data) {
-        free(e->source);
-        e->source = (char *)next.data;
-        e->size = next.length;
-        e->last_mod = disk_time;
-        e->version++;
-
-        if (i < 64)
-          fm->dirty_mask |= (1ULL << i);
-        LOG_INFO("Hot-Reload: %s (v%d)", e->path, e->version);
-      }
-    }
-  }
-}
+SystemFunc fm_system_get_func() { return (SystemFunc){.on_init = _system_init, .on_update = _poll}; }
 
 // --- SubManager API ---
-
-FileGroup *fg_init(FileManager *fm) {
+FileGroup *fg_init(M_File *fm) {
   FileGroup *fg = calloc(sizeof(FileGroup), 1);
   fg->fm = fm;
   return fg;
@@ -126,14 +99,53 @@ Vector file_read_binary(const char *path) {
 
 // --- Private Functions ---
 
+static bool _poll() {
+  auto *fm = SYSTEM_GET(SYSTEM_TYPE_FILE, M_File);
+  fm->dirty_mask = 0; // Reset per-frame mask
+  FileEntry *entries = (FileEntry *)fm->entries.data;
+
+  for (size_t i = 0; i < fm->entries.length; i++) {
+    FileEntry *e = &entries[i];
+    time_t disk_time = get_file_time(e->path);
+
+    if (disk_time != 0 && disk_time != e->last_mod) {
+      Vector next = file_read_binary(e->path);
+      if (next.data) {
+        free(e->source);
+        e->source = (char *)next.data;
+        e->size = next.length;
+        e->last_mod = disk_time;
+        e->version++;
+
+        if (i < 64)
+          fm->dirty_mask |= (1ULL << i);
+        LOG_INFO("Hot-Reload: %s (v%d)", e->path, e->version);
+      }
+    }
+  }
+}
+
+static void *_init(M_File *fm) {
+  vec_init(&fm->entries, sizeof(FileEntry), NULL);
+  return fm;
+}
+
+// --- Core API ---
+static bool _system_init(void *config, u32 *mem_req) {
+  SYSTEM_HELPER_MEM(mem_req, M_File);
+  auto *fm = SYSTEM_GET(SYSTEM_TYPE_FILE, M_File);
+  _init(fm);
+  return true;
+}
+
 // --- Getters & Helpers ---
-static const char *_get_source(FileManager *fm, FileHandle *handle) {
+static const char *_get_source(M_File *fm, FileHandle *handle) {
   if (handle->index == INVALID_INDEX || handle->index > fm->entries.length)
     return NULL;
   return ((FileEntry *)fm->entries.data)[handle->index].source;
 }
 
-static FileHandle _load_file(FileManager *fm, const char *path) {
+static FileHandle _load_file(M_File *fm, const char *path) {
   if (!fm || !path)
     return INVALID_HANDLE;
 

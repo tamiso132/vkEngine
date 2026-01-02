@@ -45,7 +45,7 @@ static const StateProperties STATE_TABLE[] = {[STATE_SHADER] = {.stage = VK_PIPE
 };
 
 CmdBuffer cmd_init(VkDevice device, u32 queue_fam) {
-  CmdBuffer cmd = {};
+  CmdBuffer cmd = {.device = device};
   VkCommandPoolCreateInfo info = {.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
                                   .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
                                   .queueFamilyIndex = queue_fam};
@@ -72,7 +72,7 @@ void cmd_begin(VkDevice device, CmdBuffer cmd) {
 // Helper to end and flush the command buffer immediately
 void cmd_end(VkDevice device, CmdBuffer cmd) { vk_check(vkEndCommandBuffer(cmd.buffer)); }
 
-void cmd_begin_rendering(CmdBuffer cmd, ResourceMa *rm, RenderingBeginInfo *info) {
+void cmd_begin_rendering(CmdBuffer cmd, M_Resource *rm, RenderingBeginInfo *info) {
 
   VkRenderingAttachmentInfo colors_view[info->colors_count];
   for (u32 i = 0; i < info->colors_count; i++) {
@@ -101,7 +101,7 @@ void cmd_begin_rendering(CmdBuffer cmd, ResourceMa *rm, RenderingBeginInfo *info
   vkCmdBeginRendering(cmd.buffer, &render_info);
 }
 
-void cmd_bind_bindless(CmdBuffer cmd, ResourceMa *rm, VkExtent2D extent) {
+void cmd_bind_bindless(CmdBuffer cmd, M_Resource *rm, VkExtent2D extent) {
   VkDescriptorSet set = rm_get_bindless_set(rm);
   VkPipelineLayout pip_layout = rm_get_pipeline_layout(rm);
 
@@ -115,9 +115,9 @@ void cmd_bind_bindless(CmdBuffer cmd, ResourceMa *rm, VkExtent2D extent) {
   vkCmdSetViewport(cmd.buffer, 0, 1, &viewport);
 }
 
-void cmd_bind_pipeline(CmdBuffer cmd, M_Pipeline *pm, BindPipelineInfo *info) {
+void cmd_bind_pipeline(CmdBuffer cmd, M_Pipeline *pm, M_Resource *rm, BindPipelineInfo *info) {
   GPUPipeline *pipeline = pm_get_pipeline(pm, info->handle);
-  VkPipelineLayout layout = rm_get_pipeline_layout(pm_get_rm(pm));
+  VkPipelineLayout layout = rm_get_pipeline_layout(rm);
 
   VkPipelineBindPoint point =
       pipeline->type == PIPELINE_TYPE_COMPUTE ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -137,7 +137,7 @@ void cmd_bind_pipeline(CmdBuffer cmd, M_Pipeline *pm, BindPipelineInfo *info) {
 
 void cmd_end_rendering(CmdBuffer cmd) { vkCmdEndRendering(cmd.buffer); }
 
-void cmd_image_copy_to_image(CmdBuffer cmd, ResourceMa *rm, ResHandle src_handle, ResHandle dst_handle) {
+void cmd_image_copy_to_image(CmdBuffer cmd, M_Resource *rm, ResHandle src_handle, ResHandle dst_handle) {
   RImage *src_img = rm_get_image(rm, src_handle);
   RImage *dst_img = rm_get_image(rm, dst_handle);
 
@@ -179,7 +179,7 @@ void cmd_image_copy_to_image(CmdBuffer cmd, ResourceMa *rm, ResHandle src_handle
   vkCmdBlitImage2(cmd.buffer, &info);
 }
 
-void cmd_sync_image(CmdBuffer cmd, ResourceMa *rm, ResHandle img_handle, ResourceState dst_state,
+void cmd_sync_image(CmdBuffer cmd, M_Resource *rm, ResHandle img_handle, ResourceState dst_state,
                     AccessType dst_access) {
 
   RImage *img = rm_get_image(rm, img_handle);
@@ -205,7 +205,7 @@ void cmd_sync_image(CmdBuffer cmd, ResourceMa *rm, ResHandle img_handle, Resourc
   vkCmdPipelineBarrier2(cmd.buffer, &info);
 }
 
-void cmd_sync_buffer(VkCommandBuffer cmd, ResourceMa *rm, ResHandle buf_handle, ResourceState dst_state,
+void cmd_sync_buffer(VkCommandBuffer cmd, M_Resource *rm, ResHandle buf_handle, ResourceState dst_state,
                      AccessType dst_access) {
 
   RBuffer *buffer = rm_get_buffer(rm, buf_handle);
@@ -229,7 +229,7 @@ void cmd_sync_buffer(VkCommandBuffer cmd, ResourceMa *rm, ResHandle buf_handle, 
   vkCmdPipelineBarrier2(cmd, &dep);
 }
 
-void cmd_buffer_upload(CmdBuffer cmd, ResourceMa *rm, ResHandle handle, void *data, u32 size) {
+void cmd_buffer_upload(CmdBuffer cmd, M_GPU *dev, M_Resource *rm, ResHandle handle, void *data, u32 size) {
   RBuffer *buffer = rm_get_buffer(rm, handle);
 
   // TODO, a check if the buffer is big enough,
@@ -240,7 +240,7 @@ void cmd_buffer_upload(CmdBuffer cmd, ResourceMa *rm, ResHandle handle, void *da
     // TODO, transfer buffer stage to src
   } else {
     void *gpu_ptr = {};
-    VmaAllocator allocator = rm_get_gpu(rm)->allocator;
+    VmaAllocator allocator = dev->allocator;
     vk_check(vmaMapMemory(allocator, buffer->alloc, &gpu_ptr));
 
     memcpy(gpu_ptr, data, size);

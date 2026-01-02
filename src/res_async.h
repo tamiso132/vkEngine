@@ -6,7 +6,6 @@ typedef struct AsyncBuffer AsyncBuffer;
 
 ResHandle async_get_active_handle(AsyncBuffer *ab);
 
-void async_check_upload_ready(ResourceMa *rm, AsyncBuffer *ab);
-void async_init(ResourceMa *rm, RGBufferInfo *info, AsyncBuffer *ab);
-void async_sync(ResourceMa *rm, AsyncBuffer *ab);
-void async_update(ResourceMa *rm, CmdBuffer cmd, AsyncBuffer *ab, VkFence *fence, void *data, uint64_t size);
+void async_check_upload_ready(M_Resource *rm, AsyncBuffer *ab);
+void async_init(M_Resource *rm, RGBufferInfo *info, AsyncBuffer *ab);
+void async_update(M_Resource *rm, CmdBuffer cmd, AsyncBuffer *ab, VkFence *fence, void *data, uint64_t size);

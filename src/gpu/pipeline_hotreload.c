@@ -6,28 +6,95 @@
 #include "system_manager.h"
 #include "util.h"
 #include "vector.h"
+
 typedef struct {
   FileGroup *fg;
   PipelineHandle handle;
 } ReloadCtx;
 
 typedef struct M_HotReload {
-  FileGroup *fm;
   VECTOR_TYPES(ReloadCtx) Vector reg_pips;
 
 } M_HotReload;
 
 // --- Private Prototypes ---
+static bool _update_modifed();
+static bool _system_init(void *config, u32 *mem_req);
+static void _init(M_HotReload *pr, M_Pipeline *pm);
 
-M_HotReload *pr_init(M_Pipeline *pm) {
-  M_HotReload *m_reloader = calloc(sizeof(M_HotReload), 1);
-  vec_init(&m_reloader->reg_pips, sizeof(ReloadCtx), NULL);
-  return m_reloader;
+SystemFunc pr_system_get_func() {
+  return (SystemFunc){
+      .on_init = _system_init,
+      .on_update = _update_modifed,
+  };
 }
+
 // TODO, remove vkPipeline, and only use handles
-void pr_update_modifed(M_HotReload *pr) {
+PipelineHandle pr_build_reg_cs(M_HotReload *pr, CpConfig b) {
+  if (!b.cs_path) {
+    LOG_ERROR("[SHADER_COMPILATION] Compute Config has a Null path");
+    abort();
+  }
+  auto *fm = SYSTEM_GET(SYSTEM_TYPE_FILE, M_File);
+  auto *dev = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+  auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
+
+  FileGroup *fg = fg_init(fm);
+
+  CompileResult cs_result = {.shader_path = b.cs_path, .include_dir = str_get_dir(b.cs_path), .fg = fg};
+
+  if (shader_compile_glsl(dev->device, &cs_result, SHADER_STAGE_COMPUTE) != SHADER_SUCCESS) {
+    LOG_ERROR("[SHADER_COMPILATION] Failed to compile: [%s,]", b.cs_path);
+    abort();
+  }
+
+  cp_set_shader(&b, cs_result.module);
+
+  PipelineHandle pip_handle = cp_build(pm, &b);
+  ReloadCtx rel = {.fg = fg, .handle = pip_handle};
+  vec_push(&pr->reg_pips, &rel);
+
+  return pip_handle;
+}
+
+PipelineHandle pr_build_reg(M_HotReload *pr, GpConfig *b, const char *vs_path, const char *fs_path) {
+  auto *fm = SYSTEM_GET(SYSTEM_TYPE_FILE, M_File);
+  auto *dev = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+  auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
+
+  FileGroup *fg = fg_init(fm);
+
+  CompileResult vs_result = {.shader_path = vs_path, .include_dir = str_get_dir(vs_path), .fg = fg};
+  CompileResult fs_result = {.shader_path = fs_path, .include_dir = str_get_dir(fs_path), .fg = fg};
+
+  if (shader_compile_glsl(dev->device, &vs_result, SHADER_STAGE_VERTEX) != SHADER_SUCCESS) {
+    LOG_ERROR("[SHADER_COMPILATION] Failed to compile: [%s,]", vs_path);
+    abort();
+  }
+
+  if (shader_compile_glsl(dev->device, &fs_result, SHADER_STAGE_FRAGMENT) != SHADER_SUCCESS) {
+    LOG_ERROR("[SHADER_COMPILATION] Failed to compile: [%s]", fs_path);
+    abort();
+  }
+
+  gp_set_shaders(b, vs_result.module, fs_result.module);
+
+  PipelineHandle pip_handle = gp_build(pm, b);
+  ReloadCtx rel = {.fg = fg, .handle = pip_handle};
+  vec_push(&pr->reg_pips, &rel);
+
+  return pip_handle;
+}
+
+// --- Private Functions ---
+
+// TODO, remove vkPipeline, and only use handles
+static bool _update_modifed() {
+
   auto *device = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
   auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
+  auto *pr = SYSTEM_GET(SYSTEM_TYPE_HOTRELOAD, M_HotReload);
+
   for (u32 i = 0; i < vec_len(&pr->reg_pips); i++) {
     ReloadCtx *ctx = VEC_AT(&pr->reg_pips, i, ReloadCtx);
 
@@ -70,58 +137,15 @@ void pr_update_modifed(M_HotReload *pr) {
       }
     }
   }
+  return true;
 }
 
-// TODO, remove vkPipeline, and only use handles
-PipelineHandle pr_build_reg_cs(M_HotReload *pr, CpConfig b) {
-  if (!b.cs_path) {
-    LOG_ERROR("[SHADER_COMPILATION] Compute Config has a Null path");
-    abort();
-  }
-
-  FileGroup *fg = fg_init(pr);
-
-  auto device = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
-
-  CompileResult cs_result = {.shader_path = b.cs_path, .include_dir = str_get_dir(b.cs_path), .fg = fg};
-
-  if (shader_compile_glsl(device, &cs_result, SHADER_STAGE_COMPUTE) != SHADER_SUCCESS) {
-    LOG_ERROR("[SHADER_COMPILATION] Failed to compile: [%s,]", b.cs_path);
-    abort();
-  }
-
-  cp_set_shader(&b, cs_result.module);
-
-  PipelineHandle pip_handle = cp_build(pr->pm, &b);
-  ReloadCtx rel = {.fg = fg, .handle = pip_handle};
-  vec_push(&pr->reg_pips, &rel);
-
-  return pip_handle;
+static bool _system_init(void *config, u32 *mem_req) {
+  SYSTEM_HELPER_MEM(mem_req, M_HotReload);
+  auto *pr = SYSTEM_GET(SYSTEM_TYPE_HOTRELOAD, M_HotReload);
+  auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
+  _init(pr, pm);
+  return true;
 }
-PipelineHandle pr_build_reg(M_HotReload *pr, GpConfig *b, const char *vs_path, const char *fs_path) {
-  FileGroup *fg = fg_init(pr->fm);
 
-  auto device = pm_get_gpu(pr->pm)->device;
-
-  CompileResult vs_result = {.shader_path = vs_path, .include_dir = str_get_dir(vs_path), .fg = fg};
-  CompileResult fs_result = {.shader_path = fs_path, .include_dir = str_get_dir(fs_path), .fg = fg};
-
-  if (shader_compile_glsl(device, &vs_result, SHADER_STAGE_VERTEX) != SHADER_SUCCESS) {
-    LOG_ERROR("[SHADER_COMPILATION] Failed to compile: [%s,]", vs_path);
-    abort();
-  }
-
-  if (shader_compile_glsl(device, &fs_result, SHADER_STAGE_FRAGMENT) != SHADER_SUCCESS) {
-    LOG_ERROR("[SHADER_COMPILATION] Failed to compile: [%s]", fs_path);
-    abort();
-  }
-
-  gp_set_shaders(b, vs_result.module, fs_result.module);
-
-  PipelineHandle pip_handle = gp_build(pr->pm, b);
-  ReloadCtx rel = {.fg = fg, .handle = pip_handle};
-  vec_push(&pr->reg_pips, &rel);
-
-  return pip_handle;
-}
-// --- Private Functions ---
+static void _init(M_HotReload *pr, M_Pipeline *pm) { vec_init(&pr->reg_pips, sizeof(ReloadCtx), NULL); }

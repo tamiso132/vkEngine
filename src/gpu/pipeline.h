@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <volk.h>
-#include <vulkan/vulkan_core.h>
 
 typedef enum PipelineType {
   PIPELINE_TYPE_COMPUTE,
@@ -58,9 +57,7 @@ typedef struct {
 
 // PUBLIC FUNCTIONS
 
-M_Pipeline *pm_init();
-M_GPU *pm_get_gpu(M_Pipeline *pm);
-M_Resource *pm_get_rm(M_Pipeline *pm);
+SystemFunc pm_system_get_func();
 GPUPipeline *pm_get_pipeline(M_Pipeline *pm, PipelineHandle handle);
 
 // P COMPUTE BUILDER
@@ -71,7 +68,7 @@ PipelineHandle cp_build(M_Pipeline *pm, CpConfig *config);
 void cp_rebuild(CpConfig *config, PipelineHandle handle);
 
 // P GRAPHIC BUILDER
-GpConfig gp_init(M_Resource *rm, const char *name);
+GpConfig gp_init(const char *name);
 void gp_set_shaders(GpConfig *b, VkShaderModule vs, VkShaderModule fs);
 void gp_set_topology(GpConfig *b, VkPrimitiveTopology topo);
 void gp_set_cull(GpConfig *b, VkCullModeFlags mode, VkFrontFace front);

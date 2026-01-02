@@ -40,6 +40,6 @@
 #endif
 
 // --- 2. Shared Constants ---
-#define BINDING_SAMPLED 0
+#define BINDING_SAMPLED_IMAGE 0
 #define BINDING_STORAGE_IMAGE 1
 #define BINDING_STORAGE_BUFFER 2

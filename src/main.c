@@ -1,9 +1,12 @@
-#include "common.h"
-#include "raytrace_sample.h"
 #define GLFW_INCLUDE_VULKAN
 #define VK_NO_PROTOTYPES
 
-#include "util.h"
+#include "common.h"
+#include "filewatch.h"
+#include "gpu/pipeline.h"
+#include "raytrace_sample.h"
+#include "submit_manager.h"
+
 #include <GLFW/glfw3.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,11 +14,17 @@
 #include <glslang/Include/glslang_c_interface.h>
 
 #include "gpu/gpu.h"
+#include "gpu/pipeline_hotreload.h"
 #include "gpu/swapchain.h"
 #include "resmanager.h"
 #include "sample_interface.h"
+#include "sample_runner.h"
+#include "submit_manager.h"
 #include "system_manager.h"
-#include "triangle_sample.h"
+
+// --- Private Prototypes ---
+static void _register_systems(GPUSystemInfo info);
+
 int main() {
   // 1. Init Windowp
 
@@ -30,30 +39,16 @@ int main() {
   GPUSystemInfo gpu_info = {.window = window,
                             .info = (GPUInstanceInfo){.app_name = "RenderGraph Demo", .enable_validation = true}};
 
-  m_system_register(gpu_system_get_func(), SYSTEM_TYPE_GPU, &gpu_info);
-
-  ResourceManager *manager = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, ResourceManager);
-  // 3. Init Swapchain
+  _register_systems(gpu_info);
 
   if (!glslang_initialize_process()) {
     printf("Failed to initialize glslang process.\n");
     exit(1);
   }
 
-  Managers mg = {};
-  init_managers(&mg, &device);
-
-  GPUSwapchain swapchain;
-  swapchain_init(&device, mg.rm, &swapchain, &width, &height);
   // Sample sample = create_triangle_sample();
   Sample sample = create_raytrace_sample();
-  run_sample(&sample, &mg, &device, window, &swapchain);
-
-  vkDeviceWaitIdle(device.device);
-
-  _destroy(mg.rm);
-  swapchain_destroy(&device, &swapchain);
-  gpu_destroy(&device);
+  run_sample(&sample, window);
 
   glfwDestroyWindow(window);
   glfwTerminate();
@@ -61,3 +56,15 @@ int main() {
   return 0;
 }
 // --- Private Functions ---
+
+static void _register_systems(GPUSystemInfo info) {
+  m_system_register(gpu_system_get_func(), SYSTEM_TYPE_GPU, &info);
+  m_system_register(rm_system_get_func(), SYSTEM_TYPE_RESOURCE, NULL);
+  m_system_register(swapchain_system_get_func(), SYSTEM_TYPE_SWAPCHAIN, NULL);
+  m_system_register(fm_system_get_func(), SYSTEM_TYPE_FILE, NULL);
+  m_system_register(pm_system_get_func(), SYSTEM_TYPE_PIPELINE, NULL);
+  m_system_register(pr_system_get_func(), SYSTEM_TYPE_HOTRELOAD, NULL);
+  m_system_register(sm_system_get_func(), SYSTEM_TYPE_SUBMIT, NULL);
+
+  m_system_init();
+}

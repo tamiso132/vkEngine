@@ -3,7 +3,6 @@
 #include "resmanager.h"
 #include "vector.h"
 
-// PUBLIC FUNCTIONS
 typedef struct SwapPresent {
   ResHandle handle;
   VkSemaphore sem_rend_done;
@@ -20,8 +19,11 @@ typedef struct M_Swapchain {
   uint32_t current_img_idx;
 } M_Swapchain;
 
-typedef struct GPUSwapchainSystemInfo {
-} GPUSwapchainSystemInfo;
+typedef struct SwapchainConfig {
+} SwapchainConfig;
 
+// PUBLIC FUNCTIONS
+
+SystemFunc swapchain_system_get_func();
+void swapchain_resize(M_GPU *dev, M_Resource *rm, M_Swapchain *sc, VkExtent2D *extent);
 ResHandle swapchain_get_image(M_Swapchain *sc);
-void swapchain_destroy(GPUDevice *dev, M_Swapchain *sc);

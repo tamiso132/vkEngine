@@ -1,5 +1,6 @@
 // filewatch.h
 #pragma once
+#include "system_manager.h"
 #include "vector.h"
 #include <stdbool.h>
 
@@ -11,13 +12,11 @@ typedef struct {
   uint32_t index; // Slot in the manager
 } FileHandle;
 
-typedef struct M_File M_File;
 typedef struct SubManager FileGroup;
 
 // PUBLIC FUNCTIONS
 
-void fm_poll(M_File *fm);
-M_File *fm_init();
+SystemFunc fm_system_get_func();
 
 FileGroup *fg_init(M_File *fm);
 bool fg_is_modified(FileGroup *sm);

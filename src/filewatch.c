@@ -123,6 +123,7 @@ static bool _poll() {
       }
     }
   }
+  return true;
 }
 
 static void *_init(M_File *fm) {

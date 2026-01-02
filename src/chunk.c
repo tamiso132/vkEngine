@@ -11,22 +11,12 @@ typedef struct ChildIndex {
   u32 first_child_index;
 } ChildIndex;
 
-static uint64_t split_by_3(uint32_t a) {
-  u64 x = a & 0x1FFFFF; // We only care about lower 21 bits (enough for
-                        // coords up to ~2 million)
-
-  // Magic shifts to spread the bits out
-  x = (x | x << 32) & 0x1F00000000FFFF;
-  x = (x | x << 16) & 0x1F0000FF0000FF;
-  x = (x | x << 8) & 0x100F00F00F00F00F;
-  x = (x | x << 4) & 0x10C30C30C30C30C3;
-  x = (x | x << 2) & 0x1249249249249249;
-
-  return x;
-}
-
 // Max depth 6 = 4096^3 voxels
 #define MAX_TREE_DEPTH 6
+
+// --- Private Prototypes ---
+static uint64_t split_by_3(uint32_t a);
+static uint64_t get_morton_code(int x, int y, int z);
 
 void chunk_rebuild(ChunkTree *chunk, int max_depth) {
   if (!chunk->is_dirty)
@@ -109,8 +99,7 @@ void chunk_rebuild(ChunkTree *chunk, int max_depth) {
         continue; // Skip empty (except root)
 
       Node n = {.mask = mask};
-      ChildIndex c = {.first_child_index =
-                          (d > 0 && mask != 0) ? next_level_child_ptr : 0};
+      ChildIndex c = {.first_child_index = (d > 0 && mask != 0) ? next_level_child_ptr : 0};
 
       vec_push(&chunk->nodes, &n);
       vec_push(&chunk->child_indices, &c);
@@ -127,14 +116,6 @@ void chunk_rebuild(ChunkTree *chunk, int max_depth) {
     free(level_masks[i]);
   chunk->is_dirty = false;
 }
-// MORTON ENCODER
-// Input: x, y, z inside the chunk (Range 0 to 63)
-// Output: 64-bit sortable code
-// -----------------------------------------------------------------------------
-static uint64_t get_morton_code(int x, int y, int z) {
-  // Interleave: Z gets shifted by 2, Y by 1, X by 0
-  return split_by_3(x) | (split_by_3(y) << 1) | (split_by_3(z) << 2);
-}
 
 void chunk_set_voxel(ChunkTree *chunk, int x, int y, int z, bool set_active) {
   u64 code = get_morton_code(x, y, z);
@@ -143,8 +124,7 @@ void chunk_set_voxel(ChunkTree *chunk, int x, int y, int z, bool set_active) {
   chunk->is_dirty |= chunk->bits[word_index] ^ (uint64_t)set_active;
   auto bit_mask = 1ULL << (code & 63);
 
-  chunk->bits[word_index] =
-      (chunk->bits[word_index] & ~bit_mask) | (set_active ? bit_mask : 0);
+  chunk->bits[word_index] = (chunk->bits[word_index] & ~bit_mask) | (set_active ? bit_mask : 0);
 }
 
 bool chunk_get_voxel(ChunkTree *chunk, int x, int y, int z) {
@@ -153,4 +133,28 @@ bool chunk_get_voxel(ChunkTree *chunk, int x, int y, int z) {
   uint64_t bit_mask = 1ull << (code & 63);
 
   return (chunk->bits[word_index] & bit_mask) != 0;
+}
+// --- Private Functions ---
+
+static uint64_t split_by_3(uint32_t a) {
+  u64 x = a & 0x1FFFFF; // We only care about lower 21 bits (enough for
+                        // coords up to ~2 million)
+
+  // Magic shifts to spread the bits out
+  x = (x | x << 32) & 0x1F00000000FFFF;
+  x = (x | x << 16) & 0x1F0000FF0000FF;
+  x = (x | x << 8) & 0x100F00F00F00F00F;
+  x = (x | x << 4) & 0x10C30C30C30C30C3;
+  x = (x | x << 2) & 0x1249249249249249;
+
+  return x;
+}
+
+// MORTON ENCODER
+// Input: x, y, z inside the chunk (Range 0 to 63)
+// Output: 64-bit sortable code
+// -----------------------------------------------------------------------------
+static uint64_t get_morton_code(int x, int y, int z) {
+  // Interleave: Z gets shifted by 2, Y by 1, X by 0
+  return split_by_3(x) | (split_by_3(y) << 1) | (split_by_3(z) << 2);
 }

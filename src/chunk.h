@@ -5,6 +5,7 @@
 #include "util.h"
 #include "vector.h"
 
+// PUBLIC FUNCTIONS
 typedef struct ChunkTree {
   // flag, need to be rebuilt:true
   bool is_dirty;
@@ -17,6 +18,6 @@ typedef struct ChunkTree {
   uint64_t bits[WORDS_PER_CHUNK];
 } ChunkTree;
 
-void chunk_rebuild(ChunkTree *chunk);
+void chunk_rebuild(ChunkTree *chunk, int max_depth);
 bool chunk_get_voxel(ChunkTree *chunk, int x, int y, int z);
 void chunk_set_voxel(ChunkTree *chunk, int x, int y, int z, bool set_active);

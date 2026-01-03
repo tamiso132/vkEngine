@@ -19,6 +19,7 @@ add_sources(
     raytrace_sample.c
 
     system_manager.c
+    chunk.c
 )
 
 include_this()

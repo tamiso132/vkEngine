@@ -25,9 +25,11 @@
 // --- Private Prototypes ---
 static void _register_systems(GPUSystemInfo info);
 
+#include "chunk.h"
+
 int main() {
   // 1. Init Windowp
-
+  return chunk_test();
   u32 width = 800;
   u32 height = 600;
 

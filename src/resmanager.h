@@ -133,7 +133,6 @@ void rm_on_new_frame(M_Resource *rm);
 void rm_destroy(M_Resource *rm);
 
 ResHandle rm_create_buffer(M_Resource *rm, RGBufferInfo *info);
-void rm_buffer_upload(M_Resource *rm, VkCommandBuffer cmd, ResHandle handle, void *data, u32 size);
 void rm_buffer_sync(M_Resource *rm, VkCommandBuffer cmd, BufferBarrierInfo *info);
 
 ResHandle rm_create_image(M_Resource *rm, RGImageInfo info);

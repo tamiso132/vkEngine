@@ -62,6 +62,7 @@ void *vec_at(Vector *vec, size_t index) {
 }
 
 u32 vec_len(Vector *vec) { return vec->length; }
+u32 vec_bytes_len(Vector *vec) { return vec->length * vec->element_size; }
 
 void vec_destroy(Vector *vec) {
   if (vec->data) {

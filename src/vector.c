@@ -51,8 +51,8 @@ void vec_clear(Vector *vec) {
 }
 
 void vec_realloc_capacity(Vector *vec, size_t new_cap) {
-  vec->allocator->realloc(vec->data, vec->element_size * vec->capacity, new_cap * vec->element_size,
-                          vec->allocator->ctx);
+  vec->data = vec->allocator->realloc(vec->data, vec->element_size * vec->capacity, new_cap * vec->element_size,
+                                      vec->allocator->ctx);
 }
 
 void *vec_at(Vector *vec, size_t index) {

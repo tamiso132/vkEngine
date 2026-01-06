@@ -1,17 +1,23 @@
 
 #include "raytrace_sample.h"
+#include "cglm/call/vec3.h"
 #include "command.h"
 #include "common.h"
 #include "gpu/pipeline.h"
 #include "gpu/pipeline_hotreload.h"
 #include "gpu/swapchain.h"
+#include "raycam.h"
 #include "resmanager.h"
 #include "sample_interface.h"
+
+#include "shaders/raytrace.glsl"
 #include "shaders/triangle.glsl"
+#include <math.h>
 
 typedef struct RaytraceData {
   PipelineHandle cs_pipeline;
   ResHandle cs_output_img;
+  ResHandle cam_buffer;
 } RaytraceData;
 
 // --- Private Prototypes ---
@@ -35,6 +41,15 @@ static void _init(Sample *self, SampleContext *ctx) {
                       .width = ctx->extent.width,
                       .usage = VK_IMAGE_USAGE_STORAGE_BIT};
 
+  RGBufferInfo cam_info = {
+      .name = "CamBuffer",
+      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+      .capacity = sizeof(ShaderRayCam),
+      .mem = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+  };
+
+  data->cam_buffer = rm_create_buffer(ctx->rm, &cam_info);
+
   data->cs_pipeline = pr_build_reg_cs(ctx->pr, config);
   data->cs_output_img = rm_create_image(ctx->rm, info);
 
@@ -46,6 +61,14 @@ static void _render(Sample *self, SampleContext *ctx) {
   uint32_t groupsX = (ctx->extent.width + 7) / 8;
   uint32_t groupsY = (ctx->extent.height + 7) / 8;
   ResHandle swap_img = ctx->swap_img;
+
+  float half_h = tanf((M_PI / 180) * ctx->cam.vfov_deg * 0.5f);
+  float half_w = ctx->cam.aspect * half_h;
+
+  ShaderRayCam gpu_cam = {.extent = {ctx->extent.width, ctx->extent.height}, .half_w_h = {half_w, half_h}};
+  glmc_vec3_copy(ctx->cam.u, gpu_cam.u);
+  glmc_vec3_copy(ctx->cam.v, gpu_cam.v);
+  glmc_vec3_copy(ctx->cam.w, gpu_cam.w);
 
   PushComputeTriangle p = {.extent = {ctx->extent.width, ctx->extent.height},
                            .img_id = rm_get_image_index(ctx->rm, data->cs_output_img),

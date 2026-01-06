@@ -2,6 +2,7 @@
 #include "common.h"
 #include "gpu/pipeline_hotreload.h"
 #include "gpu/swapchain.h"
+#include "raycam.c"
 #include "resmanager.h"
 #include "sample_interface.h"
 #include "submit_manager.h"
@@ -20,6 +21,7 @@ void run_sample(Sample *sample, GLFWwindow *window) {
 
   CmdBuffer cmd = cmd_init(device->device, device->graphics_family);
   int width = 0, height = 0;
+
   SampleContext ctx = {
       .cmd = cmd,
       .gpu = device,
@@ -27,15 +29,21 @@ void run_sample(Sample *sample, GLFWwindow *window) {
       .pm = pm,
       .pr = pr,
       .rm = rm,
+      .cam = camera_init(),
   };
 
   if (sample->init) {
     sample->init(sample, &ctx);
   }
 
+  double last_time = glfwGetTime();
+
   // --- Main Loop ---
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
+    double time_now = glfwGetTime();
+    double dt = time_now - last_time;
+    last_time = time_now;
 
     glfwGetFramebufferSize(window, &width, &height);
     // Hantera minimering
@@ -59,6 +67,7 @@ void run_sample(Sample *sample, GLFWwindow *window) {
     }
 
     // Börja ramen
+    camera_update(&ctx.cam, window, dt);
     m_system_update();
     sm_begin_frame(sm);
     sm_acquire_swapchain(sm, swapchain);

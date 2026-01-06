@@ -1,6 +1,7 @@
 #pragma once
 #include "command.h"
 #include "common.h"
+#include "raycam.h"
 
 typedef struct {
   CmdBuffer cmd; // Den aktuella kommandobuffern för denna frame
@@ -11,6 +12,7 @@ typedef struct {
   M_HotReload *pr;
   M_Pipeline *pm;
   M_GPU *gpu;
+  Camera cam;
 
 } SampleContext;
 

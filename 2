@@ -1,0 +1,145 @@
+
+// camera.h
+#pragma once
+#include "common.h"
+#include <stdint.h>
+#include <time.h>
+
+#include "shaders/raytrace.glsl"
+#include <GLFW/glfw3.h>
+#include <cglm/cglm.h>
+
+typedef struct Ray {
+  vec3 origin;
+  vec3 dir; // should be normalized
+} Ray;
+
+typedef struct Camera {
+  vec3 pos;
+
+  // Orthonormal basis (world-space)
+  vec3 forward; // points where camera looks
+  vec3 right;
+  vec3 up;
+
+  // Projection params
+  float vfov_deg;
+  float aspect; // width / height
+
+  float yaw;   // x-y
+  float pitch; // y-z
+
+  ResHandle cam_buffer;
+} Camera;
+// camera.c
+
+static float deg_to_rad(float deg) { return deg * (float)M_PI / 180.0f; }
+
+void camera_update_basis(Camera *cam) {
+  // Clamp pitch to avoid flipping
+  if (cam->pitch > 1.55f)
+    cam->pitch = 1.55f;
+  if (cam->pitch < -1.55f)
+    cam->pitch = -1.55f;
+
+  // Forward from yaw/pitch
+  // Right-handed, -Z forward when yaw=pitch=0
+  cam->forward[0] = cosf(cam->pitch) * sinf(cam->yaw);
+  cam->forward[1] = sinf(cam->pitch);
+  cam->forward[2] = -cosf(cam->pitch) * cosf(cam->yaw);
+  glm_vec3_normalize(cam->forward);
+
+  vec3 world_up = {0, 1, 0};
+
+  glm_vec3_cross(cam->forward, world_up, cam->right);
+  glm_vec3_normalize(cam->right);
+
+  glm_vec3_cross(cam->right, cam->forward, cam->up);
+  glm_vec3_normalize(cam->up);
+}
+
+Ray camera_ray_for_pixel(const Camera *cam, int px, int py, int image_w, int image_h) {
+  Ray ray;
+  glm_vec3_copy(cam->pos, ray.origin);
+
+  // 1) Pixel center sampling (avoids bias):
+  // u, v in [0,1]
+  float u = ((float)px + 0.5f) / (float)image_w;
+  float v = ((float)py + 0.5f) / (float)image_h;
+
+  // 2) Map to [-1,1] screen space
+  // x: left=-1 right=+1
+  // y: top=+1 bottom=-1  (note the flip)
+  float sx = 2.0f * u - 1.0f;
+  float sy = 1.0f - 2.0f * v;
+
+  // 3) Convert to camera plane scale using vertical FOV
+  float half_h = tanf(deg_to_rad(cam->vfov_deg) * 0.5f);
+  float half_w = cam->aspect * half_h;
+
+  // 4) Direction = forward + sx*half_w*right + sy*half_h*up
+  vec3 dir;
+  vec3 tmp;
+
+  glm_vec3_copy((float *)cam->forward, dir);
+
+  glm_vec3_scale((float *)cam->right, sx * half_w, tmp);
+  glm_vec3_add(dir, tmp, dir);
+
+  glm_vec3_scale((float *)cam->up, sy * half_h, tmp);
+  glm_vec3_add(dir, tmp, dir);
+
+  glm_vec3_normalize_to(dir, ray.dir);
+  return ray;
+}
+
+void camera_move(Camera *cam, GLFWwindow *window, float dt) {
+  float speed = 5.0f * dt;
+
+  if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+    glm_vec3_muladds(cam->forward, speed, cam->pos);
+  }
+  if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+    glm_vec3_muladds(cam->forward, -speed, cam->pos);
+  }
+  if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+    glm_vec3_muladds(cam->right, -speed, cam->pos);
+  }
+  if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+    glm_vec3_muladds(cam->right, speed, cam->pos);
+  }
+  if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+    glm_vec3_muladds(cam->up, -speed, cam->pos);
+  }
+  if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
+    glm_vec3_muladds(cam->up, speed, cam->pos);
+  }
+}
+static double last_x, last_y;
+static int first_mouse = 1;
+void mouse_callback(GLFWwindow *window, double x, double y) {
+  Camera *cam = glfwGetWindowUserPointer(window);
+
+  if (first_mouse) {
+    last_x = x;
+    last_y = y;
+    first_mouse = 0;
+  }
+
+  float dx = (float)(x - last_x);
+  float dy = (float)(last_y - y); // inverted Y
+
+  last_x = x;
+  last_y = y;
+
+  float sensitivity = 0.002f;
+  cam->yaw += dx * sensitivity;
+  cam->pitch += dy * sensitivity;
+
+  camera_update_basis(cam);
+}
+double time_now_sec(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}

@@ -205,7 +205,7 @@ void cmd_sync_image(CmdBuffer cmd, M_Resource *rm, ResHandle img_handle, Resourc
   vkCmdPipelineBarrier2(cmd.buffer, &info);
 }
 
-void cmd_sync_buffer(VkCommandBuffer cmd, M_Resource *rm, ResHandle buf_handle, ResourceState dst_state,
+void cmd_sync_buffer(CmdBuffer cmd, M_Resource *rm, ResHandle buf_handle, ResourceState dst_state,
                      AccessType dst_access) {
 
   RBuffer *buffer = rm_get_buffer(rm, buf_handle);
@@ -226,7 +226,7 @@ void cmd_sync_buffer(VkCommandBuffer cmd, M_Resource *rm, ResHandle buf_handle, 
       .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier};
 
   buffer->sync = dst;
-  vkCmdPipelineBarrier2(cmd, &dep);
+  vkCmdPipelineBarrier2(cmd.buffer, &dep);
 }
 
 void cmd_buffer_upload(CmdBuffer cmd, M_GPU *dev, M_Resource *rm, ResHandle handle, void *data, u32 size) {

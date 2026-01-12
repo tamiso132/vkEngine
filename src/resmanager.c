@@ -229,6 +229,7 @@ u32 rm_get_buffer_descriptor_index(M_Resource *rm, ResHandle buffer) {
 }
 
 u32 rm_get_image_index(M_Resource *rm, ResHandle image) { return rm_get_image(rm, image)->bindlessIndex; }
+u32 rm_get_buffer_index(M_Resource *rm, ResHandle image) { return rm_get_buffer(rm, image)->bindlessIndex; }
 
 VkDescriptorSetLayout rm_get_bindless_layout(M_Resource *rm) { return rm->bindless_layout; }
 

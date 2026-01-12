@@ -122,11 +122,11 @@ typedef struct {
 
 // PUBLIC FUNCTIONS
 
+u32 rm_get_buffer_index(M_Resource *rm, ResHandle image);
+
 SystemFunc rm_system_get_func();
 
 u32 rm_get_image_index(M_Resource *rm, ResHandle image);
-
-u32 rm_get_buffer_image_index(M_Resource *rm, ResHandle buffer);
 
 u32 rm_get_buffer_descriptor_index(M_Resource *rm, ResHandle buffer);
 void rm_on_new_frame(M_Resource *rm);

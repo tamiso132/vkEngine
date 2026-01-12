@@ -7,11 +7,10 @@
 #include "gpu/pipeline_hotreload.h"
 #include "gpu/swapchain.h"
 #include "raycam.h"
+#include "raytrace.glsl"
 #include "resmanager.h"
 #include "sample_interface.h"
 
-#include "shaders/raytrace.glsl"
-#include "shaders/triangle.glsl"
 #include <math.h>
 
 typedef struct RaytraceData {
@@ -65,20 +64,22 @@ static void _render(Sample *self, SampleContext *ctx) {
   float half_h = tanf((M_PI / 180) * ctx->cam.vfov_deg * 0.5f);
   float half_w = ctx->cam.aspect * half_h;
 
-  ShaderRayCam gpu_cam = {.extent = {ctx->extent.width, ctx->extent.height}, .half_w_h = {half_w, half_h}};
+  ShaderRayCam gpu_cam = {.half_w_h = {half_w, half_h}};
   glmc_vec3_copy(ctx->cam.u, gpu_cam.u);
   glmc_vec3_copy(ctx->cam.v, gpu_cam.v);
   glmc_vec3_copy(ctx->cam.w, gpu_cam.w);
+  cmd_buffer_upload(ctx->cmd, ctx->gpu, ctx->rm, data->cam_buffer, &gpu_cam, sizeof(gpu_cam));
 
-  PushComputeTriangle p = {.extent = {ctx->extent.width, ctx->extent.height},
-                           .img_id = rm_get_image_index(ctx->rm, data->cs_output_img),
-                           .data = {0.5, 0.5, 0.5, 1.0}};
+  PushRay p = {.extent = {ctx->extent.width, ctx->extent.height},
+               .cam_id = rm_get_buffer_index(ctx->rm, data->cam_buffer)};
 
-  BindPipelineInfo b = {.p_push = &p, .push_size = sizeof(PushComputeTriangle), .handle = data->cs_pipeline};
+  BindPipelineInfo b = {.p_push = &p, .push_size = sizeof(PushRay), .handle = data->cs_pipeline};
 
   cmd_bind_pipeline(ctx->cmd, ctx->pm, ctx->rm, &b);
 
   cmd_sync_image(ctx->cmd, ctx->rm, data->cs_output_img, STATE_SHADER, ACCESS_WRITE);
+  cmd_sync_buffer(ctx->cmd, ctx->rm, data->cam_buffer, STATE_SHADER, ACCESS_READ);
+
   vkCmdDispatch(ctx->cmd.buffer, groupsX, groupsY, 1);
   cmd_image_copy_to_image(ctx->cmd, ctx->rm, data->cs_output_img, swap_img);
 }

@@ -9,6 +9,11 @@ vec4 u;
 vec4 v;
 vec4 w;
 vec2 half_w_h;
+} ;
+
+SHARED_STRUCT(PushRay, 16){
+u32 cam_id;
+u32 img_output_id;
 vec2 extent;
 } ;
 

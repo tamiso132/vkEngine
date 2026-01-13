@@ -8,6 +8,7 @@
 #include "command.h"
 #include "common.h"
 #include "resmanager.h"
+#include "shaders/raytrace.glsl"
 #include "util.h"
 #include "vector.h"
 
@@ -20,28 +21,15 @@
   Change TREE_LEVELS to scale the chunk resolution.
   NOTE: Dense bitset storage becomes huge at TREE_LEVELS>=5.
 */
-#define TREE_LEVELS 3
 
-#define BITS_PER_AXIS_PER_LEVEL 2
-#define AXIS_COUNT 3
 #define BITS_PER_LEVEL (BITS_PER_AXIS_PER_LEVEL * AXIS_COUNT) /* 6 */
 #define BITS_PER_AXIS (BITS_PER_AXIS_PER_LEVEL * TREE_LEVELS) /* 2L */
 #define CHUNK_SIZE (1u << BITS_PER_AXIS)                      /* 4^L */
 
 #define MORTON_BITS (BITS_PER_LEVEL * TREE_LEVELS) /* 6L */
 
-#define VOXELS_PER_WORD 64ull
-#define VOXELS_PER_CHUNK (1ull << (BITS_PER_LEVEL * TREE_LEVELS)) /* 2^(6L) */
 #define WORDS_PER_CHUNK (VOXELS_PER_CHUNK / VOXELS_PER_WORD)
 #define BYTES_PER_CHUNK_BITSET (WORDS_PER_CHUNK * sizeof(uint64_t))
-
-// traversal / indexing helpers
-#define LEVEL_SHIFT(d) ((uint32_t)(d) * (uint32_t)BITS_PER_LEVEL)
-#define CHILD_SLOT(morton, d) (uint32_t)(((morton) >> LEVEL_SHIFT(d)) & 63ull)
-
-#define BITSET_WORD(morton) ((uint64_t)(morton) >> 6)
-#define BITSET_BIT(morton) ((uint32_t)((morton) & 63ull))
-#define BIT_MASK_U64(bit) (1ull << ((bit) & 63u))
 
 _Static_assert(BITS_PER_LEVEL == 6, "64-tree requires 6 bits per level.");
 _Static_assert((CHUNK_SIZE & (CHUNK_SIZE - 1u)) == 0u, "CHUNK_SIZE must be a power of two.");

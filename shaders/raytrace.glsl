@@ -4,6 +4,25 @@
 
 #include "shader_base.glsl"
 
+#define TREE_LEVELS 3u
+#define BITS_PER_AXIS_PER_LEVEL 2u
+#define AXIS_COUNT 3u
+#define BITS_PER_LEVEL (BITS_PER_AXIS_PER_LEVEL * AXIS_COUNT) // 6
+#define BITS_PER_AXIS (BITS_PER_AXIS_PER_LEVEL * TREE_LEVELS) // 2L
+#define CHUNK_SIZE (1u << BITS_PER_AXIS)                      // 4^L
+
+#define VOXELS_PER_WORD 64ul
+#define VOXELS_PER_CHUNK (1ul << (BITS_PER_LEVEL * TREE_LEVELS)) // 2^(6L)
+#define WORDS_PER_CHUNK (VOXELS_PER_CHUNK / VOXELS_PER_WORD)
+
+// ===== traversal / indexing helpers =====
+#define LEVEL_SHIFT(d) (uint(d) * uint(BITS_PER_LEVEL))
+#define CHILD_SLOT(morton, d) uint(((morton) >> LEVEL_SHIFT(d)) & 63ul)
+
+#define BITSET_WORD(morton) ((morton) >> 6)
+#define BITSET_BIT(morton)  ((morton) & 63ul)
+#define BIT_MASK_U64(bit)   (1ul << ((bit) & 63u))
+
 SHARED_STRUCT(ShaderRayCam, 16){
 vec4 u;
 vec4 v;
@@ -17,37 +36,13 @@ u32 img_output_id;
 vec2 extent;
 } ;
 
-// Ray camera_ray_for_pixel(const Camera *cam, int px, int py, int image_w, int image_h) {
-//   Ray ray;
-//   glm_vec3_copy(cam->pos, ray.origin);
-//
-//   // 1) Pixel center sampling (avoids bias):
-//   // u, v in [0,1]
-//   float u = ((float)px + 0.5f) / (float)image_w;
-//   float v = ((float)py + 0.5f) / (float)image_h;
-//
-//   // 2) Map to [-1,1] screen space
-//   // x: left=-1 right=+1
-//   // y: top=+1 bottom=-1  (note the flip)
-//   float sx = 2.0f * u - 1.0f;
-//   float sy = 1.0f - 2.0f * v;
-//
-//   // 3) Convert to camera plane scale using vertical FOV
-//   float half_h = tanf(deg_to_rad(cam->vfov_deg) * 0.5f);
-//   float half_w = cam->aspect * half_h;
-//
-//   // 4) Direction = forward + sx*half_w*right + sy*half_h*up
-//   vec3 dir;
-//   vec3 tmp;
-//
-//   glm_vec3_copy((float *)cam->forward, dir);
-//
-//   glm_vec3_scale((float *)cam->right, sx * half_w, tmp);
-//   glm_vec3_add(dir, tmp, dir);
-//
-//   glm_vec3_scale((float *)cam->up, sy * half_h, tmp);
-//   glm_vec3_add(dir, tmp, dir);
-//
-//   glm_vec3_normalize_to(dir, ray.dir);
-//   return ray;
-// }
+struct Ray {
+        vec3 origin;
+        vec3 dir;
+};
+
+// ---------------------------
+// Bit packing for child index
+// ---------------------------
+const uint LEAF_BIT = 0x80000000u;
+const uint INDEX_MASK = 0x7FFFFFFFu;

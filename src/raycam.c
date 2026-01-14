@@ -54,8 +54,10 @@ void camera_update(Camera *cam, GLFWwindow *window, double delta) {
   last_y = y;
 
   float sensitivity = 0.002f;
-  cam->yaw += dx * sensitivity;
-  cam->pitch += dy * sensitivity;
+  if (cursor_captured == true) {
+    cam->yaw += dx * sensitivity;
+    cam->pitch += dy * sensitivity;
+  }
 
   _update_basis(cam);
 }
@@ -130,17 +132,20 @@ static void _move(Camera *cam, GLFWwindow *window, float dt) {
 }
 
 static void toggle_cursor(GLFWwindow *window) {
-  cursor_captured = !cursor_captured;
   double now = glfwGetTime();
   if (now - last_toggle_time < 0.20)
-    return; // 200ms debounce
-
+    return;
   last_toggle_time = now;
+
+  cursor_captured = !cursor_captured;
+  glfwSetInputMode(window, GLFW_CURSOR, cursor_captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+
+  // prevent camera jump on next mouse read
+  first_mouse = 1;
+
   if (cursor_captured) {
-    // Cursor hidden + captured to window, relative mouse movement
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-  } else {
-    // Cursor visible + free
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    int w, h;
+    glfwGetWindowSize(window, &w, &h);
+    glfwSetCursorPos(window, w * 0.5, h * 0.5);
   }
 }

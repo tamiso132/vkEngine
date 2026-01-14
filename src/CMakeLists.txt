@@ -20,6 +20,8 @@ add_sources(
 
     system_manager.c
     chunk.c
+
+    vox_loader.c
 )
 
 include_this()

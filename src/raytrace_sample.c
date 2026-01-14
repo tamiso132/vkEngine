@@ -82,6 +82,7 @@ static void _render(Sample *self, SampleContext *ctx) {
       .cam_id = rm_get_buffer_index(ctx->rm, data->cam_buffer),
       .child_id = rm_get_buffer_index(ctx->rm, data->chunk.gpu_child_indices),
       .node_id = rm_get_buffer_index(ctx->rm, data->chunk.gpu_node),
+      .palette_id = rm_get_buffer_index(ctx->rm, data->chunk.gpu_palette),
       .debug_mode = ctx->cam.debug_mode,
   };
 

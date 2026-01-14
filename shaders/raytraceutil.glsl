@@ -332,6 +332,14 @@ void dda_step(
         d.is_occupied = mix(occ, false, d.out_of_bounds);
 }
 
+vec3 u32_rgb8_to_vec3(uint rgb)
+{
+        float r = float((rgb >> 16) & 0xFFu) / 255.0;
+        float g = float((rgb >> 8) & 0xFFu) / 255.0;
+        float b = float((rgb) & 0xFFu) / 255.0;
+        return vec3(r, g, b);
+}
+
 struct TraverseFrame {
         uint node_index;
         float t_base;
@@ -356,24 +364,24 @@ const uint TRACE_ERR_LEVEL_OOB = 10u;
 const uint TRACE_ERR_DDA_STUCK = 123u;
 const uint TRACE_ERR_NODE_STEP_CAP = 124u;
 
-t pvec4 trace_error_color ( uint err )
+vec4 trace_error_color(uint err)
 {
-// TRACE_OK should normally not be shown in the "errors" view
-if ( err == TRACE_OK ) return vec4(0.0, 0.0, 0.0, 1.0); // black
+        // TRACE_OK should normally not be shown in the "errors" view
+        if (err == TRACE_OK) return vec4(0.0, 0.0, 0.0, 1.0); // black
 
-if ( err == TRACE_ERR_ORIGIN_OUTSIDE ) return vec4(1.0, 0.0, 1.0, 1.0); // magenta
-if ( err == TRACE_ERR_DIR_ZERO ) return vec4(1.0, 1.0, 0.0, 1.0); // yellow
-if ( err == TRACE_ERR_DIR_NAN_INF ) return vec4(0.0, 1.0, 1.0, 1.0); // cyan
-if ( err == TRACE_ERR_INIT_NODE_FAIL ) return vec4(1.0, 0.5, 0.0, 1.0); // orange
-if ( err == TRACE_ERR_DDA_NAN_INF ) return vec4(0.0, 1.0, 0.0, 1.0); // green
-if ( err == TRACE_ERR_STACK_OVERFLOW ) return vec4(1.0, 0.0, 0.0, 1.0); // red
-if ( err == TRACE_ERR_CHILD_SELF_LOOP ) return vec4(0.6, 0.0, 1.0, 1.0); // purple
-if ( err == TRACE_ERR_CHILD_INDEX_OOB ) return vec4(0.2, 0.2, 1.0, 1.0); // blue
-if ( err == TRACE_ERR_MAX_ITER ) return vec4(1.0, 1.0, 1.0, 1.0); // white
-if ( err == TRACE_ERR_LEVEL_OOB ) return vec4(0.3, 0.3, 0.3, 1.0); // gray
-if ( err == TRACE_ERR_DDA_STUCK ) return vec4(1.0, 0.0, 0.5, 1.0); // hot pink
-if ( err == TRACE_ERR_NODE_STEP_CAP ) return vec4(0.0, 0.0, 0.5, 1.0); // dark blue
+        if (err == TRACE_ERR_ORIGIN_OUTSIDE) return vec4(1.0, 0.0, 1.0, 1.0); // magenta
+        if (err == TRACE_ERR_DIR_ZERO) return vec4(1.0, 1.0, 0.0, 1.0); // yellow
+        if (err == TRACE_ERR_DIR_NAN_INF) return vec4(0.0, 1.0, 1.0, 1.0); // cyan
+        if (err == TRACE_ERR_INIT_NODE_FAIL) return vec4(1.0, 0.5, 0.0, 1.0); // orange
+        if (err == TRACE_ERR_DDA_NAN_INF) return vec4(0.0, 1.0, 0.0, 1.0); // green
+        if (err == TRACE_ERR_STACK_OVERFLOW) return vec4(1.0, 0.0, 0.0, 1.0); // red
+        if (err == TRACE_ERR_CHILD_SELF_LOOP) return vec4(0.6, 0.0, 1.0, 1.0); // purple
+        if (err == TRACE_ERR_CHILD_INDEX_OOB) return vec4(0.2, 0.2, 1.0, 1.0); // blue
+        if (err == TRACE_ERR_MAX_ITER) return vec4(1.0, 1.0, 1.0, 1.0); // white
+        if (err == TRACE_ERR_LEVEL_OOB) return vec4(0.3, 0.3, 0.3, 1.0); // gray
+        if (err == TRACE_ERR_DDA_STUCK) return vec4(1.0, 0.0, 0.5, 1.0); // hot pink
+        if (err == TRACE_ERR_NODE_STEP_CAP) return vec4(0.0, 0.0, 0.5, 1.0); // dark blue
 
-// Unknown error code
-return vec4(1.0, 0.0, 0.0, 1.0); // black
+        // Unknown error code
+        return vec4(1.0, 0.0, 0.0, 1.0); // black
 }

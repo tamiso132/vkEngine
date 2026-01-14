@@ -45,28 +45,32 @@ typedef struct ChildIndex {
 typedef struct ChunkTree {
   bool is_dirty;
   bool need_upload;
-  uint32_t pending_edits;
+  u32 pending_edits;
 
   Vector nodes;         // Node[]
   Vector child_indices; // ChildIndex[]
 
+  Vector palette;
+
   ResHandle gpu_node;
   ResHandle gpu_child_indices;
 
-  // Dense voxel truth table, 1 bit per voxel, LINEAR order:
-  // idx = x + CHUNK_SIZE*(y + CHUNK_SIZE*z)
-  uint64_t bits[WORDS_PER_CHUNK];
-} ChunkTree;
+  // optional: palette buffer (256 RGBA entries) if you want shader to colorize
+  ResHandle gpu_palette;
 
-// PUBLIC FUNCTIONS
-//
+  u64 bits[WORDS_PER_CHUNK];
+  u16 vox_mat[VOXELS_PER_CHUNK];
+} ChunkTree; // PUBLIC FUNCTIONS
+
+void chunk_set_voxel(ChunkTree *chunk, int x, int y, int z, bool set_active);
+void chunk_set_voxel_color(ChunkTree *chunk, int x, int y, int z, bool on, u16 mat);
+
 // lifecycle
 void chunk_init(ChunkTree *chunk, M_Resource *rm, M_GPU *gpu, CmdBuffer cmd);
 void chunk_destroy(ChunkTree *chunk);
 
 // voxel ops (chunk-local coordinates 0..CHUNK_SIZE-1)
 bool chunk_get_voxel(const ChunkTree *chunk, int x, int y, int z);
-void chunk_set_voxel(ChunkTree *chunk, int x, int y, int z, bool set_active);
 
 // rebuild & upload
 void chunk_fill_random(ChunkTree *chunk, uint32_t seed, float density);

@@ -26,7 +26,7 @@ const uint DEBUG_MODE_ERRORS = 4u;
 
 // voxel counts
 #define VOXELS_PER_WORD 64
-#define VOXELS_PER_CHUNK (1ULL << (BITS_PER_LEVEL * TREE_LEVELS)) /* 2^(6L) */
+#define VOXELS_PER_CHUNK (1ULL << (BITS_PER_LEVEL * TREE_LEVELS))
 #define WORDS_PER_CHUNK (VOXELS_PER_CHUNK / VOXELS_PER_WORD)
 
 // traversal / indexing helpers
@@ -50,6 +50,7 @@ u32 node_id;
 u32 child_id;
 u32 img_output_id;
 vec2 extent;
+u32 palette_id;
 u32 debug_mode;
 } ;
 

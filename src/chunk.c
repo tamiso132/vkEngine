@@ -5,10 +5,9 @@
 #include "raytrace.glsl"
 #include "resmanager.h"
 #include "vector.h"
-
+#include "vox_loader.h"
 #include <stdlib.h>
 #include <string.h>
-#include <vulkan/vulkan_core.h>
 
 typedef struct {
   int x, y, z;
@@ -22,55 +21,43 @@ typedef struct WorkItem {
 typedef enum { NODE_EMPTY = 0, NODE_FULL = 1, NODE_MIXED = 2 } NodeState;
 
 // --- Private Prototypes ---
+static void _load_voxel_file(ChunkTree *chunk, u32 old_palette_len, const VoxFile *vf, i32 base_x, i32 base_y,
+                             i32 base_z, u32 center_in_chunk);
+static u16 _leaf_mat_from_brick(ChunkTree *chunk, u32 brickDense, u32 bricksAxis);
+static u16 _leaf_mat_from_full_node(ChunkTree *chunk, u32 d, u32 dense, u32 axis_d);
+static uint32_t xorshift32(uint32_t *state);
+static float rand01(uint32_t *state);
+static inline uint32_t voxel_linear_index_u32(int x, int y, int z);
+static inline uint32_t idx3_linear_u32(uint32_t x, uint32_t y, uint32_t z, uint32_t N);
+static inline void idx_to_xyz_u32(uint32_t idx, uint32_t N, uint32_t *x, uint32_t *y, uint32_t *z);
+static inline uint32_t slot_linear_4x4x4(uint32_t lx, uint32_t ly, uint32_t lz);
 static void _set_box(ChunkTree *chunk, vec3 pos, u32 size);
 static inline bool in_bounds(int v);
-
-// -------------------- RNG (C) --------------------
-static uint32_t xorshift32(uint32_t *state) {
-  uint32_t x = *state;
-  x ^= x << 13;
-  x ^= x >> 17;
-  x ^= x << 5;
-  *state = x;
-  return x;
-}
-
-static float rand01(uint32_t *state) {
-  // 24-bit fraction -> [0,1)
-  return (xorshift32(state) & 0x00FFFFFFu) / 16777216.0f;
-}
-
-// -------------------- Linear helpers --------------------
-static inline uint32_t voxel_linear_index_u32(int x, int y, int z) {
-  // idx = x + N*(y + N*z)
-  return (uint32_t)x + (uint32_t)CHUNK_SIZE * ((uint32_t)y + (uint32_t)CHUNK_SIZE * (uint32_t)z);
-}
-
-static inline uint32_t idx3_linear_u32(uint32_t x, uint32_t y, uint32_t z, uint32_t N) {
-  // idx in an NxNxN grid
-  return x + N * (y + N * z);
-}
-
-static inline void idx_to_xyz_u32(uint32_t idx, uint32_t N, uint32_t *x, uint32_t *y, uint32_t *z) {
-  *x = idx % N;
-  *y = (idx / N) % N;
-  *z = idx / (N * N);
-}
-
-static inline uint32_t slot_linear_4x4x4(uint32_t lx, uint32_t ly, uint32_t lz) {
-  // matches shader: x | (y<<2) | (z<<4)
-  return (lx & 3u) | ((ly & 3u) << 2u) | ((lz & 3u) << 4u);
-}
 
 // -------------------- Public API --------------------
 void chunk_init(ChunkTree *chunk, M_Resource *rm, M_GPU *gpu, CmdBuffer cmd) {
   memset(chunk, 0, sizeof(*chunk));
   vec_init(&chunk->nodes, sizeof(Node), NULL);
   vec_init(&chunk->child_indices, sizeof(ChildIndex), NULL);
+  vec_init(&chunk->palette, sizeof(Color), NULL);
 
   // Example content
-  _set_box(chunk, (vec3){10, 0, 10}, 10);
-  // chunk_set_voxel(chunk, 5, 5, 5, true);
+  ////_set_box(chunk, (vec3){10, 0, 10}, 10);
+
+  chunk_set_voxel(chunk, 5, 5, 5, true);
+  VoxFile vf = {};
+  if (vox_load("assets/chr_knight.vox", VOX_AXIS_SWAP_YZ, &vf, NULL)) {
+
+    u32 palette_base = (u32)vec_len(&chunk->palette); // your global u32 RGBA list
+
+    // 1) append unique colors
+    for (u32 i = 0; i < (u32)vec_len(&vf.used_rgba); ++i) {
+      u32 rgba = *VEC_AT(&vf.used_rgba, i, u32);
+      vec_push(&chunk->palette, &rgba);
+    }
+
+    _load_voxel_file(chunk, palette_base, &vf, 0, 0, 0, 0);
+  }
   chunk_rebuild(chunk);
 
   RGBufferInfo node_info = {.name = "NodeBuffer",
@@ -83,8 +70,14 @@ void chunk_init(ChunkTree *chunk, M_Resource *rm, M_GPU *gpu, CmdBuffer cmd) {
                              .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                              .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
 
+  RGBufferInfo child_palette = {.name = "Palette",
+                                .capacity = vec_bytes_len(&chunk->palette),
+                                .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+
   chunk->gpu_child_indices = rm_create_buffer(rm, &child_info);
   chunk->gpu_node = rm_create_buffer(rm, &node_info);
+  chunk->gpu_palette = rm_create_buffer(rm, &child_palette);
 
   chunk_upload(chunk, gpu, rm, cmd);
 }
@@ -126,6 +119,34 @@ void chunk_set_voxel(ChunkTree *chunk, int x, int y, int z, bool set_active) {
   }
 }
 
+void chunk_set_voxel_color(ChunkTree *chunk, int x, int y, int z, bool on, u16 mat) {
+  if (!in_bounds(x) || !in_bounds(y) || !in_bounds(z))
+    return;
+
+  u32 vidx = voxel_linear_index_u32(x, y, z);
+
+  // occupancy bit
+  u32 w = vidx >> 6;
+  u32 b = vidx & 63u;
+  u64 m = 1ull << b;
+
+  u64 before = chunk->bits[w];
+  u64 after = on ? (before | m) : (before & ~m);
+
+  if (before != after) {
+    chunk->bits[w] = after;
+    chunk->is_dirty = true;
+    chunk->pending_edits++;
+  }
+
+  // material id (only meaningful if on)
+  if (on) {
+    chunk->vox_mat[vidx] = mat;
+  } else {
+    chunk->vox_mat[vidx] = 0;
+  }
+}
+
 void chunk_fill_random(ChunkTree *chunk, uint32_t seed, float density) {
   if (density <= 0.0f)
     return;
@@ -157,7 +178,6 @@ void chunk_rebuild_if_needed(ChunkTree *chunk, uint32_t threshold) {
   chunk_rebuild(chunk);
   chunk->pending_edits = 0;
 }
-
 void chunk_rebuild(ChunkTree *chunk) {
   if (!chunk->is_dirty)
     return;
@@ -341,7 +361,19 @@ void chunk_rebuild(ChunkTree *chunk) {
       bool is_leaf = (d == 0) || (state == NODE_FULL);
 
       if (is_leaf) {
-        outCI->first_child_index = LEAF_BIT; // base ignored
+        u16 mat = 0;
+
+        if (mask != 0ull) {
+          if (d == 0) {
+            // brick leaf: may be sparse
+            mat = _leaf_mat_from_brick(chunk, w->dense, axis[0]);
+          } else {
+            // FULL early leaf: guaranteed occupied everywhere
+            mat = _leaf_mat_from_full_node(chunk, (u32)d, w->dense, axis[d]);
+          }
+        }
+
+        outCI->first_child_index = LEAF_BIT | ((u32)mat & INDEX_MASK);
         continue;
       }
 
@@ -429,7 +461,15 @@ void chunk_rebuild(ChunkTree *chunk) {
   for (u32 i = 0; i < chunk->nodes.length; i++) {
     LOG_INFO("index: %d, Value: %lu", (int)i, (unsigned long)VEC_AT(&chunk->nodes, i, Node)->mask);
   }
-
+  LOG_INFO("Palette");
+  for (u32 i = 0; i < chunk->palette.length; i++) {
+    u32 rgba = *VEC_AT(&chunk->palette, i, u32);
+    u32 r = (rgba >> 24) & 0xFFu;
+    u32 g = (rgba >> 16) & 0xFFu;
+    u32 b = (rgba >> 8) & 0xFFu;
+    u32 a = (rgba) & 0xFFu;
+    LOG_INFO("pal[%u] = 0x%08X  (r=%u g=%u b=%u a=%u)", i, rgba, r, g, b, a);
+  }
   chunk->is_dirty = false;
   chunk->need_upload = true;
 }
@@ -439,6 +479,7 @@ void chunk_upload(ChunkTree *chunk, M_GPU *gpu, M_Resource *rm, CmdBuffer cmd) {
     return;
 
   cmd_buffer_upload(cmd, gpu, rm, chunk->gpu_node, chunk->nodes.data, vec_bytes_len(&chunk->nodes));
+  cmd_buffer_upload(cmd, gpu, rm, chunk->gpu_palette, chunk->palette.data, vec_bytes_len(&chunk->palette));
 
   cmd_buffer_upload(cmd, gpu, rm, chunk->gpu_child_indices, chunk->child_indices.data,
                     vec_bytes_len(&chunk->child_indices));
@@ -447,6 +488,139 @@ void chunk_upload(ChunkTree *chunk, M_GPU *gpu, M_Resource *rm, CmdBuffer cmd) {
 }
 
 // --- Private Functions ---
+
+static void _load_voxel_file(ChunkTree *chunk, u32 old_palette_len, const VoxFile *vf, i32 base_x, i32 base_y,
+                             i32 base_z, u32 center_in_chunk) {
+  u32 mc = (u32)vec_len((Vector *)&vf->models);
+
+  for (u32 mi = 0; mi < mc; ++mi) {
+    const VoxModel *m = VEC_AT((Vector *)&vf->models, mi, VoxModel);
+
+    // Model dimensions from SIZE chunk (if present)
+    i32 sx = m->sx;
+    i32 sy = m->sy;
+    i32 sz = m->sz;
+
+    // If SIZE is missing, best-effort: assume within chunk
+    if (sx <= 0)
+      sx = (i32)CHUNK_SIZE;
+    if (sy <= 0)
+      sy = (i32)CHUNK_SIZE;
+    if (sz <= 0)
+      sz = (i32)CHUNK_SIZE;
+
+    i32 ox = base_x, oy = base_y, oz = base_z;
+
+    if (center_in_chunk) {
+      // center model in chunk
+      ox = ((i32)CHUNK_SIZE - sx) / 2;
+      oy = ((i32)CHUNK_SIZE - sy) / 2;
+      oz = ((i32)CHUNK_SIZE - sz) / 2;
+    }
+
+    u32 nv = (u32)vec_len((Vector *)&m->voxels);
+    for (u32 vi = 0; vi < nv; ++vi) {
+      const VoxVoxel *v = VEC_AT((Vector *)&m->voxels, vi, VoxVoxel);
+
+      // MagicaVoxel voxel coords are u8
+      i32 x = ox + (i32)v->x;
+      i32 y = oy + (i32)v->y;
+      i32 z = oz + (i32)v->z;
+
+      // Skip out of bounds (your chunk_set_voxel also does bounds check, but this is faster)
+      if ((u32)x >= (u32)CHUNK_SIZE)
+        continue;
+      if ((u32)y >= (u32)CHUNK_SIZE)
+        continue;
+      if ((u32)z >= (u32)CHUNK_SIZE)
+        continue;
+
+      u16 mat_index = old_palette_len + vf->ci_to_used[v->ci];
+      chunk_set_voxel_color(chunk, x, y, z, mat_index, true);
+    }
+  }
+
+  // Make sure GPU sees it
+  chunk->is_dirty = true;
+}
+
+static u16 _leaf_mat_from_brick(ChunkTree *chunk, u32 brickDense, u32 bricksAxis) {
+  u32 bx, by, bz;
+  idx_to_xyz_u32(brickDense, bricksAxis, &bx, &by, &bz);
+
+  u32 base_x = bx * 4u;
+  u32 base_y = by * 4u;
+  u32 base_z = bz * 4u;
+
+  for (u32 lz = 0; lz < 4u; ++lz)
+    for (u32 ly = 0; ly < 4u; ++ly)
+      for (u32 lx = 0; lx < 4u; ++lx) {
+        u32 x = base_x + lx;
+        u32 y = base_y + ly;
+        u32 z = base_z + lz;
+
+        u32 vidx = voxel_linear_index_u32((int)x, (int)y, (int)z);
+        u32 w = vidx >> 6;
+        u32 b = vidx & 63u;
+
+        if (((chunk->bits[w] >> b) & 1ull) != 0ull) {
+          return chunk->vox_mat[vidx];
+        }
+      }
+
+  return 0; // empty leaf
+}
+
+static u16 _leaf_mat_from_full_node(ChunkTree *chunk, u32 d, u32 dense, u32 axis_d) {
+  u32 px, py, pz;
+  idx_to_xyz_u32(dense, axis_d, &px, &py, &pz);
+
+  u32 s = 1u << (2u * (d + 1)); // region size in voxels
+  u32 x = px * s;
+  u32 y = py * s;
+  u32 z = pz * s;
+
+  u32 vidx = voxel_linear_index_u32((int)x, (int)y, (int)z);
+  return chunk->vox_mat[vidx];
+}
+
+// -------------------- RNG (C) --------------------
+static uint32_t xorshift32(uint32_t *state) {
+  uint32_t x = *state;
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  *state = x;
+  return x;
+}
+
+static float rand01(uint32_t *state) {
+  // 24-bit fraction -> [0,1)
+  return (xorshift32(state) & 0x00FFFFFFu) / 16777216.0f;
+}
+
+// -------------------- Linear helpers --------------------
+static inline uint32_t voxel_linear_index_u32(int x, int y, int z) {
+  // idx = x + N*(y + N*z)
+  return (uint32_t)x + (uint32_t)CHUNK_SIZE * ((uint32_t)y + (uint32_t)CHUNK_SIZE * (uint32_t)z);
+}
+
+static inline uint32_t idx3_linear_u32(uint32_t x, uint32_t y, uint32_t z, uint32_t N) {
+  // idx in an NxNxN grid
+  return x + N * (y + N * z);
+}
+
+static inline void idx_to_xyz_u32(uint32_t idx, uint32_t N, uint32_t *x, uint32_t *y, uint32_t *z) {
+  *x = idx % N;
+  *y = (idx / N) % N;
+  *z = idx / (N * N);
+}
+
+static inline uint32_t slot_linear_4x4x4(uint32_t lx, uint32_t ly, uint32_t lz) {
+  // matches shader: x | (y<<2) | (z<<4)
+  return (lx & 3u) | ((ly & 3u) << 2u) | ((lz & 3u) << 4u);
+}
+
 static void _set_box(ChunkTree *chunk, vec3 pos, u32 size) {
   int px = (int)pos[0];
   int py = (int)pos[1];

@@ -19,6 +19,10 @@ layout(set = 0, binding = BINDING_STORAGE_BUFFER, std430) readonly buffer ChildI
         uint data[];
 } g_child_indices[];
 
+layout(set = 0, binding = BINDING_STORAGE_BUFFER, std430) readonly buffer PaletteColor {
+        u32 data[];
+} g_palette[];
+
 layout(rgba8, set = 0, binding = BINDING_STORAGE_IMAGE) uniform image2D g_images[];
 
 layout(push_constant) uniform constants
@@ -33,7 +37,8 @@ bool traverse_one_chunk(
         out uint hit_level,
         out uint hit_slot,
         out uint iter_count,
-        out uint err_code);
+        out uint err_code,
+        out vec3 hit_color);
 
 vec4 debug_view_color(
         uint debug_mode,
@@ -42,7 +47,7 @@ vec4 debug_view_color(
         uint max_iter,
         uint hit_level,
         uint hit_slot,
-        uint err_code);
+        uint err_code, vec3 hit_color);
 
 #define MAX_ITER_COUNT 5000
 
@@ -70,9 +75,10 @@ void main() {
         uint hit_slot;
         uint iter_count;
         uint err_code;
+        vec3 hit_color = vec3(0, 0, 0);
 
-        bool hit = traverse_one_chunk(ray, bmin, hit_pos, hit_level, hit_slot, iter_count, err_code);
-        vec4 color = debug_view_color(pc.debug_mode, hit, iter_count, MAX_ITER_COUNT, hit_level, hit_slot, err_code);
+        bool hit = traverse_one_chunk(ray, bmin, hit_pos, hit_level, hit_slot, iter_count, err_code, hit_color);
+        vec4 color = debug_view_color(pc.debug_mode, hit, iter_count, MAX_ITER_COUNT, hit_level, hit_slot, err_code, hit_color);
         imageStore(g_images[nonuniformEXT(pc.img_output_id)], ivec2(pixel), color);
         // if (hit == true)
         //         imageStore(g_images[nonuniformEXT(pc.img_output_id)], ivec2(pixel), vec4(1, 1, 1, 1));
@@ -113,7 +119,8 @@ bool traverse_one_chunk(
         out uint hit_level,
         out uint hit_slot,
         out uint iter_count,
-        out uint err_code)
+        out uint err_code,
+        out vec3 hit_color)
 {
         hit_pos = vec3(0.0);
         hit_level = 0u;
@@ -257,6 +264,9 @@ bool traverse_one_chunk(
                                 hit_level = cur.level;
                                 hit_slot = slot;
                                 err_code = TRACE_OK;
+
+                                hit_color = u32_rgb8_to_vec3(g_palette[nonuniformEXT(pc.palette_id)].data[packed & INDEX_MASK]);
+
                                 return true;
                         }
                 }
@@ -356,10 +366,10 @@ vec4 debug_view_color(
         uint max_iter,
         uint hit_level,
         uint hit_slot,
-        uint err_code)
+        uint err_code, vec3 hit_color)
 {
         if (debug_mode == DEBUG_MODE_HIT) {
-                return hit ? vec4(1, 0, 0, 1) : vec4(0, 0.5, 0, 1);
+                return hit ? vec4(hit_color, 1) : vec4(0, 0.5, 0, 1);
         }
         if (debug_mode == DEBUG_MODE_ITER_GRAY) {
                 float t = clamp(float(iter_count) / max(1.0, float(max_iter)), 0.0, 1.0);

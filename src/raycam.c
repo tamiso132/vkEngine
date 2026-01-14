@@ -76,7 +76,11 @@ static void _update_basis(Camera *cam) {
   glm_vec3_normalize(cam->w);
 
   vec3 world_up = {0, 1, 0};
-
+  if (fabsf(glm_vec3_dot(cam->w, world_up)) > 0.999f) {
+    world_up[0] = 0;
+    world_up[1] = 0;
+    world_up[2] = 1;
+  }
   glm_vec3_cross(cam->w, world_up, cam->u);
   glm_vec3_normalize(cam->u);
 
@@ -119,12 +123,9 @@ static void _move(Camera *cam, GLFWwindow *window, float dt) {
     cam->debug_mode = DEBUG_MODE_LEVEL;
 
   if (glfwGetKey(window, GLFW_KEY_F4) == GLFW_PRESS)
-    cam->debug_mode = DEBUG_MODE_SLOT;
-
-  if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS)
     cam->debug_mode = DEBUG_MODE_ITER_GRAY_HIT_GREEN;
 
-  if (glfwGetKey(window, GLFW_KEY_F6) == GLFW_PRESS)
+  if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS)
     cam->debug_mode = DEBUG_MODE_ERRORS;
 }
 

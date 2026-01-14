@@ -1,5 +1,18 @@
 #ifdef __STDC__
 #pragma once
+
+#define DEBUG_MODE_HIT          0u  // red if hit else black
+#define DEBUG_MODE_ITER_GRAY    1u  // black->white by iterations
+#define DEBUG_MODE_LEVEL        2u  // visualize hit_level
+#define DEBUG_MODE_ITER_GRAY_HIT_GREEN 3u
+#define DEBUG_MODE_ERRORS 4u
+
+#else
+const uint DEBUG_MODE_HIT = 0u;
+const uint DEBUG_MODE_ITER_GRAY = 1u; // black->white by iterations
+const uint DEBUG_MODE_LEVEL = 2u; // visualize hit_level
+const uint DEBUG_MODE_ITER_GRAY_HIT_GREEN = 3u;
+const uint DEBUG_MODE_ERRORS = 4u;
 #endif
 
 #include "shader_base.glsl"
@@ -23,14 +36,6 @@
 #define BITSET_WORD(morton) ((morton) >> 6)
 #define BITSET_BIT(morton)  ((morton) & 63ULL)
 #define BIT_MASK_U64(bit)   (1ULL << ((bit) & 63))
-
-// DEGUG MODES
-#define DEBUG_MODE_HIT          0u  // red if hit else black
-#define DEBUG_MODE_ITER_GRAY    1u  // black->white by iterations
-#define DEBUG_MODE_LEVEL        2u  // visualize hit_level
-#define DEBUG_MODE_SLOT         3u  // visualize hit_slot (0..63)
-#define DEBUG_MODE_ITER_GRAY_HIT_GREEN 4u
-#define DEBUG_MODE_ERRORS 5u
 
 SHARED_STRUCT(ShaderRayCam, 16){
 vec4 u;

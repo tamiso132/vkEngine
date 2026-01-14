@@ -69,8 +69,8 @@ void chunk_init(ChunkTree *chunk, M_Resource *rm, M_GPU *gpu, CmdBuffer cmd) {
   vec_init(&chunk->child_indices, sizeof(ChildIndex), NULL);
 
   // Example content
-  // _set_box(chunk, (vec3){10, 0, 10}, 10);
-  chunk_set_voxel(chunk, 5, 5, 5, true);
+  _set_box(chunk, (vec3){10, 0, 10}, 10);
+  // chunk_set_voxel(chunk, 5, 5, 5, true);
   chunk_rebuild(chunk);
 
   RGBufferInfo node_info = {.name = "NodeBuffer",

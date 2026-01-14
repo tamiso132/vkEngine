@@ -14,6 +14,17 @@ uint childindex_base(uint packed_first_child_index)
         return (packed_first_child_index & INDEX_MASK);
 }
 
+bool ray_aabb(vec3 ro, vec3 rd, vec3 bmin, vec3 bmax, out float t0, out float t1)
+{
+        vec3 inv = 1.0 / rd;
+        vec3 tbot = (bmin - ro) * inv;
+        vec3 ttop = (bmax - ro) * inv;
+        vec3 tmin = min(tbot, ttop);
+        vec3 tmax = max(tbot, ttop);
+        t0 = max(max(tmin.x, tmin.y), tmin.z);
+        t1 = min(min(tmax.x, tmax.y), tmax.z);
+        return t1 >= max(t0, 0.0);
+}
 // ---------------------------
 // Spatial helper: 4x4x4 child slot
 // ---------------------------
@@ -248,8 +259,8 @@ bool init_node_dda(
         vec3 p_world = ray.origin + t * ray.dir;
 
         // half-open bounds: [min, max)
-        if (!point_inside_aabb(p_world, node_min, node_max))
-                return false;
+        // if (!point_inside_aabb(p_world, node_min, node_max))
+        //         return false;
 
         // local position, clamped strictly inside node to avoid floor()==4
         vec3 p_local = p_world - node_min;
@@ -331,19 +342,19 @@ struct TraverseFrame {
         uint steps_in_node;
 };
 
-#define TRACE_OK                        0u
-#define TRACE_ERR_ORIGIN_OUTSIDE        1u
-#define TRACE_ERR_DIR_ZERO              2u
-#define TRACE_ERR_DIR_NAN_INF           3u
-#define TRACE_ERR_INIT_NODE_FAIL        4u
-#define TRACE_ERR_DDA_NAN_INF           5u
-#define TRACE_ERR_STACK_OVERFLOW        6u
-#define TRACE_ERR_CHILD_SELF_LOOP       7u
-#define TRACE_ERR_CHILD_INDEX_OOB       8u
-#define TRACE_ERR_MAX_ITER              9u
-#define TRACE_ERR_LEVEL_OOB             10u
-#define TRACE_ERR_DDA_STUCK      123u
-#define TRACE_ERR_NODE_STEP_CAP  124u
+const uint TRACE_OK = 0u;
+const uint TRACE_ERR_ORIGIN_OUTSIDE = 1u;
+const uint TRACE_ERR_DIR_ZERO = 2u;
+const uint TRACE_ERR_DIR_NAN_INF = 3u;
+const uint TRACE_ERR_INIT_NODE_FAIL = 4u;
+const uint TRACE_ERR_DDA_NAN_INF = 5u;
+const uint TRACE_ERR_STACK_OVERFLOW = 6u;
+const uint TRACE_ERR_CHILD_SELF_LOOP = 7u;
+const uint TRACE_ERR_CHILD_INDEX_OOB = 8u;
+const uint TRACE_ERR_MAX_ITER = 9u;
+const uint TRACE_ERR_LEVEL_OOB = 10u;
+const uint TRACE_ERR_DDA_STUCK = 123u;
+const uint TRACE_ERR_NODE_STEP_CAP = 124u;
 
 vec4 trace_error_color(uint err)
 {

@@ -54,8 +54,8 @@ void main() {
 
         ShaderRayCam cam = g_cam[nonuniformEXT(pc.cam_id)].data;
         vec3 cam_pos = vec3(cam.u.w, cam.v.w, cam.w.w);
-        Ray ray = camera_ray_uvww(cam_pos, cam.u.xyz, cam.v.xyz, cam.w.xyz, 70.0, pixel, pc.extent);
-        // Ray ray = camera_ray_for_pixel(cam, pixel, pc.extent);
+        //Ray ray = camera_ray_uvww(cam_pos, cam.u.xyz, cam.v.xyz, cam.w.xyz, 70.0, pixel, pc.extent);
+        Ray ray = camera_ray_for_pixel(cam, pixel, pc.extent);
 
         // pick a chunk (for now: chunk 0)
         vec3 bmin = vec3(0, 0, 0);
@@ -74,6 +74,10 @@ void main() {
         bool hit = traverse_one_chunk(ray, bmin, hit_pos, hit_level, hit_slot, iter_count, err_code);
         vec4 color = debug_view_color(pc.debug_mode, hit, iter_count, MAX_ITER_COUNT, hit_level, hit_slot, err_code);
         imageStore(g_images[nonuniformEXT(pc.img_output_id)], ivec2(pixel), color);
+        // if (hit == true)
+        //         imageStore(g_images[nonuniformEXT(pc.img_output_id)], ivec2(pixel), vec4(1, 1, 1, 1));
+        // else
+        //         imageStore(g_images[nonuniformEXT(pc.img_output_id)], ivec2(pixel), vec4(0, 0, 0, 1));
 
         // if (ray_aabb(ray.o, ray.d, bmin, bmax, t0, t1)) {
         //         DdaState s = dda_init(ray.o, ray.d, bmin, chunk.voxel_size, t0);
@@ -127,12 +131,11 @@ bool traverse_one_chunk(
         float chunk_size = float(CHUNK_SIZE);
         vec3 chunk_max = chunk_min + vec3(chunk_size);
 
-        // Origin must start inside chunk (half-open)
-        if (!point_inside_aabb(ray.origin, chunk_min, chunk_max)) {
-                err_code = TRACE_ERR_ORIGIN_OUTSIDE;
+        float t0, t1;
+        if (!ray_aabb(ray.origin, ray.dir, chunk_min, chunk_max, t0, t1)) {
+                err_code = TRACE_OK; // MISS, not error
                 return false;
         }
-
         // Ray dir sanity
         if (all(lessThan(abs(ray.dir), vec3(1e-12)))) {
                 err_code = TRACE_ERR_DIR_ZERO;
@@ -143,19 +146,18 @@ bool traverse_one_chunk(
                 err_code = TRACE_ERR_DIR_NAN_INF;
                 return false;
         }
-
         TraverseFrame stack[STACK_CAP];
         int stack_top = 0;
+
+        float cur_t_base = max(t0, 0.0);
 
         TraverseFrame cur;
         cur.node_index = 0u;
         cur.level = 0u;
         cur.node_min = chunk_min;
         cur.node_size = chunk_size;
-        cur.t_base = 0.0;
+        cur.t_base = cur_t_base;
         cur.steps_in_node = 0u;
-
-        float cur_t_base = 0.0;
 
         if (!init_node_dda(ray, cur.node_min, cur.node_size, cur_t_base, cur.dda)) {
                 err_code = TRACE_ERR_INIT_NODE_FAIL;
@@ -346,6 +348,7 @@ bool traverse_one_chunk(
         iter_count = uint(max_iter);
         return false;
 }
+
 vec4 debug_view_color(
         uint debug_mode,
         bool hit,
@@ -356,9 +359,7 @@ vec4 debug_view_color(
         uint err_code)
 {
         if (debug_mode == DEBUG_MODE_HIT) {
-                if (err_code != TRACE_OK)
-                        return trace_error_color(err_code); // show why it failed
-                return hit ? vec4(0, 1, 0, 1) : vec4(0, 0, 1, 1);
+                return hit ? vec4(1, 0, 0, 1) : vec4(0, 0.5, 0, 1);
         }
         if (debug_mode == DEBUG_MODE_ITER_GRAY) {
                 float t = clamp(float(iter_count) / max(1.0, float(max_iter)), 0.0, 1.0);
@@ -371,21 +372,14 @@ vec4 debug_view_color(
                 return vec4(vec3(t), 1.0);
         }
 
-        if (debug_mode == DEBUG_MODE_SLOT) {
-                // slot 0..63 => 0..1
-                float t = hit ? (float(hit_slot) / 63.0) : 0.0;
-                return vec4(vec3(t), 1.0);
-        }
         if (debug_mode == DEBUG_MODE_ITER_GRAY_HIT_GREEN) {
                 float t = clamp(float(iter_count) / max(1.0, float(max_iter)), 0.0, 1.0);
                 vec3 c = vec3(t);
-                if (hit) c.g = 1.0; // hit marker
                 return vec4(c, 1.0);
         }
         if (debug_mode == DEBUG_MODE_ERRORS) {
                 // show error colors; if no error and hit, show green; if no error and miss, black
-                if (err_code != TRACE_OK) return trace_error_color(err_code);
-                return hit ? vec4(0, 1, 0, 1) : vec4(0, 0, 0, 1);
+                return trace_error_color(err_code);
         }
 
         // fallback

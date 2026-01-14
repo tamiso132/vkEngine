@@ -52,6 +52,15 @@ FileGroup *fg_init(M_File *fm) {
   fg->fm = fm;
   return fg;
 }
+bool fg_exist(FileGroup *sm, const char *path) {
+  FileEntry *entries = (FileEntry *)sm->fm->entries.data;
+  for (uint32_t i = 0; i < (uint32_t)sm->fm->entries.length; i++) {
+    if (strcmp(entries[i].path, path) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
 
 bool fg_is_modified(FileGroup *sm) { return (sm->fm->dirty_mask & sm->care_mask) != 0; }
 

@@ -29,12 +29,16 @@ void run_sample(Sample *sample, GLFWwindow *window) {
       .pm = pm,
       .pr = pr,
       .rm = rm,
-      .cam = camera_init(),
+      .cam = camera_init(swapchain->extent, 70),
   };
-
+  cmd_begin(device->device, cmd);
   if (sample->init) {
+
     sample->init(sample, &ctx);
   }
+  cmd_end(device->device, cmd);
+  sm_work(sm, swapchain, cmd.buffer, false, false);
+  vkDeviceWaitIdle(device->device);
 
   double last_time = glfwGetTime();
 
@@ -70,6 +74,9 @@ void run_sample(Sample *sample, GLFWwindow *window) {
     camera_update(&ctx.cam, window, dt);
     m_system_update();
     sm_begin_frame(sm);
+
+    rm_on_new_frame(rm);
+
     sm_acquire_swapchain(sm, swapchain);
 
     ctx.swap_img = swapchain_get_image(swapchain);
@@ -78,7 +85,6 @@ void run_sample(Sample *sample, GLFWwindow *window) {
     cmd_bind_bindless(cmd, rm, swapchain->extent);
 
     // Transition: Swapchain -> Render Target
-    ResHandle swap_img = swapchain_get_image(swapchain);
     // ImageBarrierInfo color_barrier = {.img_handle = swap_img,
     //                                   .src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
     //                                   .src_layout = VK_IMAGE_LAYOUT_UNDEFINED,
@@ -87,7 +93,7 @@ void run_sample(Sample *sample, GLFWwindow *window) {
     //                                   .dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
     // rm_image_sync(rm, cmd.buffer, &color_barrier);
 
-    cmd_sync_image(cmd, rm, swap_img, STATE_COLOR, ACCESS_READ);
+    cmd_sync_image(cmd, rm, ctx.swap_img, STATE_COLOR, ACCESS_READ);
 
     if (sample->render) {
       sample->render(sample, &ctx);
@@ -102,7 +108,7 @@ void run_sample(Sample *sample, GLFWwindow *window) {
     //                                     .dst_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
     //                                     .dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
     // rm_image_sync(rm, cmd.buffer, &present_barrier);
-    cmd_sync_image(cmd, rm, swap_img, STATE_PRESENT, ACCESS_READ);
+    cmd_sync_image(cmd, rm, ctx.swap_img, STATE_PRESENT, ACCESS_READ);
     cmd_end(device->device, cmd);
 
     // Submit & Present

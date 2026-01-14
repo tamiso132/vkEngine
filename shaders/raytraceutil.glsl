@@ -1,4 +1,7 @@
-#extension GL_ARB_shading_language_include : require
+#ifdef __STDC__
+#pragma once
+#endif
+
 #include "raytrace.glsl"
 
 bool childindex_is_leaf(uint packed_first_child_index)
@@ -59,7 +62,7 @@ uint child_compact_offset(uint64_t mask, uint slot)
 // Output:
 //   childNodeIndex = base + popcount(mask bits before slot)
 // Returns false if child not present or parent is leaf.
-bool node_get_child_index_pure(
+bool node_get_child_index(
         uint64_t parent_mask,
         uint parent_child_index,
         uint slot,
@@ -82,7 +85,7 @@ Ray camera_ray_for_pixel(ShaderRayCam cam, uvec2 pixel, vec2 extent)
         Ray r;
 
         // origin packed in .w components
-        r.origin = vec3(cam.u.w, cam.v.w, cam.w.w);
+        r.origin = vec3(0, 0, 0);
 
         // 1) pixel center sample
         vec2 uv = (vec2(pixel) + vec2(0.5)) / extent;
@@ -103,9 +106,10 @@ Ray camera_ray_for_pixel(ShaderRayCam cam, uvec2 pixel, vec2 extent)
         vec3 s = sign(dir);
         s = mix(vec3(1.0), s, greaterThan(abs(dir), vec3(0.0))); // if dir==0 -> +1
 
+        const float dirEps = 1e-8;
         dir = mix(dir, s * dirEps, lessThan(abs(dir), vec3(dirEps)));
 
-        dir = normalize(dir);
+        r.dir = normalize(dir);
         return r;
 }
 
@@ -118,7 +122,6 @@ uint get_local_index_from_vec3(ivec3 p) {
 // Branchless "min-axis" chooser like your step(side_dist.xxyy, side_dist.yzzx)
 vec3 dda_cases_from_side_dist(vec3 side_dist) {
         // GLSL step(edge, x): returns 0 if x < edge, else 1
-
         // conds = step( xxyy, yzzx )
         float c0 = step(side_dist.x, side_dist.y); // y >= x
         float c1 = step(side_dist.x, side_dist.z); // z >= x
@@ -160,7 +163,16 @@ struct BranchlessDDA {
         ivec3 prev_step_i32;
 
         bool is_occupied;
+        bool out_of_bounds;
 };
+
+bool pointInsideAabb(vec3 p, vec3 bmin, vec3 bmax)
+{
+        // Inclusive bounds (inside if on the faces too)
+        bvec3 geMin = greaterThanEqual(p, bmin);
+        bvec3 leMax = lessThanEqual(p, bmax);
+        return all(geMin) && all(leMax);
+}
 
 void dda_init(
         inout BranchlessDDA d,
@@ -177,6 +189,47 @@ void dda_init(
         d.prev_step_i32 = ivec3(0);
         d.out_of_bounds = false;
         d.is_occupied = false;
+}
+bool init_node_dda(
+        Ray ray,
+        vec3 node_min,
+        float node_size,
+        float t_base, // global ray t when we enter this node
+        out BranchlessDDA dda_out)
+{
+        float cell = node_size * 0.25; // /4
+
+        // position at entry (small eps helps avoid boundary sticking)
+        const float eps = 1e-5;
+        vec3 p_world = ray.origin + (t_base + eps) * ray.dir;
+        vec3 p_local = p_world - node_min;
+
+        // if outside node, you normally AABB-test; for now you said origin inside,
+        // so keep it simple:
+        if (!pointInsideAabb(p_world, node_min, node_min + vec3(node_size)))
+                return false;
+
+        ivec3 cell_pos = ivec3(floor(p_local / cell));
+        cell_pos = clamp(cell_pos, ivec3(0), ivec3(3));
+
+        ivec3 step_dir = ivec3(sign(ray.dir));
+
+        const float inf = 3.402823e38;
+        vec3 inv_dir = 1.0 / ray.dir;
+        inv_dir = mix(inv_dir, vec3(inf), lessThan(abs(ray.dir), vec3(1e-12)));
+
+        vec3 next_boundary =
+                vec3(cell_pos) * cell +
+                        step(vec3(0.0), ray.dir) * cell; // +cell if dir>=0 else +0
+
+        vec3 side_dist = (next_boundary - p_local) * inv_dir;
+        vec3 delta_dist = abs(inv_dir) * cell;
+
+        side_dist = mix(side_dist, vec3(inf), equal(step_dir, ivec3(0)));
+        delta_dist = mix(delta_dist, vec3(inf), equal(step_dir, ivec3(0)));
+
+        dda_init(dda_out, cell_pos, side_dist, delta_dist, cell);
+        return true;
 }
 
 // This is your branchless step(), ported.
@@ -210,9 +263,18 @@ void dda_step(
 
         // Occupancy test at new position (if not out of bounds)
         // If you want fully branchless, you can still compute it and mask it out.
-        uint idx = get_local_index_4x4x4(d.local_pos);
+        uint idx = get_local_index_from_vec3(d.local_pos);
         bool occ = (((cs.occupancy_mask >> uint64_t(idx)) & 1ul) != 0ul);
 
         // If out_of_bounds, force false; this is still branchless (mix)
         d.is_occupied = mix(occ, false, d.out_of_bounds);
 }
+
+struct TraverseFrame {
+        uint node_index;
+        float t_base;
+        uint level;
+        vec3 node_min; // world-space min of this node volume
+        float node_size; // world-space size of this node volume (cube)
+        BranchlessDDA dda; // your DDA state (local_pos, side_dist, delta_dist, t_tot...)
+};

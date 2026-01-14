@@ -96,10 +96,6 @@ void sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is
                           .signalSemaphoreInfoCount = is_last_in_frame ? 2 : 0,
                           .pSignalSemaphoreInfos = signal_info};
 
-  if (is_last_in_frame) {
-    // LOG_INFO("[QueueSubmit]: Signal at %ld", signal_info[0].value);
-  }
-
   vkQueueSubmit2(mgr->queue, 1, &submit, VK_NULL_HANDLE);
 }
 

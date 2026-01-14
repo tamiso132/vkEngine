@@ -117,6 +117,15 @@ static glsl_include_result_t *on_local_func_include(void *ctx, const char *heade
   char *include_path = calloc(1, strlen(result->include_dir) + strlen(header_name) + 10);
 
   sprintf(include_path, "%s/%s", result->include_dir, header_name);
+  bool exist = fg_exist(result->fg, include_path);
+
+  if (exist) {
+    glsl_include_result_t include_result = {.header_data = {}, .header_length = 0, .header_name = header_name};
+    vec_push(&(result->_temp), &include_result);
+    int index = vec_len(&result->_temp) - 1;
+
+    return VEC_AT((&result->_temp), index, glsl_include_result_t);
+  }
 
   FileHandle handle = fg_load_file(result->fg, include_path);
   const char *source = fg_get_file(result->fg, &handle);
@@ -132,10 +141,7 @@ static glsl_include_result_t *on_local_func_include(void *ctx, const char *heade
 /* Callback for system file inclusion */
 static glsl_include_result_t *on_system_func_include(void *ctx, const char *header_name, const char *includer_name,
                                                      size_t include_depth) {
-  glsl_include_result_t d;
-  d.header_name = header_name;
-  LOG_INFO("Including file: %s", header_name);
-  abort();
+
   return NULL;
 }
 

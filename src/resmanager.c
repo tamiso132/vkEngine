@@ -28,6 +28,18 @@ typedef struct {
   };
 } RetiredRes;
 
+typedef struct RmStage {
+  VkDeviceSize capacity;
+
+  VkBuffer buffer[1];
+  VmaAllocation alloc[1];
+  void *mapped[1];
+  VkDeviceSize offset[1];
+
+  u32 cur_frame;
+  bool is_coherent; // safe default: false, always flush
+} RmStage;
+
 struct M_Resource {
 
   u32 frame_count;
@@ -46,6 +58,8 @@ struct M_Resource {
   VkPipelineLayout pip_layout;
   VkSampler default_sampler;
   u32 b_counter[RES_B_COUNT];
+
+  RmStage stage;
 };
 
 // --- Private Prototypes ---
@@ -62,6 +76,12 @@ static void _bindless_add(M_Resource *rm, ResHandle handle, VkDescriptorImageInf
 
 static void _bindless_update(M_Resource *rm, ResHandle handle, VkDescriptorImageInfo *imageInfo,
                              VkDescriptorBufferInfo *bufferInfo);
+static VkDeviceSize _align_up(VkDeviceSize v, VkDeviceSize a);
+static void _stage_init(M_Resource *rm, M_GPU *gpu, VkDeviceSize capacity_bytes);
+static void _stage_destroy(M_Resource *rm, M_GPU *gpu);
+static void _stage_on_new_frame(M_Resource *rm);
+static RmStageSlice _stage_push_internal(M_Resource *rm, M_GPU *gpu, const void *data, VkDeviceSize size,
+                                         VkDeviceSize alignment);
 static void _init_bindless(M_Resource *rm);
 
 static VkComponentMapping _vk_component_mapping();
@@ -69,6 +89,7 @@ static VkComponentMapping _vk_component_mapping();
 SystemFunc rm_system_get_func() {
   return (SystemFunc){
       .on_init = _system_init,
+      .on_update = NULL,
       .on_shutdown = _system_destroy,
   };
 }
@@ -76,10 +97,16 @@ SystemFunc rm_system_get_func() {
 ResHandle rm_create_buffer(M_Resource *rm, RGBufferInfo *info) {
   auto *gpu = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
 
-  RBuffer buffer = {.sync = {.access = VK_ACCESS_2_NONE, .stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT}};
+  RBuffer buffer = {
+      .sync = {.access = VK_ACCESS_2_NONE, .stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT},
+      .mem = info->mem,
+      .usage = info->usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+      .capacity = info->capacity,
+  };
   strcpy(buffer.name, info->name);
 
-  VkBufferCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = info->capacity, .usage = info->usage};
+  VkBufferCreateInfo ci = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = info->capacity, .usage = buffer.usage};
 
   VmaAllocationCreateInfo ai = {.requiredFlags = info->mem};
 
@@ -204,12 +231,13 @@ void rm_on_new_frame(M_Resource *rm) {
       i--;
     }
   }
+  _stage_on_new_frame(rm);
 }
 
 // --- Implementation: Getters ---
 
 RBuffer *rm_get_buffer(M_Resource *rm, ResHandle handle) {
-  assert(handle.id == RES_TYPE_BUFFER);
+  assert(handle.res_type == RES_TYPE_BUFFER);
   assert(handle.id < vec_len(&rm->resources[handle.res_type]));
 
   return VEC_AT(&rm->resources[handle.res_type], handle.id, RBuffer);
@@ -235,6 +263,12 @@ VkDescriptorSetLayout rm_get_bindless_layout(M_Resource *rm) { return rm->bindle
 
 VkDescriptorSet rm_get_bindless_set(M_Resource *rm) { return rm->bindless_set; }
 
+RmStageSlice rm_get_stage_buffer(M_Resource *rm, const void *data, VkDeviceSize size, VkDeviceSize alignment) {
+  auto *gpu = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+  assert(data && size > 0);
+  return _stage_push_internal(rm, gpu, data, size, alignment);
+}
+
 // --- Private Functions ---
 
 static void _destroy(M_Resource *rm) {
@@ -259,6 +293,8 @@ static void _destroy(M_Resource *rm) {
 
 static void _system_destroy() {
   auto *rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
+  auto *gpu = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+  _stage_destroy(rm, gpu);
   _destroy(rm);
 }
 
@@ -270,6 +306,7 @@ static void *_init(M_Resource *rm, M_GPU *gpu) {
   vec_init(&rm->resources[RES_TYPE_BUFFER], sizeof(RBuffer), NULL);
   vec_init(&rm->retired_res, sizeof(RetiredRes), NULL);
   _init_bindless(rm);
+  _stage_init(rm, gpu, MIB(100));
   return rm;
 }
 
@@ -390,6 +427,77 @@ static void _bindless_update(M_Resource *rm, ResHandle handle, VkDescriptorImage
   }
 
   vkUpdateDescriptorSets(gpu->device, 1, &write, 0, NULL);
+}
+
+static VkDeviceSize _align_up(VkDeviceSize v, VkDeviceSize a) {
+  if (a == 0)
+    return v;
+  return (v + (a - 1)) & ~(a - 1);
+}
+
+static void _stage_init(M_Resource *rm, M_GPU *gpu, VkDeviceSize capacity_bytes) {
+  rm->stage.capacity = capacity_bytes;
+  rm->stage.cur_frame = 0;
+  rm->stage.is_coherent = false; // safe: always flush
+
+  for (u32 i = 0; i < 1; ++i) {
+    VkBufferCreateInfo bi = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = capacity_bytes,
+        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+    };
+
+    VmaAllocationCreateInfo ai = {0};
+    ai.usage = VMA_MEMORY_USAGE_AUTO;
+    ai.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VmaAllocationInfo outInfo = {0};
+    VkResult res = vmaCreateBuffer(gpu->allocator, &bi, &ai, &rm->stage.buffer[i], &rm->stage.alloc[i], &outInfo);
+    vk_check(res);
+    rm->stage.mapped[i] = outInfo.pMappedData;
+    rm->stage.offset[i] = 0;
+  }
+}
+
+static void _stage_destroy(M_Resource *rm, M_GPU *gpu) {
+  for (u32 i = 0; i < 1; ++i) {
+    if (rm->stage.buffer[i]) {
+      vmaDestroyBuffer(gpu->allocator, rm->stage.buffer[i], rm->stage.alloc[i]);
+    }
+  }
+  memset(&rm->stage, 0, sizeof(rm->stage));
+}
+
+// TODO fix later
+static void _stage_on_new_frame(M_Resource *rm) {
+  rm->stage.cur_frame = (rm->stage.cur_frame + 1) % 1;
+  rm->stage.offset[rm->stage.cur_frame];
+}
+
+static RmStageSlice _stage_push_internal(M_Resource *rm, M_GPU *gpu, const void *data, VkDeviceSize size,
+                                         VkDeviceSize alignment) {
+  u32 fi = rm->stage.cur_frame;
+
+  VkDeviceSize off = _align_up(rm->stage.offset[fi], alignment ? alignment : 16);
+  VkDeviceSize end = off + size;
+
+  // If you hit this, increase staging capacity or add a fallback path.
+  assert(end <= rm->stage.capacity && "RM staging overflow");
+
+  rm->stage.offset[fi] = end;
+
+  void *dst = (u8 *)rm->stage.mapped[fi] + off;
+  memcpy(dst, data, (size_t)size);
+
+  if (!rm->stage.is_coherent) {
+    vmaFlushAllocation(gpu->allocator, rm->stage.alloc[fi], off, size);
+  }
+
+  return (RmStageSlice){
+      .buffer = rm->stage.buffer[fi],
+      .offset = off,
+      .size = size,
+  };
 }
 
 static void _init_bindless(M_Resource *rm) {

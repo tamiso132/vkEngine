@@ -19,6 +19,7 @@ typedef struct SubManager FileGroup;
 SystemFunc fm_system_get_func();
 
 FileGroup *fg_init(M_File *fm);
+bool fg_exist(FileGroup *sm, const char *path);
 bool fg_is_modified(FileGroup *sm);
 FileHandle fg_load_file(FileGroup *sm, const char *path);
 const char *fg_get_file(FileGroup *sm, FileHandle *handle);

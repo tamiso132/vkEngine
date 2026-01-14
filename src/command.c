@@ -4,6 +4,7 @@
 #include "gpu/pipeline.h"
 #include "resmanager.h"
 #include "vector.h"
+#include <vulkan/vulkan_core.h>
 
 typedef struct {
   VkPipelineStageFlags2 stage;
@@ -213,6 +214,9 @@ void cmd_sync_buffer(CmdBuffer cmd, M_Resource *rm, ResHandle buf_handle, Resour
   SyncDef src = buffer->sync;
   SyncDef dst = _resolve_sync(dst_state, dst_access);
 
+  if (src.access == dst.access && src.stage == dst.stage)
+    return;
+
   VkBufferMemoryBarrier2 barrier = {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
                                     .srcStageMask = src.stage,
                                     .srcAccessMask = src.access,
@@ -231,13 +235,21 @@ void cmd_sync_buffer(CmdBuffer cmd, M_Resource *rm, ResHandle buf_handle, Resour
 
 void cmd_buffer_upload(CmdBuffer cmd, M_GPU *dev, M_Resource *rm, ResHandle handle, void *data, u32 size) {
   RBuffer *buffer = rm_get_buffer(rm, handle);
+  cmd_sync_buffer(cmd, rm, handle, STATE_TRANSFER, ACCESS_WRITE);
 
-  // TODO, a check if the buffer is big enough,
-  // otherwise might need to return result about needing to resize the buffer
+  // TODO, check if buffer is too small, then resize
   if (buffer->mem == VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
-    // TODO, create staging buffer, then copy over all stuff
-    // TODO, ask resource manager for a staging buffer of X size
-    // TODO, transfer buffer stage to src
+    RmStageSlice stage = rm_get_stage_buffer(rm, data, size, 0);
+
+    VkBufferCopy2 copy = {.sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2, .srcOffset = stage.offset, .size = stage.size};
+
+    VkCopyBufferInfo2 copy_info = {.sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+                                   .srcBuffer = stage.buffer,
+                                   .dstBuffer = buffer->handle,
+                                   .pRegions = &copy,
+                                   .regionCount = 1};
+
+    vkCmdCopyBuffer2(cmd.buffer, &copy_info);
   } else {
     void *gpu_ptr = {};
     VmaAllocator allocator = dev->allocator;

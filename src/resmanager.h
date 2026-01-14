@@ -120,8 +120,16 @@ typedef struct {
   SyncDef sync;
 } RImage;
 
+typedef struct RmStageSlice {
+  VkBuffer buffer;
+  VkDeviceSize offset;
+  VkDeviceSize size;
+} RmStageSlice;
+
 // PUBLIC FUNCTIONS
 
+// User function: copy CPU data into staging and return (buffer, offset, size)
+RmStageSlice rm_get_stage_buffer(M_Resource *rm, const void *data, VkDeviceSize size, VkDeviceSize alignment);
 u32 rm_get_buffer_index(M_Resource *rm, ResHandle image);
 
 SystemFunc rm_system_get_func();

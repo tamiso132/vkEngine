@@ -2,6 +2,7 @@
 #include "command.h"
 #include "resmanager.h"
 #include <string.h>
+
 typedef struct AsyncBuffer {
   // front and back buffer
   ResHandle buffers[2];

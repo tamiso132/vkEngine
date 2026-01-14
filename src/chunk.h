@@ -24,7 +24,6 @@
 
 #define BITS_PER_LEVEL (BITS_PER_AXIS_PER_LEVEL * AXIS_COUNT) /* 6 */
 #define BITS_PER_AXIS (BITS_PER_AXIS_PER_LEVEL * TREE_LEVELS) /* 2L */
-#define CHUNK_SIZE (1u << BITS_PER_AXIS)                      /* 4^L */
 
 #define MORTON_BITS (BITS_PER_LEVEL * TREE_LEVELS) /* 6L */
 
@@ -35,7 +34,6 @@ _Static_assert(BITS_PER_LEVEL == 6, "64-tree requires 6 bits per level.");
 _Static_assert((CHUNK_SIZE & (CHUNK_SIZE - 1u)) == 0u, "CHUNK_SIZE must be a power of two.");
 _Static_assert((VOXELS_PER_CHUNK % VOXELS_PER_WORD) == 0ull, "VOXELS_PER_CHUNK must be divisible by 64.");
 
-// PUBLIC FUNCTIONS
 typedef struct Node {
   uint64_t mask; // occupancy of 64 children (or 64 voxels at leaf level)
 } Node;
@@ -59,8 +57,10 @@ typedef struct ChunkTree {
   uint64_t bits[WORDS_PER_CHUNK];
 } ChunkTree;
 
+// PUBLIC FUNCTIONS
+//
 // lifecycle
-void chunk_init(ChunkTree *chunk);
+void chunk_init(ChunkTree *chunk, M_Resource *rm, M_GPU *gpu, CmdBuffer cmd);
 void chunk_destroy(ChunkTree *chunk);
 
 // voxel ops (chunk-local coordinates 0..CHUNK_SIZE-1)
@@ -68,6 +68,7 @@ bool chunk_get_voxel(const ChunkTree *chunk, int x, int y, int z);
 void chunk_set_voxel(ChunkTree *chunk, int x, int y, int z, bool set_active);
 
 // rebuild & upload
+void chunk_fill_random(ChunkTree *chunk, uint32_t seed, float density);
 void chunk_rebuild(ChunkTree *chunk);
 void chunk_rebuild_if_needed(ChunkTree *chunk, uint32_t threshold);
 void chunk_upload(ChunkTree *chunk, M_GPU *gpu, M_Resource *rm, CmdBuffer cmd);

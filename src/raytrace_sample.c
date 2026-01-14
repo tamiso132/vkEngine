@@ -1,6 +1,7 @@
 
 #include "raytrace_sample.h"
 #include "cglm/call/vec3.h"
+#include "chunk.h"
 #include "command.h"
 #include "common.h"
 #include "gpu/pipeline.h"
@@ -17,6 +18,7 @@ typedef struct RaytraceData {
   PipelineHandle cs_pipeline;
   ResHandle cs_output_img;
   ResHandle cam_buffer;
+  ChunkTree chunk;
 } RaytraceData;
 
 // --- Private Prototypes ---
@@ -30,9 +32,10 @@ Sample create_raytrace_sample() { return (Sample){.init = _init, .render = _rend
 
 static void _init(Sample *self, SampleContext *ctx) {
   RaytraceData *data = calloc(sizeof(RaytraceData), 1);
+  chunk_init(&data->chunk, ctx->rm, ctx->gpu, ctx->cmd);
 
   CpConfig config = cp_init("Raytrace Pipeline");
-  cp_set_shader_path(&config, "shaders/triangle_compute.comp");
+  cp_set_shader_path(&config, "shaders/raytrace.comp");
 
   RGImageInfo info = {.name = "IMG_Raytrace_Output",
                       .format = VK_FORMAT_B8G8R8A8_UNORM,
@@ -70,8 +73,12 @@ static void _render(Sample *self, SampleContext *ctx) {
   glmc_vec3_copy(ctx->cam.w, gpu_cam.w);
   cmd_buffer_upload(ctx->cmd, ctx->gpu, ctx->rm, data->cam_buffer, &gpu_cam, sizeof(gpu_cam));
 
-  PushRay p = {.extent = {ctx->extent.width, ctx->extent.height},
-               .cam_id = rm_get_buffer_index(ctx->rm, data->cam_buffer)};
+  PushRay p = {
+      .extent = {ctx->extent.width, ctx->extent.height},
+      .cam_id = rm_get_buffer_index(ctx->rm, data->cam_buffer),
+      .child_id = rm_get_buffer_index(ctx->rm, data->chunk.gpu_child_indices),
+      .node_id = rm_get_buffer_index(ctx->rm, data->chunk.gpu_node),
+  };
 
   BindPipelineInfo b = {.p_push = &p, .push_size = sizeof(PushRay), .handle = data->cs_pipeline};
 

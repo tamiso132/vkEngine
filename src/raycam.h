@@ -21,6 +21,6 @@ typedef struct Camera {
 } Camera;
 // PUBLIC FUNCTIONS
 
-void camera_update(Camera *cam, GLFWwindow *window, double delta);
+ void camera_update(Camera *cam, GLFWwindow *window, double delta);
 
-Camera camera_init();
+ Camera camera_init(VkExtent2D extent, float fovy);

@@ -1,5 +1,224 @@
 #version 460
 #extension GL_ARB_shading_language_include : require
 #extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
+#include "shader_base.glsl"
 #include "raytrace.glsl"
+#include "raytraceutil.glsl"
+
+layout(set = 0, binding = BINDING_STORAGE_BUFFER, std430) readonly buffer CamBuf {
+        ShaderRayCam data;
+} g_cam[];
+
+layout(set = 0, binding = BINDING_STORAGE_BUFFER, std430) readonly buffer NodesBuf {
+        uint64_t data[];
+} g_nodes[];
+
+layout(set = 0, binding = BINDING_STORAGE_BUFFER, std430) readonly buffer ChildIdxBuf {
+        uint data[];
+} g_child_indices[];
+
+layout(rgba8, set = 0, binding = BINDING_STORAGE_IMAGE) uniform image2D g_images[];
+
+layout(push_constant) uniform constants
+{
+        PushRay pc;
+};
+
+bool traverse_one_chunk(
+        Ray ray,
+        vec3 chunk_min,
+        out vec3 hit_pos,
+        out uint hit_level,
+        out uint hit_slot);
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+void main() {
+        uvec2 pixel = uvec2(gl_GlobalInvocationID.xy);
+        if (pixel.x >= uint(pc.extent.x) || pixel.y >= uint(pc.extent.y)) return;
+
+        ShaderRayCam cam = g_cam[pc.cam_id].data;
+        Ray ray = camera_ray_for_pixel(cam, pixel, pc.extent);
+
+        // pick a chunk (for now: chunk 0)
+        vec3 bmin = vec3(0, 0, 0);
+        vec3 bmax = vec3(0, 0, 0) + vec3(float(CHUNK_SIZE));
+
+        float t0, t1;
+        vec4 color = vec4(1, 0, 0, 1);
+        vec3 chunkMin = vec3(0.0);
+        vec3 chunkMax = vec3(CHUNK_SIZE); // if voxelSize=1
+
+        bool inside = pointInsideAabb(ray.origin, bmin, bmax);
+        vec3 hit_pos;
+        uint hit_level;
+        uint hit_slot;
+
+        if (traverse_one_chunk(ray, bmin, hit_pos, hit_level, hit_slot))
+
+                imageStore(g_images[pc.img_output_id], ivec2(pixel), vec4(1.0, 0.0, 0.0, 1.0));
+
+        else
+                imageStore(g_images[pc.img_output_id], ivec2(pixel), vec4(0.0, 0.0, 0.0, 1.0));
+        // if (ray_aabb(ray.o, ray.d, bmin, bmax, t0, t1)) {
+        //         DdaState s = dda_init(ray.o, ray.d, bmin, chunk.voxel_size, t0);
+        //
+        //         // hard cap
+        //         for (int i = 0; i < CHUNK_SIZE * 3; ++i) {
+        //                 // bounds check
+        //                 if (any(lessThan(s.voxel, ivec3(0))) ||
+        //                                 any(greaterThan(s.voxel, ivec3(CHUNK_SIZE - 1)))) break;
+        //
+        //                 if (chunk_get_voxel(chunk.root_node_index, uvec3(s.voxel))) {
+        //                         vec3 n = vec3(s.voxel) / float(CHUNK_SIZE - 1);
+        //                         color = vec4(n, 1.0);
+        //                         break;
+        //                 }
+        //
+        //                 dda_step_branchless(s);
+        //
+        //                 // optional: if you track t, you can break when min(t_max) > t1
+        //         }
+}
+//
+bool traverse_one_chunk(
+        Ray ray,
+        vec3 chunk_min,
+        out vec3 hit_pos,
+        out uint hit_level,
+        out uint hit_slot)
+{
+        hit_pos = vec3(0.0);
+        hit_level = 0u;
+        hit_slot = 0u;
+
+        uint levels = uint(TREE_LEVELS);
+
+        // assume one chunk, chunk at chunk_min, size = CHUNK_SIZE (voxel size 1)
+        float chunk_size = float(CHUNK_SIZE);
+        vec3 chunk_max = chunk_min + vec3(chunk_size);
+
+        // you said for now: origin is inside
+        if (!pointInsideAabb(ray.origin, chunk_min, chunk_max))
+                return false;
+
+        // traversal stack
+        TraverseFrame stack[16]; // TREE_LEVELS is small, 16 is safe
+        int stack_top = 0;
+
+        // current frame
+        TraverseFrame cur;
+        cur.node_index = 0u;
+        cur.level = 0u;
+        cur.node_min = chunk_min;
+        cur.node_size = chunk_size;
+
+        float cur_t_base = 0.0; // global t when we entered this node
+
+        if (!init_node_dda(ray, cur.node_min, cur.node_size, cur_t_base, cur.dda))
+                return false;
+
+        RayTraceConstState cs;
+        cs.step_dir_i32 = ivec3(sign(ray.dir));
+
+        for (; ; )
+        {
+                uint64_t mask = g_nodes[pc.node_id].data[cur.node_index];
+                uint packed = g_child_indices[pc.child_id].data[cur.node_index];
+
+                bool level_leaf = (cur.level == (levels - 1u));
+                bool early_leaf = childindex_is_leaf(packed);
+
+                // current cell slot (0..63) from dda local_pos
+                uint slot = get_local_index_from_vec3(cur.dda.local_pos);
+
+                // IMPORTANT: dda_step() checks occupancy after stepping.
+                // We also want to check occupancy at the current cell before stepping:
+                bool cell_occupied = child_present(mask, slot);
+
+                if (level_leaf || early_leaf)
+                {
+                        if (cell_occupied)
+                        {
+                                // treat this as a hit
+                                float t_hit = cur_t_base + cur.dda.t_tot;
+                                hit_pos = ray.origin + t_hit * ray.dir;
+                                hit_level = cur.level;
+                                hit_slot = slot;
+                                return true;
+                        }
+                }
+                else
+                {
+                        // internal node: descend if child exists
+                        if (cell_occupied)
+                        {
+                                uint child_index;
+                                if (node_get_child_index(mask, packed, slot, child_index))
+                                {
+                                        // push parent
+                                        stack[stack_top++] = cur;
+
+                                        // compute child node world-space bounds
+                                        float child_size = cur.node_size * 0.25;
+                                        vec3 child_min = cur.node_min + vec3(cur.dda.local_pos) * child_size;
+
+                                        // enter child
+                                        cur.node_index = child_index;
+                                        cur.level = cur.level + 1u;
+                                        cur.node_min = child_min;
+                                        cur.node_size = child_size;
+
+                                        // global t when entering child is whatever we have traveled in parent so far
+                                        cur_t_base = cur_t_base + stack[stack_top - 1].dda.t_tot;
+
+                                        if (!init_node_dda(ray, cur.node_min, cur.node_size, cur_t_base, cur.dda))
+                                        {
+                                                // if init fails, treat as no-hit and continue siblings
+                                                cur = stack[--stack_top];
+                                                continue;
+                                        }
+
+                                        continue; // now process child
+                                }
+                        }
+                }
+
+                // step within current node's 4x4x4 grid
+                cs.occupancy_mask = mask; // for dda_step's internal occ test
+                dda_step(cur.dda, cs);
+
+                if (cur.dda.out_of_bounds)
+                {
+                        // finished this node volume, go up
+                        if (stack_top == 0)
+                                return false; // exited root: miss
+
+                        // pop parent back
+                        TraverseFrame parent = stack[--stack_top];
+
+                        // restore parent's frame
+                        // NOTE: parent.dda.t_tot was unchanged while we were inside child, which is correct.
+                        cur = parent;
+
+                        // restore parent's t_base too:
+                        // easiest: recompute it by subtracting parent's t_tot from current global.
+                        // For simplicity here, we keep cur_t_base as "entry t of current node".
+                        // When we pop, we need parent's entry t again. Store it if you want exact.
+                        // Minimal approach: store t_base in the frame as well.
+                        // (Add float t_base to TraverseFrame and set it before push.)
+                        //
+                        // For now: assume you add cur.t_base into the frame.
+                        cur_t_base = cur.t_base;
+
+                        // After returning, we should advance to the next sibling cell in parent:
+                        uint64_t parent_mask = g_nodes[pc.node_id].data[cur.node_index];
+                        cs.occupancy_mask = parent_mask;
+                        dda_step(cur.dda, cs);
+
+                        // then continue loop
+                }
+        }
+}

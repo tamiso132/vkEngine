@@ -15,7 +15,12 @@
 static void _update_basis(Camera *cam);
 static void _move(Camera *cam, GLFWwindow *window, float dt);
 
-Camera camera_init() { return (Camera){}; }
+Camera camera_init(VkExtent2D extent, float fovy) {
+  auto cam = (Camera){
+      .aspect = (float)extent.width / extent.height, .vfov_deg = fovy, .u = {1, 0, 0}, .w = {0, 0, 1}, .v = {0, 1, 0}};
+  _update_basis(&cam);
+  return cam;
+}
 
 static double last_x, last_y;
 static int first_mouse = 1;

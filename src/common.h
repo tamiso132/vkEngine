@@ -14,6 +14,11 @@ typedef int64_t i64;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+#define KIB(x) ((uint64_t)(x) * 1024ull)
+#define MIB(x) (KIB(x) * 1024ull)
+#define GIB(x) (MIB(x) * 1024ull)
+#define TIB(x) (GIB(x) * 1024ull)
+
 typedef enum { RES_TYPE_BUFFER, RES_TYPE_IMAGE, RES_TYPE_COUNT } ResType;
 
 typedef enum SystemType {

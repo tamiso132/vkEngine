@@ -53,7 +53,8 @@ typedef struct ChunkTree {
   ResHandle gpu_node;
   ResHandle gpu_child_indices;
 
-  // Dense voxel truth table, 1 bit per voxel, in Morton order.
+  // Dense voxel truth table, 1 bit per voxel, LINEAR order:
+  // idx = x + CHUNK_SIZE*(y + CHUNK_SIZE*z)
   uint64_t bits[WORDS_PER_CHUNK];
 } ChunkTree;
 

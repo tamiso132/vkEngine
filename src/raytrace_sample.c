@@ -71,6 +71,10 @@ static void _render(Sample *self, SampleContext *ctx) {
   glmc_vec3_copy(ctx->cam.u, gpu_cam.u);
   glmc_vec3_copy(ctx->cam.v, gpu_cam.v);
   glmc_vec3_copy(ctx->cam.w, gpu_cam.w);
+  gpu_cam.u[3] = ctx->cam.pos[0];
+  gpu_cam.v[3] = ctx->cam.pos[1];
+  gpu_cam.w[3] = ctx->cam.pos[2];
+
   cmd_buffer_upload(ctx->cmd, ctx->gpu, ctx->rm, data->cam_buffer, &gpu_cam, sizeof(gpu_cam));
 
   PushRay p = {
@@ -78,6 +82,7 @@ static void _render(Sample *self, SampleContext *ctx) {
       .cam_id = rm_get_buffer_index(ctx->rm, data->cam_buffer),
       .child_id = rm_get_buffer_index(ctx->rm, data->chunk.gpu_child_indices),
       .node_id = rm_get_buffer_index(ctx->rm, data->chunk.gpu_node),
+      .debug_mode = ctx->cam.debug_mode,
   };
 
   BindPipelineInfo b = {.p_push = &p, .push_size = sizeof(PushRay), .handle = data->cs_pipeline};

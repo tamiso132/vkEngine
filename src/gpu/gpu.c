@@ -129,6 +129,7 @@ static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info) {
       .descriptorBindingStorageImageUpdateAfterBind = VK_TRUE,
       .descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE,
       .descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE,
+      .shaderStorageImageArrayNonUniformIndexing = VK_TRUE,
       // Uppdatera set medan det används
   };
 

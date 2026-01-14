@@ -85,6 +85,7 @@ static RmStageSlice _stage_push_internal(M_Resource *rm, M_GPU *gpu, const void 
 static void _init_bindless(M_Resource *rm);
 
 static VkComponentMapping _vk_component_mapping();
+static VkComponentMapping _vk_component_bgra_mapping();
 
 SystemFunc rm_system_get_func() {
   return (SystemFunc){
@@ -573,6 +574,14 @@ static VkComponentMapping _vk_component_mapping() {
   VkComponentMapping d = {.r = VK_COMPONENT_SWIZZLE_R,
                           .g = VK_COMPONENT_SWIZZLE_G,
                           .b = VK_COMPONENT_SWIZZLE_B,
+                          .a = VK_COMPONENT_SWIZZLE_A};
+  return d;
+}
+
+static VkComponentMapping _vk_component_bgra_mapping() {
+  VkComponentMapping d = {.r = VK_COMPONENT_SWIZZLE_B,
+                          .g = VK_COMPONENT_SWIZZLE_G,
+                          .b = VK_COMPONENT_SWIZZLE_R,
                           .a = VK_COMPONENT_SWIZZLE_A};
   return d;
 }

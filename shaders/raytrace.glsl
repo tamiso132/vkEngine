@@ -4,7 +4,7 @@
 
 #include "shader_base.glsl"
 
-#define TREE_LEVELS 3
+#define TREE_LEVELS 4
 #define BITS_PER_AXIS_PER_LEVEL 2
 #define AXIS_COUNT 3
 #define BITS_PER_LEVEL (BITS_PER_AXIS_PER_LEVEL * AXIS_COUNT) /* 6 */
@@ -24,6 +24,14 @@
 #define BITSET_BIT(morton)  ((morton) & 63ULL)
 #define BIT_MASK_U64(bit)   (1ULL << ((bit) & 63))
 
+// DEGUG MODES
+#define DEBUG_MODE_HIT          0u  // red if hit else black
+#define DEBUG_MODE_ITER_GRAY    1u  // black->white by iterations
+#define DEBUG_MODE_LEVEL        2u  // visualize hit_level
+#define DEBUG_MODE_SLOT         3u  // visualize hit_slot (0..63)
+#define DEBUG_MODE_ITER_GRAY_HIT_GREEN 4u
+#define DEBUG_MODE_ERRORS 5u
+
 SHARED_STRUCT(ShaderRayCam, 16){
 vec4 u;
 vec4 v;
@@ -37,6 +45,7 @@ u32 node_id;
 u32 child_id;
 u32 img_output_id;
 vec2 extent;
+u32 debug_mode;
 } ;
 
 struct Ray {

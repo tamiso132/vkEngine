@@ -80,12 +80,53 @@ bool node_get_child_index(
         return true;
 }
 
+Ray camera_ray_uvww(
+        vec3 cam_pos,
+        vec3 u_right,
+        vec3 v_up,
+        vec3 w_fwd,
+        float fovY_deg,
+        uvec2 pixel,
+        vec2 extent)
+{
+        // pixel center in [0..1]
+        vec2 uv = (vec2(pixel) + vec2(0.5)) / extent;
+
+        // NDC [-1..1], Vulkan-style Y flip (top-left origin image)
+        float sx = uv.x * 2.0 - 1.0;
+        float sy = 1.0 - uv.y * 2.0;
+
+        float aspect = extent.x / max(1.0, extent.y);
+
+        float tan_half_fovy = tan(0.5 * radians(fovY_deg));
+        float tan_half_fovx = tan_half_fovy * aspect;
+
+        vec3 dir =
+                normalize(
+                        w_fwd
+                                + sx * tan_half_fovx * u_right
+                                + sy * tan_half_fovy * v_up
+                );
+
+        // optional: clamp near-zero components to avoid DDA inv-dir explosions
+        const float dirEps = 1e-8;
+        vec3 s = sign(dir);
+        s = mix(vec3(1.0), s, greaterThan(abs(dir), vec3(0.0)));
+        dir = mix(dir, s * dirEps, lessThan(abs(dir), vec3(dirEps)));
+        dir = normalize(dir);
+
+        Ray r;
+        r.origin = cam_pos;
+        r.dir = dir;
+        return r;
+}
+
 Ray camera_ray_for_pixel(ShaderRayCam cam, uvec2 pixel, vec2 extent)
 {
         Ray r;
 
         // origin packed in .w components
-        r.origin = vec3(0, 0, 0);
+        r.origin = vec3(cam.u[3], cam.v[3], cam.w[3]);
 
         // 1) pixel center sample
         vec2 uv = (vec2(pixel) + vec2(0.5)) / extent;
@@ -166,12 +207,10 @@ struct BranchlessDDA {
         bool out_of_bounds;
 };
 
-bool pointInsideAabb(vec3 p, vec3 bmin, vec3 bmax)
+bool point_inside_aabb(vec3 p, vec3 bmin, vec3 bmax)
 {
         // Inclusive bounds (inside if on the faces too)
-        bvec3 geMin = greaterThanEqual(p, bmin);
-        bvec3 leMax = lessThanEqual(p, bmax);
-        return all(geMin) && all(leMax);
+        return all(greaterThanEqual(p, bmin)) && all(lessThan(p, bmax));
 }
 
 void dda_init(
@@ -194,20 +233,27 @@ bool init_node_dda(
         Ray ray,
         vec3 node_min,
         float node_size,
-        float t_base, // global ray t when we enter this node
+        float t_base,
         out BranchlessDDA dda_out)
 {
-        float cell = node_size * 0.25; // /4
+        float cell = node_size * 0.25;
 
-        // position at entry (small eps helps avoid boundary sticking)
-        const float eps = 1e-5;
-        vec3 p_world = ray.origin + (t_base + eps) * ray.dir;
-        vec3 p_local = p_world - node_min;
+        // eps relative to node size (prevents boundary sticking at all depths)
+        float eps = max(1e-6, 1e-6 * node_size);
 
-        // if outside node, you normally AABB-test; for now you said origin inside,
-        // so keep it simple:
-        if (!pointInsideAabb(p_world, node_min, node_min + vec3(node_size)))
+        vec3 node_max = node_min + vec3(node_size);
+
+        // sample point slightly inside along the ray
+        float t = t_base + eps;
+        vec3 p_world = ray.origin + t * ray.dir;
+
+        // half-open bounds: [min, max)
+        if (!point_inside_aabb(p_world, node_min, node_max))
                 return false;
+
+        // local position, clamped strictly inside node to avoid floor()==4
+        vec3 p_local = p_world - node_min;
+        p_local = clamp(p_local, vec3(0.0), vec3(node_size - eps));
 
         ivec3 cell_pos = ivec3(floor(p_local / cell));
         cell_pos = clamp(cell_pos, ivec3(0), ivec3(3));
@@ -218,15 +264,20 @@ bool init_node_dda(
         vec3 inv_dir = 1.0 / ray.dir;
         inv_dir = mix(inv_dir, vec3(inf), lessThan(abs(ray.dir), vec3(1e-12)));
 
-        vec3 next_boundary =
-                vec3(cell_pos) * cell +
-                        step(vec3(0.0), ray.dir) * cell; // +cell if dir>=0 else +0
+        // next boundary in local space
+        // if dir>0 -> (cell_pos+1)*cell
+        // if dir<0 -> cell_pos*cell
+        vec3 next_boundary = vec3(cell_pos) * cell + step(vec3(0.0), ray.dir) * cell;
 
         vec3 side_dist = (next_boundary - p_local) * inv_dir;
         vec3 delta_dist = abs(inv_dir) * cell;
 
+        // axes with step_dir==0 never cross boundaries
         side_dist = mix(side_dist, vec3(inf), equal(step_dir, ivec3(0)));
         delta_dist = mix(delta_dist, vec3(inf), equal(step_dir, ivec3(0)));
+
+        // IMPORTANT: avoid negative side_dist due to precision / boundary cases
+        side_dist = max(side_dist, vec3(0.0));
 
         dda_init(dda_out, cell_pos, side_dist, delta_dist, cell);
         return true;
@@ -274,7 +325,44 @@ struct TraverseFrame {
         uint node_index;
         float t_base;
         uint level;
-        vec3 node_min; // world-space min of this node volume
-        float node_size; // world-space size of this node volume (cube)
-        BranchlessDDA dda; // your DDA state (local_pos, side_dist, delta_dist, t_tot...)
+        vec3 node_min;
+        float node_size;
+        BranchlessDDA dda;
+        uint steps_in_node;
 };
+
+#define TRACE_OK                        0u
+#define TRACE_ERR_ORIGIN_OUTSIDE        1u
+#define TRACE_ERR_DIR_ZERO              2u
+#define TRACE_ERR_DIR_NAN_INF           3u
+#define TRACE_ERR_INIT_NODE_FAIL        4u
+#define TRACE_ERR_DDA_NAN_INF           5u
+#define TRACE_ERR_STACK_OVERFLOW        6u
+#define TRACE_ERR_CHILD_SELF_LOOP       7u
+#define TRACE_ERR_CHILD_INDEX_OOB       8u
+#define TRACE_ERR_MAX_ITER              9u
+#define TRACE_ERR_LEVEL_OOB             10u
+#define TRACE_ERR_DDA_STUCK      123u
+#define TRACE_ERR_NODE_STEP_CAP  124u
+
+vec4 trace_error_color(uint err)
+{
+        // TRACE_OK should normally not be shown in the "errors" view
+        if (err == TRACE_OK) return vec4(0.0, 0.0, 0.0, 1.0); // black
+
+        if (err == TRACE_ERR_ORIGIN_OUTSIDE) return vec4(1.0, 0.0, 1.0, 1.0); // magenta
+        if (err == TRACE_ERR_DIR_ZERO) return vec4(1.0, 1.0, 0.0, 1.0); // yellow
+        if (err == TRACE_ERR_DIR_NAN_INF) return vec4(0.0, 1.0, 1.0, 1.0); // cyan
+        if (err == TRACE_ERR_INIT_NODE_FAIL) return vec4(1.0, 0.5, 0.0, 1.0); // orange
+        if (err == TRACE_ERR_DDA_NAN_INF) return vec4(0.0, 1.0, 0.0, 1.0); // green
+        if (err == TRACE_ERR_STACK_OVERFLOW) return vec4(1.0, 0.0, 0.0, 1.0); // red
+        if (err == TRACE_ERR_CHILD_SELF_LOOP) return vec4(0.6, 0.0, 1.0, 1.0); // purple
+        if (err == TRACE_ERR_CHILD_INDEX_OOB) return vec4(0.2, 0.2, 1.0, 1.0); // blue
+        if (err == TRACE_ERR_MAX_ITER) return vec4(1.0, 1.0, 1.0, 1.0); // white
+        if (err == TRACE_ERR_LEVEL_OOB) return vec4(0.3, 0.3, 0.3, 1.0); // gray
+        if (err == TRACE_ERR_DDA_STUCK) return vec4(1.0, 0.0, 0.5, 1.0); // hot pink
+        if (err == TRACE_ERR_NODE_STEP_CAP) return vec4(0.0, 0.0, 0.5, 1.0); // dark blue
+
+        // Unknown error code
+        return vec4(1.0, 0.0, 0.0, 1.0); // black
+}

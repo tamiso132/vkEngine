@@ -1,4 +1,3 @@
-
 /* chunk.c */
 #include "chunk.h"
 #include "command.h"
@@ -16,19 +15,52 @@ typedef struct {
 } Point;
 
 typedef struct WorkItem {
-  uint32_t dense;
-  uint32_t out;
+  uint32_t dense; // dense index within level d grid (linear 3D)
+  uint32_t out;   // compact node index in chunk->nodes/child_indices
 } WorkItem;
 
 typedef enum { NODE_EMPTY = 0, NODE_FULL = 1, NODE_MIXED = 2 } NodeState;
 
 // --- Private Prototypes ---
-static uint64_t split_by_3(uint32_t a);
-static uint32_t xorshift32(uint32_t *state);
-static float rand01(uint32_t *state);
-static uint64_t morton_encode(int x, int y, int z);
-static bool traverse_svo(const ChunkTree *chunk, int x, int y, int z);
+static void _set_box(ChunkTree *chunk, vec3 pos, u32 size);
 static inline bool in_bounds(int v);
+
+// -------------------- RNG (C) --------------------
+static uint32_t xorshift32(uint32_t *state) {
+  uint32_t x = *state;
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  *state = x;
+  return x;
+}
+
+static float rand01(uint32_t *state) {
+  // 24-bit fraction -> [0,1)
+  return (xorshift32(state) & 0x00FFFFFFu) / 16777216.0f;
+}
+
+// -------------------- Linear helpers --------------------
+static inline uint32_t voxel_linear_index_u32(int x, int y, int z) {
+  // idx = x + N*(y + N*z)
+  return (uint32_t)x + (uint32_t)CHUNK_SIZE * ((uint32_t)y + (uint32_t)CHUNK_SIZE * (uint32_t)z);
+}
+
+static inline uint32_t idx3_linear_u32(uint32_t x, uint32_t y, uint32_t z, uint32_t N) {
+  // idx in an NxNxN grid
+  return x + N * (y + N * z);
+}
+
+static inline void idx_to_xyz_u32(uint32_t idx, uint32_t N, uint32_t *x, uint32_t *y, uint32_t *z) {
+  *x = idx % N;
+  *y = (idx / N) % N;
+  *z = idx / (N * N);
+}
+
+static inline uint32_t slot_linear_4x4x4(uint32_t lx, uint32_t ly, uint32_t lz) {
+  // matches shader: x | (y<<2) | (z<<4)
+  return (lx & 3u) | ((ly & 3u) << 2u) | ((lz & 3u) << 4u);
+}
 
 // -------------------- Public API --------------------
 void chunk_init(ChunkTree *chunk, M_Resource *rm, M_GPU *gpu, CmdBuffer cmd) {
@@ -36,7 +68,9 @@ void chunk_init(ChunkTree *chunk, M_Resource *rm, M_GPU *gpu, CmdBuffer cmd) {
   vec_init(&chunk->nodes, sizeof(Node), NULL);
   vec_init(&chunk->child_indices, sizeof(ChildIndex), NULL);
 
-  chunk_fill_random(chunk, 1024, 1.0);
+  // Example content
+  // _set_box(chunk, (vec3){10, 0, 10}, 10);
+  chunk_set_voxel(chunk, 5, 5, 5, true);
   chunk_rebuild(chunk);
 
   RGBufferInfo node_info = {.name = "NodeBuffer",
@@ -67,20 +101,20 @@ bool chunk_get_voxel(const ChunkTree *chunk, int x, int y, int z) {
   if (!in_bounds(x) || !in_bounds(y) || !in_bounds(z))
     return false;
 
-  uint64_t code = morton_encode(x, y, z);
-  uint64_t w = BITSET_WORD(code);
-  uint32_t b = BITSET_BIT(code);
-  return (chunk->bits[w] & BIT_MASK_U64(b)) != 0ull;
+  uint32_t idx = voxel_linear_index_u32(x, y, z);
+  uint32_t w = idx >> 6;
+  uint32_t b = idx & 63u;
+  return (chunk->bits[w] & (1ull << b)) != 0ull;
 }
 
 void chunk_set_voxel(ChunkTree *chunk, int x, int y, int z, bool set_active) {
   if (!in_bounds(x) || !in_bounds(y) || !in_bounds(z))
     return;
 
-  uint64_t code = morton_encode(x, y, z);
-  uint64_t w = BITSET_WORD(code);
-  uint32_t b = BITSET_BIT(code);
-  uint64_t m = BIT_MASK_U64(b);
+  uint32_t idx = voxel_linear_index_u32(x, y, z);
+  uint32_t w = idx >> 6;
+  uint32_t b = idx & 63u;
+  uint64_t m = (1ull << b);
 
   uint64_t before = chunk->bits[w];
   uint64_t after = set_active ? (before | m) : (before & ~m);
@@ -93,7 +127,6 @@ void chunk_set_voxel(ChunkTree *chunk, int x, int y, int z, bool set_active) {
 }
 
 void chunk_fill_random(ChunkTree *chunk, uint32_t seed, float density) {
-
   if (density <= 0.0f)
     return;
   if (density > 1.0f)
@@ -115,6 +148,7 @@ void chunk_fill_random(ChunkTree *chunk, uint32_t seed, float density) {
   // Rebuild tree after edits so GPU traversal sees it
   chunk_rebuild(chunk);
 }
+
 void chunk_rebuild_if_needed(ChunkTree *chunk, uint32_t threshold) {
   if (!chunk->is_dirty)
     return;
@@ -131,115 +165,154 @@ void chunk_rebuild(ChunkTree *chunk) {
   vec_clear(&chunk->nodes);
   vec_clear(&chunk->child_indices);
 
-  // Level 0: WORDS_PER_CHUNK leaf masks (each is exactly chunk->bits[i])
-  // Level 1: WORDS_PER_CHUNK/64 parent masks
-  // ...
-  // Level (TREE_LEVELS-1): root mask count = 1
-  //
-  // We build a bottom-up dense mask pyramid, then flatten sparsely in BFS order.
+  const uint32_t level_count = (uint32_t)TREE_LEVELS;
 
-  uint32_t level_count = (uint32_t)TREE_LEVELS;
-
+  // Dense pyramid:
+  // level 0 = leaf brick masks (4x4x4 voxels => 64-bit mask)
+  // level d>0 = parent masks (4x4x4 of previous level)
   uint64_t *level_masks[TREE_LEVELS];
   NodeState *level_state[TREE_LEVELS];
   uint32_t level_node_count[TREE_LEVELS];
 
-  // allocate per-level dense arrays
-  uint64_t current = (uint64_t)WORDS_PER_CHUNK; // leaf "node" count
+  // Counts still based on WORDS_PER_CHUNK, /64, /64...
+  // NOTE: Here WORDS_PER_CHUNK must equal (CHUNK_SIZE/4)^3.
+  uint64_t current = (uint64_t)WORDS_PER_CHUNK;
   for (uint32_t d = 0; d < level_count; ++d) {
     level_node_count[d] = (uint32_t)current;
-
     level_masks[d] = (uint64_t *)calloc((size_t)current, sizeof(uint64_t));
     level_state[d] = (NodeState *)calloc((size_t)current, sizeof(NodeState));
 
-    // next parent groups 64 children
     current = (current + 63ull) / 64ull;
     if (current == 0)
       current = 1;
   }
 
-  // fill leaves from bits
-  for (uint32_t i = 0; i < level_node_count[0]; ++i) {
-    uint64_t m = chunk->bits[i];
-    level_masks[0][i] = m;
-
-    if (m == 0ull) {
-      level_state[0][i] = NODE_EMPTY;
-    } else if (m == ~0ull) {
-      level_state[0][i] = NODE_FULL;
-    } else {
-      level_state[0][i] = NODE_MIXED;
-    }
-  }
-
-  // 3) Build parent states bottom-up:
-  // parent EMPTY if all children EMPTY
-  // parent FULL  if all children FULL
-  // else MIXED
-  //
-  // Also build traversal masks:
-  // - for MIXED parent: bit c set if child is not EMPTY
-  // - for FULL parent: mask = ~0ull (all 64 subcells filled)
-  // - for EMPTY parent: mask = 0
-  // ------------------------------------------------------------
+  // Axis per level (leaf bricks are CHUNK_SIZE/4 per axis, then /4 each level)
+  uint32_t axis[TREE_LEVELS];
+  axis[0] = (uint32_t)CHUNK_SIZE / 4u; // e.g. 64/4=16
   for (uint32_t d = 1; d < level_count; ++d) {
-    uint32_t child_count = level_node_count[d - 1];
-    uint32_t parent_count = level_node_count[d];
+    axis[d] = axis[d - 1] / 4u; // 16 -> 4 -> 1 (TREE_LEVELS=3)
+  }
 
-    for (uint32_t p = 0; p < parent_count; ++p) {
-      uint32_t base = p * 64u;
+  // ----------------------------
+  // (A) Build leaf brick masks from dense voxel bitset (LINEAR)
+  // ----------------------------
+  {
+    const uint32_t bricksAxis = axis[0];
 
-      uint32_t limit = 64u;
-      if (base + limit > child_count)
-        limit = child_count - base;
+    for (uint32_t bz = 0; bz < bricksAxis; ++bz) {
+      for (uint32_t by = 0; by < bricksAxis; ++by) {
+        for (uint32_t bx = 0; bx < bricksAxis; ++bx) {
+          uint64_t mask = 0ull;
 
-      bool all_empty = true;
-      bool all_full = true;
-      uint64_t mask = 0ull;
+          for (uint32_t lz = 0; lz < 4u; ++lz) {
+            for (uint32_t ly = 0; ly < 4u; ++ly) {
+              for (uint32_t lx = 0; lx < 4u; ++lx) {
+                uint32_t x = bx * 4u + lx;
+                uint32_t y = by * 4u + ly;
+                uint32_t z = bz * 4u + lz;
 
-      for (uint32_t c = 0; c < limit; ++c) {
-        NodeState cs = level_state[d - 1][base + c];
+                uint32_t vidx = voxel_linear_index_u32((int)x, (int)y, (int)z);
+                uint32_t w = vidx >> 6;
+                uint32_t b = vidx & 63u;
+                uint64_t on = (chunk->bits[w] >> b) & 1ull;
 
-        if (cs != NODE_EMPTY)
-          all_empty = false;
-        if (cs != NODE_FULL)
-          all_full = false;
+                uint32_t slot = slot_linear_4x4x4(lx, ly, lz);
+                mask |= (on << slot);
+              }
+            }
+          }
 
-        // for MIXED/internal traversal: child exists if not empty
-        if (cs != NODE_EMPTY)
-          mask |= (1ull << c);
-      }
+          uint32_t leafIndex = idx3_linear_u32(bx, by, bz, bricksAxis);
+          level_masks[0][leafIndex] = mask;
 
-      NodeState ps;
-      if (all_empty)
-        ps = NODE_EMPTY;
-      else if (all_full)
-        ps = NODE_FULL;
-      else
-        ps = NODE_MIXED;
-
-      level_state[d][p] = ps;
-
-      if (ps == NODE_EMPTY) {
-        level_masks[d][p] = 0ull;
-      } else if (ps == NODE_FULL) {
-        level_masks[d][p] = ~0ull; // "solid" leaf mask (all subcells filled)
-      } else {
-        level_masks[d][p] = mask; // bits indicate which children are non-empty
+          if (mask == 0ull)
+            level_state[0][leafIndex] = NODE_EMPTY;
+          else if (mask == ~0ull)
+            level_state[0][leafIndex] = NODE_FULL;
+          else
+            level_state[0][leafIndex] = NODE_MIXED;
+        }
       }
     }
   }
 
+  // ----------------------------
+  // (B) Build parents bottom-up (LINEAR 4x4x4 grouping)
+  // ----------------------------
+  for (uint32_t d = 1; d < level_count; ++d) {
+    uint32_t C = axis[d - 1]; // child axis
+    uint32_t P = axis[d];     // parent axis
+
+    for (uint32_t pz = 0; pz < P; ++pz) {
+      for (uint32_t py = 0; py < P; ++py) {
+        for (uint32_t px = 0; px < P; ++px) {
+
+          bool all_empty = true;
+          bool all_full = true;
+          uint64_t mask = 0ull;
+
+          for (uint32_t cz = 0; cz < 4u; ++cz) {
+            for (uint32_t cy = 0; cy < 4u; ++cy) {
+              for (uint32_t cx = 0; cx < 4u; ++cx) {
+
+                uint32_t child_x = px * 4u + cx;
+                uint32_t child_y = py * 4u + cy;
+                uint32_t child_z = pz * 4u + cz;
+
+                uint32_t childDense = idx3_linear_u32(child_x, child_y, child_z, C);
+                NodeState cs = level_state[d - 1][childDense];
+
+                if (cs != NODE_EMPTY)
+                  all_empty = false;
+                if (cs != NODE_FULL)
+                  all_full = false;
+
+                uint32_t slot = slot_linear_4x4x4(cx, cy, cz);
+                if (cs != NODE_EMPTY)
+                  mask |= (1ull << slot);
+              }
+            }
+          }
+
+          uint32_t parentDense = idx3_linear_u32(px, py, pz, P);
+
+          NodeState ps;
+          if (all_empty)
+            ps = NODE_EMPTY;
+          else if (all_full)
+            ps = NODE_FULL;
+          else
+            ps = NODE_MIXED;
+
+          level_state[d][parentDense] = ps;
+
+          if (ps == NODE_EMPTY)
+            level_masks[d][parentDense] = 0ull;
+          else if (ps == NODE_FULL)
+            level_masks[d][parentDense] = ~0ull;
+          else
+            level_masks[d][parentDense] = mask;
+        }
+      }
+    }
+  }
+
+  // ----------------------------
+  // (C) Flatten sparsely in BFS order
+  // ----------------------------
   Vector curQ, nextQ;
   vec_init(&curQ, sizeof(WorkItem), NULL);
   vec_init(&nextQ, sizeof(WorkItem), NULL);
 
-  // Emit root always (even if empty)
+  // Emit root always (dense index 0 at top)
   {
     uint32_t top = level_count - 1;
-    uint64_t rootMask = level_masks[top][0];
-    Node rootN = {.mask = rootMask};
-    ChildIndex rootC = {.first_child_index = 0u};
+    Node rootN = {0};
+    ChildIndex rootC = {0};
+
+    rootN.mask = level_masks[top][0];
+    rootC.first_child_index = 0u;
 
     vec_push(&chunk->nodes, &rootN);
     vec_push(&chunk->child_indices, &rootC);
@@ -257,15 +330,14 @@ void chunk_rebuild(ChunkTree *chunk) {
       uint64_t mask = level_masks[d][w->dense];
       NodeState state = level_state[d][w->dense];
 
-      // Update output node mask (already set for root, but fine for all)
       Node *outN = VEC_AT(&chunk->nodes, w->out, Node);
       outN->mask = mask;
 
       ChildIndex *outCI = VEC_AT(&chunk->child_indices, w->out, ChildIndex);
 
       // Leaf decision:
-      // - true leaf at d==0
-      // - early leaf if FULL at d>0
+      // - true leaf at d==0 (brick leaf: mask bits are voxels)
+      // - early leaf if FULL at d>0 (mask = ~0 => solid at that resolution)
       bool is_leaf = (d == 0) || (state == NODE_FULL);
 
       if (is_leaf) {
@@ -273,40 +345,53 @@ void chunk_rebuild(ChunkTree *chunk) {
         continue;
       }
 
-      // Empty node: no children
       if (state == NODE_EMPTY || mask == 0ull) {
         outCI->first_child_index = 0u;
         continue;
       }
 
-      // MIXED internal node: emit children for each set bit in mask
+      // Mixed internal node
       uint32_t base = (uint32_t)vec_len(&chunk->nodes);
       outCI->first_child_index = (base & INDEX_MASK); // leaf bit clear
+
+      // parent coords at this level
+      uint32_t Np = axis[d];
+      uint32_t px, py, pz;
+      idx_to_xyz_u32(w->dense, Np, &px, &py, &pz);
+
+      uint32_t Nc = axis[d - 1]; // since d>0 here
 
       for (uint32_t slot = 0; slot < 64u; ++slot) {
         if (((mask >> slot) & 1ull) == 0ull)
           continue;
 
-        uint32_t childDense = w->dense * 64u + slot;
+        uint32_t cx = (slot) & 3u;
+        uint32_t cy = (slot >> 2u) & 3u;
+        uint32_t cz = (slot >> 4u) & 3u;
 
-        // Safety for last partial parent groups
-        if ((uint32_t)d > 0) {
-          uint32_t childCount = level_node_count[d - 1];
-          if (childDense >= childCount)
-            continue;
-        }
+        uint32_t child_x = px * 4u + cx;
+        uint32_t child_y = py * 4u + cy;
+        uint32_t child_z = pz * 4u + cz;
 
-        // Child might be EMPTY if you ever want to include empties; we don't.
-        NodeState cs = (d > 0) ? level_state[d - 1][childDense] : NODE_MIXED;
-        if (d > 0 && cs == NODE_EMPTY)
+        uint32_t childDense = idx3_linear_u32(child_x, child_y, child_z, Nc);
+
+        // Safety
+        uint32_t childCount = level_node_count[d - 1];
+        if (childDense >= childCount)
           continue;
 
-        uint64_t childMask = (d > 0) ? level_masks[d - 1][childDense] : 0ull;
+        NodeState cs = level_state[d - 1][childDense];
+        if (cs == NODE_EMPTY)
+          continue;
+
+        uint64_t childMask = level_masks[d - 1][childDense];
 
         uint32_t childOut = (uint32_t)vec_len(&chunk->nodes);
 
-        Node cn = {.mask = childMask};
-        ChildIndex cci = {.first_child_index = 0u};
+        Node cn = {0};
+        ChildIndex cci = {0};
+        cn.mask = childMask;
+        cci.first_child_index = 0u;
 
         vec_push(&chunk->nodes, &cn);
         vec_push(&chunk->child_indices, &cci);
@@ -334,13 +419,23 @@ void chunk_rebuild(ChunkTree *chunk) {
     free(level_state[d]);
   }
 
+  // Debug prints (optional)
+  LOG_INFO("Print indices");
+  for (u32 i = 0; i < chunk->child_indices.length; i++) {
+    LOG_INFO("index: %d, Value: %u", (int)i, VEC_AT(&chunk->child_indices, i, ChildIndex)->first_child_index);
+  }
+
+  LOG_INFO("Print Nodes");
+  for (u32 i = 0; i < chunk->nodes.length; i++) {
+    LOG_INFO("index: %d, Value: %lu", (int)i, (unsigned long)VEC_AT(&chunk->nodes, i, Node)->mask);
+  }
+
   chunk->is_dirty = false;
   chunk->need_upload = true;
 }
 
 void chunk_upload(ChunkTree *chunk, M_GPU *gpu, M_Resource *rm, CmdBuffer cmd) {
   if (!chunk->need_upload)
-
     return;
 
   cmd_buffer_upload(cmd, gpu, rm, chunk->gpu_node, chunk->nodes.data, vec_bytes_len(&chunk->nodes));
@@ -351,188 +446,19 @@ void chunk_upload(ChunkTree *chunk, M_GPU *gpu, M_Resource *rm, CmdBuffer cmd) {
   chunk->need_upload = false;
 }
 
-// -------------------- Tests --------------------
-
-int chunk_test(void) {
-  // ChunkTree chunk;
-  // chunk_init(&chunk);
-  //
-  // LOG_INFO("Chunk Test: TREE_LEVELS=%d, CHUNK_SIZE=%u, WORDS_PER_CHUNK=%llu, MORTON_BITS=%u\n", (int)TREE_LEVELS,
-  //          (unsigned)CHUNK_SIZE, (unsigned long long)WORDS_PER_CHUNK, (unsigned)MORTON_BITS);
-  //
-  // // Test 1: single voxel
-  // {
-  //   LOG_INFO("[Test 1] Single voxel... ");
-  //   memset(chunk.bits, 0, sizeof(chunk.bits));
-  //   chunk.is_dirty = true;
-  //
-  //   int tx = (int)(CHUNK_SIZE / 2u);
-  //   int ty = (int)(CHUNK_SIZE / 2u);
-  //   int tz = (int)(CHUNK_SIZE / 2u);
-  //
-  //   chunk_set_voxel(&chunk, tx, ty, tz, true);
-  //   chunk_rebuild(&chunk);
-  //
-  //   bool found = traverse_svo(&chunk, tx, ty, tz);
-  //   bool not_found = traverse_svo(&chunk, 0, 0, 0);
-  //
-  //   if (found && !not_found)
-  //     LOG_INFO("PASSED\n");
-  //   else {
-  //     LOG_INFO("FAILED (found=%d falsepos=%d)\n", (int)found, (int)not_found);
-  //     chunk_destroy(&chunk);
-  //     return 1;
-  //   }
-  // }
-  //
-  // // Test 2: random sparse set
-  // {
-  //   LOG_INFO("[Test 2] Random cloud (200 voxels)... ");
-  //   memset(chunk.bits, 0, sizeof(chunk.bits));
-  //   vec_clear(&chunk.nodes);
-  //   vec_clear(&chunk.child_indices);
-  //   chunk.is_dirty = true;
-  //   chunk.pending_edits = 0;
-  //
-  //   Point pts[200];
-  //   unsigned int seed = 12345u;
-  //
-  //   for (int i = 0; i < 200; i++) {
-  //     seed = seed * 1103515245u + 12345u;
-  //
-  //     int x = (int)((seed >> 16) & (CHUNK_SIZE - 1u));
-  //     int y = (int)((seed >> 8) & (CHUNK_SIZE - 1u));
-  //     int z = (int)((seed) & (CHUNK_SIZE - 1u));
-  //
-  //     pts[i] = (Point){x, y, z};
-  //     chunk_set_voxel(&chunk, x, y, z, true);
-  //   }
-  //
-  //   chunk_rebuild(&chunk);
-  //
-  //   bool ok = true;
-  //   for (int i = 0; i < 200; i++) {
-  //     if (!traverse_svo(&chunk, pts[i].x, pts[i].y, pts[i].z)) {
-  //       LOG_INFO("FAILED at (%d,%d,%d)\n", pts[i].x, pts[i].y, pts[i].z);
-  //       ok = false;
-  //       break;
-  //     }
-  //   }
-  //
-  //   if (ok)
-  //     LOG_INFO("PASSED (nodes=%zu)\n", chunk.nodes.length);
-  //   else {
-  //     chunk_destroy(&chunk);
-  //     return 1;
-  //   }
-  // }
-  //
-  // // Test 3: full chunk
-  // {
-  //   LOG_INFO("[Test 3] Full solid chunk... ");
-  //   memset(chunk.bits, 0xFF, sizeof(chunk.bits));
-  //   chunk.is_dirty = true;
-  //
-  //   chunk_rebuild(&chunk);
-  //
-  //   // Expected nodes when fully solid and TREE_LEVELS fixed:
-  //   // Level0: WORDS_PER_CHUNK
-  //   // Level1: WORDS_PER_CHUNK/64
-  //   // ...
-  //   // Root: 1
-  //   size_t expected = 0;
-  //   uint64_t layer = (uint64_t)WORDS_PER_CHUNK;
-  //
-  //   for (uint32_t i = 0; i < (uint32_t)TREE_LEVELS; i++) {
-  //     expected += (size_t)layer;
-  //     layer = (layer + 63ull) / 64ull;
-  //     if (layer == 0)
-  //       layer = 1;
-  //   }
-  //
-  //   if (chunk.nodes.length == expected) {
-  //     LOG_INFO("PASSED (expected=%zu)\n", expected);
-  //   } else {
-  //     LOG_INFO("FAILED (expected=%zu got=%zu)\n", expected, chunk.nodes.length);
-  //     chunk_destroy(&chunk);
-  //     return 1;
-  //   }
-  // }
-  //
-  // chunk_destroy(&chunk);
-  // LOG_INFO("All chunk tests passed.\n");
-  return 0;
-}
-
 // --- Private Functions ---
+static void _set_box(ChunkTree *chunk, vec3 pos, u32 size) {
+  int px = (int)pos[0];
+  int py = (int)pos[1];
+  int pz = (int)pos[2];
 
-// -------------------- Morton encoding --------------------
-// This encoder interleaves bits as: x at bit 0, y at bit 1, z at bit 2, repeating.
-// With CHUNK_SIZE=2^(2L), we need BITS_PER_AXIS = 2L bits per axis.
-// For TREE_LEVELS up to 6, BITS_PER_AXIS <= 12; this is fine.
-static uint64_t split_by_3(uint32_t a) {
-  // Keep enough bits; 21 is plenty for our use-case.
-  uint64_t x = (uint64_t)(a & 0x1FFFFFu);
-
-  x = (x | (x << 32)) & 0x1F00000000FFFFull;
-  x = (x | (x << 16)) & 0x1F0000FF0000FFull;
-  x = (x | (x << 8)) & 0x100F00F00F00F00Full;
-  x = (x | (x << 4)) & 0x10C30C30C30C30C3ull;
-  x = (x | (x << 2)) & 0x1249249249249249ull;
-
-  return x;
-}
-
-static uint32_t xorshift32(uint32_t *state) {
-  uint32_t x = *state;
-  x ^= x << 13;
-  x ^= x >> 17;
-  x ^= x << 5;
-  *state = x;
-  return x;
-}
-
-static float rand01(uint32_t *state) {
-  // 24-bit fraction -> [0,1)
-  return (xorshift32(state) & 0x00FFFFFFu) / 16777216.0f;
-}
-
-static uint64_t morton_encode(int x, int y, int z) {
-  // We assume inputs are already clamped to [0..CHUNK_SIZE-1]
-  return split_by_3((uint32_t)x) | (split_by_3((uint32_t)y) << 1) | (split_by_3((uint32_t)z) << 2);
-}
-
-// -------------------- Internal traversal for tests --------------------
-static bool traverse_svo(const ChunkTree *chunk, int x, int y, int z) {
-  if (chunk->nodes.length == 0)
-    return false;
-
-  uint64_t code = morton_encode(x, y, z);
-  uint32_t node_index = 0;
-
-  const Node *node_arr = (const Node *)chunk->nodes.data;
-  const ChildIndex *child_arr = (const ChildIndex *)chunk->child_indices.data;
-
-  // Traverse from root (TREE_LEVELS-1) down to 0
-  for (int d = (int)TREE_LEVELS - 1; d >= 0; d--) {
-    Node n = node_arr[node_index];
-
-    uint32_t slot = CHILD_SLOT(code, d);
-    uint64_t bit = 1ull << slot;
-
-    if ((n.mask & bit) == 0ull)
-      return false;
-
-    if (d == 0)
-      return true; // leaf bit is the voxel
-
-    uint64_t prefix = n.mask & (bit - 1ull);
-    uint32_t offset = (uint32_t)__builtin_popcountll(prefix);
-
-    node_index = child_arr[node_index].first_child_index + offset;
+  for (u32 x = 0; x < size; x++) {
+    for (u32 y = 0; y < size; y++) {
+      for (u32 z = 0; z < size; z++) {
+        chunk_set_voxel(chunk, px + (int)x, py + (int)y, pz + (int)z, true);
+      }
+    }
   }
-
-  return false;
 }
 
 static inline bool in_bounds(int v) { return (v >= 0) && (v < (int)CHUNK_SIZE); }

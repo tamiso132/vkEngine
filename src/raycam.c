@@ -1,6 +1,7 @@
 
 // camera.h
 #pragma once
+#include "GLFW/glfw3.h"
 #include "common.h"
 #include <X11/X.h>
 #include <stdint.h>
@@ -11,9 +12,15 @@
 #include "raycam.h"
 #include "system_manager.h"
 
+#include "shaders/raytrace.glsl"
+
 // --- Private Prototypes ---
 static void _update_basis(Camera *cam);
 static void _move(Camera *cam, GLFWwindow *window, float dt);
+static void toggle_cursor(GLFWwindow *window);
+
+static int cursor_captured = 0;
+static double last_toggle_time = 0.0;
 
 Camera camera_init(VkExtent2D extent, float fovy) {
   auto cam = (Camera){
@@ -97,5 +104,42 @@ static void _move(Camera *cam, GLFWwindow *window, float dt) {
   }
   if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
     glm_vec3_muladds(cam->v, speed, cam->pos);
+  }
+  if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+    toggle_cursor(window);
+  }
+
+  if (glfwGetKey(window, GLFW_KEY_F1) == GLFW_PRESS)
+    cam->debug_mode = DEBUG_MODE_HIT;
+
+  if (glfwGetKey(window, GLFW_KEY_F2) == GLFW_PRESS)
+    cam->debug_mode = DEBUG_MODE_ITER_GRAY;
+
+  if (glfwGetKey(window, GLFW_KEY_F3) == GLFW_PRESS)
+    cam->debug_mode = DEBUG_MODE_LEVEL;
+
+  if (glfwGetKey(window, GLFW_KEY_F4) == GLFW_PRESS)
+    cam->debug_mode = DEBUG_MODE_SLOT;
+
+  if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS)
+    cam->debug_mode = DEBUG_MODE_ITER_GRAY_HIT_GREEN;
+
+  if (glfwGetKey(window, GLFW_KEY_F6) == GLFW_PRESS)
+    cam->debug_mode = DEBUG_MODE_ERRORS;
+}
+
+static void toggle_cursor(GLFWwindow *window) {
+  cursor_captured = !cursor_captured;
+  double now = glfwGetTime();
+  if (now - last_toggle_time < 0.20)
+    return; // 200ms debounce
+
+  last_toggle_time = now;
+  if (cursor_captured) {
+    // Cursor hidden + captured to window, relative mouse movement
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+  } else {
+    // Cursor visible + free
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
   }
 }

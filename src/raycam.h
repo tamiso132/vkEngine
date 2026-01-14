@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common.h"
+#include "volk.h"
 #include <GLFW/glfw3.h>
 #include <cglm/cglm.h>
 
@@ -12,15 +14,17 @@ typedef struct Camera {
   vec3 v;
 
   // Projection params
-  float vfov_deg;
-  float aspect; // width / height
+  f32 vfov_deg;
+  f32 aspect; // width / height
 
-  float yaw;   // x-y
-  float pitch; // y-z
+  f32 yaw;   // x-y
+  f32 pitch; // y-z
+             //
+  u32 debug_mode;
 
 } Camera;
 // PUBLIC FUNCTIONS
 
- void camera_update(Camera *cam, GLFWwindow *window, double delta);
+void camera_update(Camera *cam, GLFWwindow *window, double delta);
 
- Camera camera_init(VkExtent2D extent, float fovy);
+Camera camera_init(VkExtent2D extent, float fovy);

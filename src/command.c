@@ -155,6 +155,7 @@ void cmd_image_copy_to_image(CmdBuffer cmd, M_Resource *rm, ResHandle src_handle
       .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
       .srcSubresource =
           {
+
               .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
               .layerCount = 1,
           },
@@ -164,6 +165,7 @@ void cmd_image_copy_to_image(CmdBuffer cmd, M_Resource *rm, ResHandle src_handle
               .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
               .layerCount = 1,
           },
+
       .dstOffsets = {bound[0], bound[1]},
   };
 
@@ -174,6 +176,7 @@ void cmd_image_copy_to_image(CmdBuffer cmd, M_Resource *rm, ResHandle src_handle
       .srcImageLayout = src_img->sync.layout,
       .srcImage = src_img->handle,
       .pRegions = &blitInfo,
+      .filter = VK_FILTER_NEAREST,
       .regionCount = 1,
   };
 

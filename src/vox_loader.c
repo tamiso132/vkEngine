@@ -124,7 +124,7 @@ u32 vox_load(const char *path, VoxAxisPreset preset, VoxFile *out, Allocator *al
           u8 g = rgba[i * 4u + 1u];
           u8 b = rgba[i * 4u + 2u];
           u8 a = rgba[i * 4u + 3u];
-          out->palette_rgba[i] = ((u32)r << 24) | ((u32)g << 16) | ((u32)b << 8) | ((u32)a);
+          out->palette_rgba[i] = ((u32)a << 24) | ((u32)b << 16) | ((u32)g << 8) | ((u32)r);
         }
         out->has_palette = 1u;
       }
@@ -223,7 +223,7 @@ static u32 rd_tag(FILE *f, char out[5]) {
 static void default_palette(u32 pal[256]) {
   for (u32 i = 0; i < 256u; ++i) {
     u8 c = (u8)i;
-    pal[i] = ((u32)c << 24) | ((u32)c << 16) | ((u32)c << 8) | 0xFFu; // RRGGBBAA
+    pal[i] = (0xFFu << 24) | ((u32)c << 16) | ((u32)c << 8) | (u32)c;
   }
 }
 

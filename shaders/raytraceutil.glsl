@@ -334,9 +334,9 @@ void dda_step(
 
 vec3 u32_rgb8_to_vec3(uint rgb)
 {
-        float r = float((rgb >> 16) & 0xFFu) / 255.0;
+        float r = float((rgb) & 0xFFu) / 255.0;
         float g = float((rgb >> 8) & 0xFFu) / 255.0;
-        float b = float((rgb) & 0xFFu) / 255.0;
+        float b = float((rgb >> 16) & 0xFF) / 255.0;
         return vec3(r, g, b);
 }
 

@@ -204,7 +204,10 @@ bool traverse_one_chunk(
                 uint mat_id   = GET_LEAF_MATERIAL(pc.leaf_mats_id, leaf_idx);
                 hit_color = u32_rgb8_to_vec3(G_PAL(pc, mat_id));
 
-                vec3 hit_n = normalize(vec3(cur.dda.prev_step_i32));
+                vec3 hit_n = vec3(cur.dda.prev_step_i32);
+                if (dot(hit_n, hit_n) < 0.5) hit_n = normalize(-ray.dir); // fallback
+                else hit_n = normalize(hit_n);
+                
                 vec3 p0 = (hit_pos - chunk_min) - hit_n * 1e-3; // chunk-local continuous
                 float ao = neighborhood_ao_soft(p0, hit_n);
 

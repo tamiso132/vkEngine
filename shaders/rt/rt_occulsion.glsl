@@ -70,22 +70,21 @@ float neighborhood_ao_soft(vec3 p0_local, vec3 n)
     // p0_local: chunk-local continuous position near the surface
     // n: unit normal (use normalize(vec3(cur.dda.prev_step_i32)))
 
-    const ivec3 O[14] = ivec3[14](
+   const ivec3 O[18] = ivec3[18](
+    // axis 6
         ivec3( 1, 0, 0), ivec3(-1, 0, 0),
         ivec3( 0, 1, 0), ivec3( 0,-1, 0),
         ivec3( 0, 0, 1), ivec3( 0, 0,-1),
 
-        ivec3( 1, 1, 0), ivec3( 1,-1, 0),
-        ivec3(-1, 1, 0), ivec3(-1,-1, 0),
-
-        ivec3( 1, 0, 1), ivec3(-1, 0, 1),
-        ivec3( 0, 1, 1), ivec3( 0,-1, 1)
+        ivec3( 1, 1, 0), ivec3( 1,-1, 0), ivec3(-1, 1, 0), ivec3(-1,-1, 0),
+        ivec3( 1, 0, 1), ivec3( 1, 0,-1), ivec3(-1, 0, 1), ivec3(-1, 0,-1),
+        ivec3( 0, 1, 1), ivec3( 0, 1,-1), ivec3( 0,-1, 1), ivec3( 0,-1,-1)
     );
 
     float occ = 0.0;
     float wsum = 0.0;
 
-    for (int i = 0; i < 14; ++i)
+    for (int i = 0; i < 18; ++i)
     {
         vec3 o  = vec3(O[i]);
         float d2 = dot(o, o);
@@ -93,6 +92,7 @@ float neighborhood_ao_soft(vec3 p0_local, vec3 n)
 
         // hemisphere gate
         float h = max(0.0, dot(n, dir));
+        h = sqrt(h);
         if (h <= 0.0) continue;
 
         // thinner falloff: (1+d^2)^-2  (use ^-3 if you want even tighter)
@@ -113,8 +113,15 @@ float neighborhood_ao_soft(vec3 p0_local, vec3 n)
 
     ao = clamp(ao, 0.0, 1.0);
 
+    float ao_strength = 0.35; // 0..1 (lower = lighter)
+    float ao_floor    = 0.60; // minimum light
+
+    ao = mix(1.0, ao, ao_strength);
+    ao = max(ao, ao_floor);
+        
+
     // "thinness"/contrast curve: <1 makes it lighter/thinner, >1 darker/fatter
-    ao = pow(ao, 0.85);
+    ao = pow(ao, 0.7);
 
     return ao;
 }

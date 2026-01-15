@@ -2,6 +2,7 @@
 // camera.h
 #pragma once
 #include "GLFW/glfw3.h"
+#include "cglm/util.h"
 #include "common.h"
 #include <X11/X.h>
 #include <stdint.h>
@@ -33,6 +34,7 @@ static double last_x, last_y;
 static int first_mouse = 1;
 
 void camera_update(Camera *cam, GLFWwindow *window, double delta) {
+  const float pitch_limit = 1.553343f; // radians (89 degrees)
 
   _move(cam, window, delta);
   static double last_x = 0;
@@ -53,10 +55,14 @@ void camera_update(Camera *cam, GLFWwindow *window, double delta) {
   last_x = x;
   last_y = y;
 
-  float sensitivity = 0.002f;
+  const float sensitivity = 0.002f;
+
   if (cursor_captured == true) {
+    // 1) Update pitch (clamped)
     cam->yaw += dx * sensitivity;
     cam->pitch += dy * sensitivity;
+
+    cam->pitch = glm_clamp(cam->pitch, -pitch_limit, pitch_limit);
   }
 
   _update_basis(cam);
@@ -78,11 +84,6 @@ static void _update_basis(Camera *cam) {
   glm_vec3_normalize(cam->w);
 
   vec3 world_up = {0, 1, 0};
-  if (fabsf(glm_vec3_dot(cam->w, world_up)) > 0.999f) {
-    world_up[0] = 0;
-    world_up[1] = 0;
-    world_up[2] = 1;
-  }
   glm_vec3_cross(cam->w, world_up, cam->u);
   glm_vec3_normalize(cam->u);
 

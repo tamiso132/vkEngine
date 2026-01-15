@@ -8,6 +8,7 @@
 #include "gpu/swapchain.h"
 #include "raycam.h"
 #include "raytrace.glsl"
+#include "resource/resmanager.h"
 #include "sample_interface.h"
 #include "world/chunk.h"
 
@@ -83,6 +84,7 @@ static void _render(Sample *self, SampleContext *ctx) {
       .child_id = rm_get_buffer_index(ctx->rm, chunk_res.gpu_child_indices),
       .node_id = rm_get_buffer_index(ctx->rm, chunk_res.gpu_node),
       .palette_id = rm_get_buffer_index(ctx->rm, chunk_res.gpu_palette),
+      .leaf_mats_id = rm_get_buffer_index(ctx->rm, chunk_res.gpu_leaf_mats),
       .debug_mode = ctx->cam.debug_mode,
   };
 

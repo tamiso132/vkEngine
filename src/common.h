@@ -21,6 +21,8 @@ typedef uint64_t u64;
 #define GIB(x) (MIB(x) * 1024ull)
 #define TIB(x) (GIB(x) * 1024ull)
 
+#define RGBA(r, g, b, a) ((u32)(r) | ((u32)(g) << 8) | ((u32)(b) << 16) | ((u32)(a) << 24))
+
 typedef enum { RES_TYPE_BUFFER, RES_TYPE_IMAGE, RES_TYPE_COUNT } ResType;
 
 typedef enum SystemType {

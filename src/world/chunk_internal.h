@@ -122,8 +122,11 @@ void _upload_chunk(ChunkTree *chunk, M_GPU *gpu, M_Resource *rm, CmdBuffer cmd);
 
 // VOXEL EDITS
 bool chunk_in_bounds(int v);
-void chunk_fill_random(ChunkTree *chunk, u32 seed, float density);
+void _edit_fill_random(ChunkTree *chunk, u32 seed, float density);
+void _edit_set_box(ChunkTree *chunk, int x, int y, int z, u32 palette_index, u32 size);
+void _edit_set_voxel_color(ChunkTree *chunk, int x, int y, int z, bool on, u16 mat);
 bool chunk_import_vox_file(ChunkTree *chunk, const char *path, VoxAxisPreset vox_flags, bool center_in_chunk);
+u32 _edit_add_color(ChunkTree *chunk, u32 rgba);
 
 ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scratch, ChunkBuildOutput *out);
 void _build_chunk_free(ChunkBuildOutput *out);

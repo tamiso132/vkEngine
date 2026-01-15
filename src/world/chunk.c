@@ -16,6 +16,13 @@ ChunkTree *chunk_init(M_Resource *rm) {
   vec_init(&chunk->leaf_mats, sizeof(u16), NULL);
 
   chunk_import_vox_file(chunk, "assets/chr_knight.vox", VOX_AXIS_SWAP_YZ, false);
+  // u32 red = _edit_add_color(chunk, RGBA(255, 0, 0, 255));
+  // u32 blue = _edit_add_color(chunk, RGBA(0, 255, 0, 255));
+
+  // _edit_add_color(chunk, RGBA(0, 0, 255, 255));
+  // _edit_set_box(chunk, 5, 5, 5, red, 1);
+  // _edit_set_box(chunk, 6, 6, 6, blue, 1);
+
   chunk->is_dirty = true;
   chunk_rebuild_if_needed(chunk);
   _resource_init(chunk, rm);

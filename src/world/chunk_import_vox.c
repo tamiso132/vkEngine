@@ -1,6 +1,7 @@
 //
 #include "chunk_internal.h"
 #include "vox_loader.h"
+#include "world/chunk.h"
 
 static void import_vox_models(ChunkTree *chunk, u32 palette_base, const VoxFile *vf, i32 base_x, i32 base_y, i32 base_z,
                               bool center_in_chunk) {
@@ -36,7 +37,7 @@ static void import_vox_models(ChunkTree *chunk, u32 palette_base, const VoxFile 
         continue;
 
       u16 mat_index = (u16)(palette_base + vf->ci_to_used[v->ci]);
-      chunk_set_voxel_color(chunk, x, y, z, true, mat_index);
+      _edit_set_voxel_color(chunk, x, y, z, true, mat_index);
     }
   }
 

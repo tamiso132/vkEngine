@@ -70,6 +70,15 @@ ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scra
     LOG_INFO("Node Index(%d) = %lu", i, VEC_AT(out->nodes, i, Node)->mask);
   }
 
+  for (u32 i = 0; i < out->leaf_mats->length; i++) {
+    LOG_INFO("Leaf Index(%d) = %u", i, *VEC_AT(out->leaf_mats, i, u16));
+  }
+
+  if (out->leaf_mats && (out->leaf_mats->length % 2) != 0) {
+    u16 dummy = 0;
+    vec_push(out->leaf_mats, &dummy);
+  }
+
   return CHUNK_BUILD_OK;
 }
 
@@ -270,48 +279,49 @@ static void flatten_tree_bfs(const ChunkBuildInput *in, const Pyramid *p, ChunkB
 
       // Leaf: d==0 OR FULL
       if (d == 0 || st == NODE_FULL) {
-        // Calculate where this block of 64 materials will start
-        // Assuming leaf_mats holds u16.
-        // We pack 64 materials per leaf.
-        u32 mat_offset = (u32)(vec_len(out->leaf_mats) / 64);
+        // [Popcnt Optimization]
+        // 1. Capture the start index in the packed array.
+        // Since we are skipping empty voxels, the start is simply the current length of the vector.
+        u32 mat_base_idx = (u32)vec_len(out->leaf_mats);
 
-        // We must push 64 materials (one for each bit in the mask)
+        // 2. Store this base index in the child pointer.
+        // The shader will add bitCount(mask & lower_bits) to this base to find the specific voxel's material.
+        outCI->first_child_index = LEAF_BIT | (mat_base_idx & INDEX_MASK);
+
         u32 bx, by, bz;
         idx_to_xyz_u32(w->dense, axis_d, &bx, &by, &bz);
 
         for (u32 slot = 0; slot < 64; ++slot) {
-          u16 mat = 0;
-
-          // Only fetch material if the voxel exists in the mask
-          if ((mask >> slot) & 1ull) {
-            if (d == 0) {
-              // --- Level 0: Actual Voxel Lookup ---
-              u32 lx = slot & 3u;
-              u32 ly = (slot >> 2u) & 3u;
-              u32 lz = (slot >> 4u) & 3u;
-
-              u32 vx = bx * 4u + lx;
-              u32 vy = by * 4u + ly;
-              u32 vz = bz * 4u + lz;
-
-              // Direct lookup into input voxel grid
-              u32 vidx = voxel_linear_index_u32((int)vx, (int)vy, (int)vz);
-              mat = in->vox_mat[vidx];
-            } else {
-              // --- Level > 0: "Full" Node Optimization ---
-              // This node covers a large area but is solid.
-              // We fill all 64 slots with a representative material
-              // (e.g., sample the corner or center).
-              // Reusing your existing logic for single sampling:
-              mat = leaf_material_from_node(in, w->dense, axis_d, false);
-            }
+          // [Popcnt Optimization]
+          // 3. Skip empty slots entirely. We only store materials for set bits.
+          if (!((mask >> slot) & 1ull)) {
+            continue;
           }
 
+          u16 mat = 0;
+          if (d == 0) {
+            // --- Level 0: Actual Voxel Lookup ---
+            u32 lx = slot & 3u;
+            u32 ly = (slot >> 2u) & 3u;
+            u32 lz = (slot >> 4u) & 3u;
+
+            u32 vx = bx * 4u + lx;
+            u32 vy = by * 4u + ly;
+            u32 vz = bz * 4u + lz;
+
+            // Direct lookup into input voxel grid
+            u32 vidx = voxel_linear_index_u32((int)vx, (int)vy, (int)vz);
+            mat = in->vox_mat[vidx];
+          } else {
+            // --- Level > 0: "Full" Node Optimization ---
+            // This node covers a large area but is solid.
+            // We sample a representative material.
+            mat = leaf_material_from_node(in, w->dense, axis_d, false);
+          }
+
+          // Push ONLY valid materials
           vec_push(out->leaf_mats, &mat);
         }
-
-        // Store index: LEAF_BIT | (offset into leaf_mats buffer)
-        outCI->first_child_index = LEAF_BIT | (mat_offset & INDEX_MASK);
         continue;
       }
 

@@ -25,8 +25,8 @@ void chunk_destroy(ChunkTree *chunk);
 void chunk_rebuild_if_needed(ChunkTree *chunk);
 
 // editing (public)
-bool chunk_get_voxel(const ChunkTree *chunk, int x, int y, int z);
-void chunk_set_voxel(ChunkTree *chunk, int x, int y, int z, bool on);
-void chunk_set_voxel_color(ChunkTree *chunk, int x, int y, int z, bool on, uint16_t mat);
+bool _edit_get_voxel(const ChunkTree *chunk, int x, int y, int z);
+void _edit_set_voxel(ChunkTree *chunk, int x, int y, int z, bool on);
+void _edit_set_voxel_color(ChunkTree *chunk, int x, int y, int z, bool on, uint16_t mat);
 
 ChunkGpuResources chunk_get_gpu_resource(ChunkTree *chunk);

@@ -13,12 +13,8 @@ typedef struct {
   int x, y, z;
 } Point;
 
-typedef struct WorkItem {
-  uint32_t dense; // dense index within level d grid (linear 3D)
-  uint32_t out;   // compact node index in chunk->nodes/child_indices
-} WorkItem;
 
-typedef enum { NODE_EMPTY = 0, NODE_FULL = 1, NODE_MIXED = 2 } NodeState;
+
 
 // --- Private Prototypes ---
 static void _load_voxel_file(ChunkTree *chunk, u32 old_palette_len, const VoxFile *vf, i32 base_x, i32 base_y,
@@ -474,18 +470,6 @@ void chunk_rebuild(ChunkTree *chunk) {
   chunk->need_upload = true;
 }
 
-void chunk_upload(ChunkTree *chunk, M_GPU *gpu, M_Resource *rm, CmdBuffer cmd) {
-  if (!chunk->need_upload)
-    return;
-
-  cmd_buffer_upload(cmd, gpu, rm, chunk->gpu_node, chunk->nodes.data, vec_bytes_len(&chunk->nodes));
-  cmd_buffer_upload(cmd, gpu, rm, chunk->gpu_palette, chunk->palette.data, vec_bytes_len(&chunk->palette));
-
-  cmd_buffer_upload(cmd, gpu, rm, chunk->gpu_child_indices, chunk->child_indices.data,
-                    vec_bytes_len(&chunk->child_indices));
-
-  chunk->need_upload = false;
-}
 
 // --- Private Functions ---
 

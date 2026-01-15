@@ -1,6 +1,5 @@
 #pragma once
 #include "command.h"
-#include "resmanager.h"
 typedef struct AsyncBuffer AsyncBuffer;
 // PUBLIC FUNCTIONS
 

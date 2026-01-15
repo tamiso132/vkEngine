@@ -50,7 +50,7 @@ uint popcount64(uint64_t v)
 
 bool child_present(uint64_t mask, uint slot)
 {
-        return ((mask >> (slot & 63u)) & 1ul) != 0ul;
+        return ((mask >> (slot & 63u)) & u64(1)) != u64(0);
 }
 
 uint child_compact_offset(uint64_t mask, uint slot)
@@ -58,7 +58,7 @@ uint child_compact_offset(uint64_t mask, uint slot)
         // count bits strictly before slot
         uint s = (slot & 63u);
         if (s == 0u) return 0u; // avoid (1<<0)-1 edge paranoia
-        uint64_t beforeMask = mask & ((1ul << s) - 1ul);
+        uint64_t beforeMask = mask & ((u64(1) << s) - u64(1));
         return popcount64(beforeMask);
 }
 

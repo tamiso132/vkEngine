@@ -1,5 +1,7 @@
 #pragma once
-#include "resmanager.h"
+
+#include "common.h"
+#include "resource/resmanager.h"
 
 typedef struct CmdBuffer {
   VkCommandPool pool;

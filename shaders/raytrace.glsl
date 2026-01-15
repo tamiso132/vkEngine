@@ -33,8 +33,6 @@ const uint DEBUG_MODE_ERRORS = 4u;
 #define LEVEL_SHIFT(d) ((d) * BITS_PER_LEVEL)
 #define CHILD_SLOT(morton, d) (((morton) >> LEVEL_SHIFT(d)) & 63ULL)
 
-#define BITSET_WORD(morton) ((morton) >> 6)
-#define BITSET_BIT(morton)  ((morton) & 63ULL)
 #define BIT_MASK_U64(bit)   (1ULL << ((bit) & 63))
 
 SHARED_STRUCT(ShaderRayCam, 16){

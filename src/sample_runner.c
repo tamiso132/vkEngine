@@ -3,7 +3,6 @@
 #include "gpu/pipeline_hotreload.h"
 #include "gpu/swapchain.h"
 #include "raycam.c"
-#include "resmanager.h"
 #include "sample_interface.h"
 #include "submit_manager.h"
 #include "system_manager.h"

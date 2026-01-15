@@ -2,7 +2,6 @@
 #include "common.h"
 #include "gpu/gpu.h"
 #include "gpu/swapchain.h"
-#include "resmanager.h"
 #include "util.h"
 #include "vector.h"
 

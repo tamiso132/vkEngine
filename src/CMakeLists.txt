@@ -1,10 +1,11 @@
 
 add_subdirectory(gpu)
+add_subdirectory(world)
+add_subdirectory(resource)
 
 
 
 add_sources(
-    resmanager.c
     submit_manager.c
     filewatch.c
     rendergraph.c
@@ -19,7 +20,6 @@ add_sources(
     raytrace_sample.c
 
     system_manager.c
-    chunk.c
 
     vox_loader.c
 )

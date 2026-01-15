@@ -1,7 +1,7 @@
 #include "swapchain.h"
 #include "common.h"
 #include "gpu/gpu.h"
-#include "resmanager.h"
+#include "resource/resmanager.h"
 
 // --- Private Prototypes ---
 static void _destroy(M_GPU *dev, M_Swapchain *sc);

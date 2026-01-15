@@ -16,7 +16,6 @@
 #include "gpu/gpu.h"
 #include "gpu/pipeline_hotreload.h"
 #include "gpu/swapchain.h"
-#include "resmanager.h"
 #include "sample_interface.h"
 #include "sample_runner.h"
 #include "submit_manager.h"
@@ -24,8 +23,6 @@
 
 // --- Private Prototypes ---
 static void _register_systems(GPUSystemInfo info);
-
-#include "chunk.h"
 
 int main() {
   // 1. Init Windowp

@@ -1,6 +1,5 @@
 #pragma once
 #include "gpu.h"
-#include "resmanager.h"
 #include "vector.h"
 
 typedef struct SwapPresent {

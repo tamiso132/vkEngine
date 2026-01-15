@@ -2,7 +2,7 @@
 
 #include "common.h"
 #include "gpu/gpu.h"
-#include "resmanager.h"
+#include "resource/resmanager.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <volk.h>

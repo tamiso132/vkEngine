@@ -2,9 +2,8 @@
 #include "common.h"
 #include "gpu/gpu.h"
 #include "gpu/pipeline.h"
-#include "resmanager.h"
+#include "resource/resmanager.h"
 #include "vector.h"
-#include <vulkan/vulkan_core.h>
 
 typedef struct {
   VkPipelineStageFlags2 stage;

@@ -1,6 +1,5 @@
 #include "res_async.h"
 #include "command.h"
-#include "resmanager.h"
 #include <string.h>
 
 typedef struct AsyncBuffer {

@@ -1,5 +1,4 @@
 #include "gpu.h"
-#include "resmanager.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

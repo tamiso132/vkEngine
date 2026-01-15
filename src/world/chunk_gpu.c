@@ -21,6 +21,13 @@ void _resource_init(ChunkTree *chunk, M_Resource *rm) {
                            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                            .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
 
+  RGBufferInfo leaf_info = {.name = "LeafMatBuffer",
+                            .capacity = vec_bytes_len(&chunk->leaf_mats),
+                            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                            .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+
+  chunk->res.gpu_leaf_mats = rm_create_buffer(rm, &leaf_info);
+
   chunk->res.gpu_child_indices = rm_create_buffer(rm, &child_info);
   chunk->res.gpu_node = rm_create_buffer(rm, &node_info);
   chunk->res.gpu_palette = rm_create_buffer(rm, &pal_info);
@@ -38,6 +45,8 @@ void _upload_chunk(ChunkTree *chunk, M_GPU *gpu, M_Resource *rm, CmdBuffer cmd) 
 
   cmd_buffer_upload(cmd, gpu, rm, chunk->res.gpu_child_indices, chunk->child_indices.data,
                     vec_bytes_len(&chunk->child_indices));
+
+  cmd_buffer_upload(cmd, gpu, rm, chunk->res.gpu_leaf_mats, chunk->leaf_mats.data, vec_bytes_len(&chunk->leaf_mats));
 
   chunk->need_upload = false;
 }

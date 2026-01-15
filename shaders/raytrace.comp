@@ -23,6 +23,10 @@ layout(set = 0, binding = BINDING_STORAGE_BUFFER, std430) readonly buffer Palett
         u32 data[];
 } g_palette[];
 
+layout(set = 0, binding = BINDING_STORAGE_BUFFER, std430) readonly buffer LeafMatBuf {
+    uint data[]; 
+} g_leaf_mats[];
+
 layout(rgba8, set = 0, binding = BINDING_STORAGE_IMAGE) uniform image2D g_images[];
 
 layout(push_constant) uniform constants
@@ -129,7 +133,7 @@ bool traverse_one_chunk(
         err_code = TRACE_OK;
 
         const int max_iter = 4096;
-        const int STACK_CAP = 16;
+        const int STACK_CAP = TREE_LEVELS + 1;
         const uint NODE_STEP_CAP = 256u; // 4x4x4 is 64, cap higher for eps/boundary cases
         const int STUCK_LIMIT = 64; // how many consecutive "no progress" steps allowed
 
@@ -265,7 +269,12 @@ bool traverse_one_chunk(
                                 hit_slot = slot;
                                 err_code = TRACE_OK;
 
-                                hit_color = u32_rgb8_to_vec3(g_palette[nonuniformEXT(pc.palette_id)].data[packed & INDEX_MASK]);
+                                uint leaf_mat_base = packed & INDEX_MASK;
+        
+                                uint mat_idx = g_leaf_mats[nonuniformEXT(pc.leaf_mats_id)].data[leaf_mat_base * 64 + slot];
+
+                                // 3. Look up the actual color
+                                hit_color = u32_rgb8_to_vec3(g_palette[nonuniformEXT(pc.palette_id)].data[mat_idx]);
 
                                 return true;
                         }

@@ -1,4 +1,5 @@
 #include "vector.h"
+#include <assert.h>
 
 // --- Private Prototypes ---
 
@@ -46,6 +47,7 @@ void vec_remove_at(Vector *vec, u32 index) {
 void vec_free(Vector *vec) { vec->allocator->free(vec->data, vec->allocator->ctx); }
 
 void vec_clear(Vector *vec) {
+  assert(vec);
   memset(vec->data, 0, vec->length * vec->element_size);
   vec->length = 0;
 }

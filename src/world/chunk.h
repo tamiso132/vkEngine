@@ -11,6 +11,7 @@ typedef struct ChunkGpuResources {
   ResHandle gpu_node;
   ResHandle gpu_child_indices;
   ResHandle gpu_palette;
+  ResHandle gpu_leaf_mats;
 } ChunkGpuResources;
 
 // PUBLIC FUNCTIONS

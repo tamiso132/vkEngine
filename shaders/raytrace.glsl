@@ -49,6 +49,7 @@ u32 child_id;
 u32 img_output_id;
 vec2 extent;
 u32 palette_id;
+u32 leaf_mats_id;
 u32 debug_mode;
 } ;
 

@@ -34,13 +34,13 @@ struct ChunkTree {
   Vector nodes;         // Node[]
   Vector child_indices; // ChildIndex[]
   Vector palette;       // u32 RGBA[]
+  Vector leaf_mats;
 
   // Dirty tracking
   bool is_dirty;
   bool need_upload;
   u32 pending_edits;
 
-  // GPU handles (keep opaque here if you want to avoid GPU includes)
   ChunkGpuResources res;
 };
 
@@ -55,6 +55,7 @@ typedef struct {
 typedef struct {
   Vector *nodes;         // Node[]
   Vector *child_indices; // ChildIndex[]
+  Vector *leaf_mats;
 } ChunkBuildOutput;
 
 typedef enum {

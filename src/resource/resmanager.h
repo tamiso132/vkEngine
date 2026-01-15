@@ -145,10 +145,6 @@ void rm_import_existing_image(M_Resource *rm, ResHandle handle, VkImage raw_img,
 void rm_resize_image(M_Resource *rm, ResHandle handle, uint32_t width, uint32_t height);
 ResHandle rm_import_image(M_Resource *rm, RGImageInfo *info, VkImage img, VkImageView view);
 
-// Sync helpers
-void rm_buffer_sync(M_Resource *rm, VkCommandBuffer cmd, BufferBarrierInfo *info);
-void rm_image_sync(M_Resource *rm, VkCommandBuffer cmd, ImageBarrierInfo *info);
-
 // Staging
 RmStageSlice rm_get_stage_buffer(M_Resource *rm, const void *data, VkDeviceSize size, VkDeviceSize alignment);
 

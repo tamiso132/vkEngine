@@ -84,12 +84,12 @@ void rm_import_existing_image(M_Resource *rm, ResHandle handle, VkImage raw_img,
   img->is_imported = true;
 
   // Update bindless
-//   VkDescriptorImageInfo imageInfo = {
-//       .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-//       .imageView = img->view,
-//       .sampler = (img->type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) ? rm->default_sampler : VK_NULL_HANDLE};
+  //   VkDescriptorImageInfo imageInfo = {
+  //       .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+  //       .imageView = img->view,
+  //       .sampler = (img->type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) ? rm->default_sampler : VK_NULL_HANDLE};
 
-//   rm_bindless_update(rm, handle, &imageInfo, NULL);
+  //   rm_bindless_update(rm, handle, &imageInfo, NULL);
 }
 
 ResHandle rm_import_image(M_Resource *rm, RGImageInfo *info, VkImage img, VkImageView view) {
@@ -152,8 +152,6 @@ void rm_destroy(M_Resource *rm) {
 
   memset(rm, 0, sizeof(*rm));
 }
-
-// ----- Bindless getters -----
 
 u32 rm_get_buffer_descriptor_index(M_Resource *rm, ResHandle buffer) {
   return rm_get_buffer_internal(rm, buffer)->bindlessIndex;

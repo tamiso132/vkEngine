@@ -13,6 +13,7 @@ ChunkTree *chunk_init(M_Resource *rm) {
   vec_init(&chunk->nodes, sizeof(Node), NULL);
   vec_init(&chunk->child_indices, sizeof(ChildIndex), NULL);
   vec_init(&chunk->palette, sizeof(u32), NULL);
+  vec_init(&chunk->leaf_mats, sizeof(u16), NULL);
 
   chunk_import_vox_file(chunk, "assets/chr_knight.vox", VOX_AXIS_SWAP_YZ, false);
   chunk->is_dirty = true;
@@ -36,7 +37,8 @@ void chunk_rebuild_if_needed(ChunkTree *chunk) {
   if (!chunk->is_dirty)
     return;
 
-  ChunkBuildOutput out = {.child_indices = &chunk->child_indices, .nodes = &chunk->nodes};
+  ChunkBuildOutput out = {
+      .child_indices = &chunk->child_indices, .nodes = &chunk->nodes, .leaf_mats = &chunk->leaf_mats};
 
   ChunkBuildInput input = {
       .chunk_size = CHUNK_SIZE, .bits = chunk->bits, .tree_levels = TREE_LEVELS, .vox_mat = chunk->vox_mat};
@@ -47,7 +49,8 @@ void chunk_rebuild_if_needed(ChunkTree *chunk) {
 void chunk_tick(ChunkTree *chunk, M_GPU *gpu, M_Resource *rm, CmdBuffer cmd) {
   if (chunk->is_dirty) {
 
-    ChunkBuildOutput out = {.child_indices = &chunk->child_indices, .nodes = &chunk->nodes};
+    ChunkBuildOutput out = {
+        .child_indices = &chunk->child_indices, .nodes = &chunk->nodes, .leaf_mats = &chunk->leaf_mats};
     ChunkBuildInput input = {
         .chunk_size = CHUNK_SIZE, .bits = chunk->bits, .tree_levels = TREE_LEVELS, .vox_mat = chunk->vox_mat};
 

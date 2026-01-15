@@ -1,6 +1,5 @@
-#ifdef __STDC__
-#pragma once
-#endif
+#ifndef RT_UTIL_GLSL
+#define RT_UTIL_GLSL
 
 #include "rt_shared.glsl"
 
@@ -388,3 +387,5 @@ vec4 trace_error_color(uint err)
         // Unknown error code
         return vec4(1.0, 0.0, 0.0, 1.0); // black
 }
+
+#endif

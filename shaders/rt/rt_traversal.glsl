@@ -5,8 +5,7 @@
 
 #include "rt_bindings.glsl"
 #include "rt_shared.glsl"
-#include "rt_shared.glsl"
-#include "rt_util.glsl"
+#include "rt_occulsion.glsl"
 
 // -----------------------------------------
 // Local helpers
@@ -22,6 +21,9 @@ uint leaf_index_for_slot(uint packed, uint64_t node_mask, uint slot)
 
     return base_idx + offset;
 }
+
+
+
 
 #define GET_LEAF_MATERIAL(buf_id, idx) \
   ((g_leaf_mats[nonuniformEXT(buf_id)].data[(idx) >> 1u] >> (((idx) & 1u) << 4u)) & 0xFFFFu)
@@ -198,12 +200,17 @@ bool traverse_one_chunk(
                 hit_slot  = slot;
                 err_code  = TRACE_OK;
 
-                // leaf material fetch (compact per-node list)
                 uint leaf_idx = leaf_index_for_slot(packed, mask, slot);
                 uint mat_id   = GET_LEAF_MATERIAL(pc.leaf_mats_id, leaf_idx);
-
-                // palette -> rgb
                 hit_color = u32_rgb8_to_vec3(G_PAL(pc, mat_id));
+
+                vec3 hit_n = normalize(vec3(cur.dda.prev_step_i32));
+                vec3 p0 = (hit_pos - chunk_min) - hit_n * 1e-3; // chunk-local continuous
+                float ao = neighborhood_ao_soft(p0, hit_n);
+
+               // float ao = neighborhood_ao(uvec3(vi), hit_n);
+                hit_color *= ao;
+
                 return true;
             }
         }

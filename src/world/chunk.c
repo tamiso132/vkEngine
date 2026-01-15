@@ -2,7 +2,6 @@
 #include "chunk.h"
 #include "chunk_internal.h"
 #include "common.h"
-#include "raytrace.glsl"
 #include "vox_loader.h"
 #include <string.h>
 

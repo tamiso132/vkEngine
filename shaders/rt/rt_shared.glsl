@@ -1,6 +1,9 @@
-#ifdef __STDC__
-#pragma once
+#ifndef RT_TYPES_GLSL
+#define RT_TYPES_GLSL
 
+#include "../shader_base.glsl"
+
+#ifdef __STDC__
 #define DEBUG_MODE_HIT          0u  // red if hit else black
 #define DEBUG_MODE_ITER_GRAY    1u  // black->white by iterations
 #define DEBUG_MODE_LEVEL        2u  // visualize hit_level
@@ -15,7 +18,6 @@ const uint DEBUG_MODE_ITER_GRAY_HIT_GREEN = 3u;
 const uint DEBUG_MODE_ERRORS = 4u;
 #endif
 
-#include "shader_base.glsl"
 
 #define TREE_LEVELS 4
 #define BITS_PER_AXIS_PER_LEVEL 2
@@ -63,3 +65,5 @@ struct Ray {
 // ---------------------------
 #define LEAF_BIT  0x80000000u
 #define INDEX_MASK 0x7FFFFFFFu
+
+#endif

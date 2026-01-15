@@ -7,8 +7,8 @@
 #include "gpu/pipeline_hotreload.h"
 #include "gpu/swapchain.h"
 #include "raycam.h"
-#include "raytrace.glsl"
 #include "resource/resmanager.h"
+#include "rt/rt_shared.glsl"
 #include "sample_interface.h"
 #include "world/chunk.h"
 
@@ -36,7 +36,7 @@ static void _init(Sample *self, SampleContext *ctx) {
   chunk_tick(data->chunk, ctx->gpu, ctx->rm, ctx->cmd);
 
   CpConfig config = cp_init("Raytrace Pipeline");
-  cp_set_shader_path(&config, "shaders/raytrace.comp");
+  cp_set_shader_path(&config, "shaders/rt/rt.comp");
 
   RGImageInfo info = {.name = "IMG_Raytrace_Output",
                       .format = VK_FORMAT_B8G8R8A8_UNORM,

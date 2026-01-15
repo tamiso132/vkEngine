@@ -116,7 +116,7 @@ static glsl_include_result_t *on_local_func_include(void *ctx, const char *heade
 
   char *include_path = calloc(1, strlen(result->include_dir) + strlen(header_name) + 10);
 
-  sprintf(include_path, "%s/%s", result->include_dir, header_name);
+  sprintf(include_path, "%s%s", result->include_dir, header_name);
   bool exist = fg_exist(result->fg, include_path);
 
   if (exist) {

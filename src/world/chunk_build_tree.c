@@ -1,5 +1,6 @@
 //! chunk_internal.h
 #include "chunk_internal.h"
+#include "vector.h"
 
 typedef struct WorkItem {
   u32 dense; // dense index within current level grid (linear 3D)
@@ -14,6 +15,9 @@ typedef struct Pyramid {
   u64 *masks[TREE_LEVELS];
   NodeState *states[TREE_LEVELS];
 } Pyramid;
+
+#define BYTES_TO_MB 0.000001
+#define BYTES_TO_KB 0.001
 
 // --- Private Prototypes ---
 static inline u32 u32_pow3(u32 a);
@@ -30,6 +34,7 @@ static void idx_to_xyz_u32(u32 idx, u32 N, u32 *x, u32 *y, u32 *z);
 static u32 slot_linear_4x4x4(u32 lx, u32 ly, u32 lz);
 static u32 xorshift32(u32 *state);
 static float rand01(u32 *state);
+static void _print_vram_usage(ChunkBuildOutput *out);
 
 // ----------------------------
 // Public API
@@ -62,24 +67,34 @@ ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scra
   flatten_tree_bfs(in, &p, out);
   pyramid_free(&p);
 
-  for (u32 i = 0; i < out->child_indices->length; i++) {
-    LOG_INFO("Child Index(%d) = %u", i, VEC_AT(out->child_indices, i, ChildIndex)->first_child_index);
-  }
-
-  for (u32 i = 0; i < out->nodes->length; i++) {
-    LOG_INFO("Node Index(%d) = %lu", i, VEC_AT(out->nodes, i, Node)->mask);
-  }
-
-  for (u32 i = 0; i < out->leaf_mats->length; i++) {
-    LOG_INFO("Leaf Index(%d) = %u", i, *VEC_AT(out->leaf_mats, i, u16));
-  }
-
-  if (out->leaf_mats && (out->leaf_mats->length % 2) != 0) {
-    u16 dummy = 0;
-    vec_push(out->leaf_mats, &dummy);
-  }
+  _print_vram_usage(out);
 
   return CHUNK_BUILD_OK;
+}
+
+static void _print_vram_usage(ChunkBuildOutput *out) {
+  // 1. Calculate sizes (cast to size_t for %zu compatibility)
+  size_t size_nodes = (size_t)vec_bytes_len(out->nodes);
+  size_t size_indices = (size_t)vec_bytes_len(out->child_indices);
+  size_t size_mats = out->leaf_mats ? (size_t)vec_bytes_len(out->leaf_mats) : 0;
+
+  size_t total_bytes = size_nodes + size_indices + size_mats;
+
+  // The number of u16 leaf materials corresponds directly to the number of occupied voxels
+  // (Note: might include 1 padding voxel if the count was odd)
+  u32 voxel_count = out->leaf_mats ? (u32)vec_len(out->leaf_mats) : 0u;
+
+  // 2. Log with explicit "Voxels" label
+  LOG_INFO("\n=== Chunk VRAM Usage ===\n"
+           "  Nodes (u64):       %zu bytes (%u items)\n"
+           "  Child Index (u32): %zu bytes (%u items)\n"
+           "  Leaf Mats (u16):   %zu bytes (%u items)\n"
+           "  Total Voxels:      %u\n"
+           "  --------------------------\n"
+           "  TOTAL:             %zu bytes (%.2f MB)\n"
+           "========================",
+           size_nodes, (u32)vec_len(out->nodes), size_indices, (u32)vec_len(out->child_indices), size_mats, voxel_count,
+           voxel_count, total_bytes, (double)total_bytes / (1024.0 * 1024.0));
 }
 
 void _build_chunk_free(ChunkBuildOutput *out) {

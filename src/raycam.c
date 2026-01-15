@@ -13,7 +13,7 @@
 #include "raycam.h"
 #include "system_manager.h"
 
-#include "shaders/raytrace.glsl"
+#include "shaders/rt/rt_shared.glsl"
 
 // --- Private Prototypes ---
 static void _update_basis(Camera *cam);

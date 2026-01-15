@@ -2,7 +2,7 @@
 #pragma once
 #endif
 
-#include "raytrace.glsl"
+#include "rt_shared.glsl"
 
 bool childindex_is_leaf(uint packed_first_child_index)
 {

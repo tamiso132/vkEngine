@@ -3,11 +3,11 @@
 
 #include "chunk.h" // brings ChunkTree forward decl
 #include "common.h"
-#include "shaders/raytrace.glsl"
 #include "vector.h"
 #include "vox_loader.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include "shaders/rt/rt_shared.glsl"
 // ----- internal constants -----
 
 typedef struct CmdBuffer CmdBuffer;

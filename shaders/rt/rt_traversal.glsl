@@ -113,7 +113,7 @@ bool traverse_one_chunk(
             return false;
         }
 #endif
-
+        
         // -----------------------------------------
         // Ascend while out of bounds (leaving node)
         // -----------------------------------------
@@ -139,13 +139,21 @@ bool traverse_one_chunk(
 
             dda_step(cur.dda, cs);
             cur.steps_in_node++;
+        #if OPTIMIZATION_RT_JUMP_EMPTY_SPACE
+            uint64_t pmask = G_NODE_MASK(pc, cur.node_index);
+                uint64_t reach = reachable_mask_4x4x4(cur.dda.local_pos, cs.step_dir_i32);
+                if ((pmask & reach) == u64(0)) {
+                dda_skip_to_exit(cur.dda, cs);
+                
+                }
+        #endif
 
+
+#ifdef SHADER_DEBUG
             if (cur.steps_in_node > NODE_STEP_CAP) {
                 err_code = TRACE_ERR_NODE_STEP_CAP;
                 return false;
             }
-
-#ifdef SHADER_DEBUG
             bool no_change =
                 all(equal(cur.dda.local_pos, prev_pos)) &&
                 all(equal(cur.dda.side_dist, prev_side)) &&
@@ -185,6 +193,7 @@ bool traverse_one_chunk(
             return false;
         }
 #endif
+
 
         uint slot = get_local_index_from_vec3(cur.dda.local_pos);
         bool cell_occupied = child_present(mask, slot);
@@ -262,19 +271,24 @@ bool traverse_one_chunk(
 
                 cur_t_base = child_t_base;
 
-                if (!init_node_dda(ray, cur.node_min, cur.node_size, cur_t_base, cur.dda))
-                {
-                    err_code = TRACE_ERR_INIT_NODE_FAIL;
+               if (!init_node_dda(ray, cur.node_min, cur.node_size, cur_t_base, cur.dda)) {
+                err_code = TRACE_ERR_INIT_NODE_FAIL;
+                if (stack_top == 0) return false;
+                cur = stack[--stack_top];
+                cur_t_base = cur.t_base;
+                } else {
 
-                    // recover to parent
-                    if (stack_top == 0) return false;
-                    cur = stack[--stack_top];
-                    cur_t_base = cur.t_base;
-                    // continue stepping at parent
+                #if OPTIMIZATION_RT_JUMP_EMPTY_SPACE
+                
+                uint64_t cmask = G_NODE_MASK(pc, cur.node_index);
+                uint64_t reach = reachable_mask_4x4x4(cur.dda.local_pos, cs.step_dir_i32);
+                if ((cmask & reach) == u64(0)) {
+                        dda_skip_to_exit(cur.dda, cs);
+                        continue; // next loop iteration will pop/ascend immediately
                 }
-                else
-                {
-                    continue; // start loop on child
+             
+                #endif
+                continue;
                 }
             }
         }

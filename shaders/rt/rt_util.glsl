@@ -296,6 +296,40 @@ bool init_node_dda(
         return true;
 }
 
+uint64_t reachable_mask_4x4x4(ivec3 pos, ivec3 step_dir)
+{
+        int x0 = (step_dir.x > 0) ? pos.x : 0;
+        int x1 = (step_dir.x < 0) ? pos.x : 3;
+        if (step_dir.x == 0) {
+                x0 = pos.x;
+                x1 = pos.x;
+        }
+
+        int y0 = (step_dir.y > 0) ? pos.y : 0;
+        int y1 = (step_dir.y < 0) ? pos.y : 3;
+        if (step_dir.y == 0) {
+                y0 = pos.y;
+                y1 = pos.y;
+        }
+
+        int z0 = (step_dir.z > 0) ? pos.z : 0;
+        int z1 = (step_dir.z < 0) ? pos.z : 3;
+        if (step_dir.z == 0) {
+                z0 = pos.z;
+                z1 = pos.z;
+        }
+
+        uint64_t m = u64(0);
+        for (int z = z0; z <= z1; ++z)
+                for (int y = y0; y <= y1; ++y)
+                        for (int x = x0; x <= x1; ++x)
+                        {
+                                uint slot = uint(x) | (uint(y) << 2u) | (uint(z) << 4u);
+                                m |= (u64(1) << slot);
+                        }
+        return m;
+}
+
 // This is your branchless step(), ported.
 void dda_step(
         inout BranchlessDDA d,
@@ -334,6 +368,52 @@ void dda_step(
         d.is_occupied = mix(occ, false, d.out_of_bounds);
 }
 
+float dda_time_to_exit_axis(const BranchlessDDA d, int axis, int step)
+{
+        float sd = d.side_dist[axis];
+        float dd = d.delta_dist[axis];
+
+        if (step == 0) return 3.402823e38; // never exits via this axis
+
+        int p = d.local_pos[axis];
+        int remaining = (step > 0) ? (3 - p) : (p); // how many more boundary crossings until leaving
+
+        // time to cross (remaining+1) boundaries: next boundary + remaining * delta
+        return sd + float(remaining) * dd;
+}
+void dda_skip_to_exit(inout BranchlessDDA d, RayTraceConstState cs)
+{
+        float tx = dda_time_to_exit_axis(d, 0, cs.step_dir_i32.x);
+        float ty = dda_time_to_exit_axis(d, 1, cs.step_dir_i32.y);
+        float tz = dda_time_to_exit_axis(d, 2, cs.step_dir_i32.z);
+
+        // pick min axis
+        int ax = 0;
+        float tmin = tx;
+        if (ty < tmin) {
+                tmin = ty;
+                ax = 1;
+        }
+        if (tz < tmin) {
+                tmin = tz;
+                ax = 2;
+        }
+
+        // advance to node exit
+        d.t_tot += tmin;
+
+        // mark out of bounds and set a consistent "exit step normal"
+        d.prev_step_i32 = ivec3(0);
+        d.prev_step_i32[ax] = -cs.step_dir_i32[ax];
+
+        // force out-of-bounds so your traversal ascends immediately
+        d.out_of_bounds = true;
+        d.is_occupied = false;
+
+        // put local_pos outside on the exiting axis (matches your existing out_of_bounds logic)
+        if (cs.step_dir_i32[ax] > 0) d.local_pos[ax] = 4;
+        else d.local_pos[ax] = -1;
+}
 vec3 u32_rgb8_to_vec3(uint rgb)
 {
         float r = float((rgb) & 0xFFu) / 255.0;
@@ -389,3 +469,4 @@ vec4 trace_error_color(uint err)
 }
 
 #endif
+

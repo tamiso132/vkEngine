@@ -19,6 +19,9 @@ SHARED_CONST_U32(DEBUG_MODE_OCCULUSION, 6);
 #define BITS_PER_AXIS (BITS_PER_AXIS_PER_LEVEL * TREE_LEVELS) /* 2L */
 #define CHUNK_SIZE (1 << BITS_PER_AXIS)                       /* 4^L */
 
+//Optimizations
+#define OPTIMIZATION_RT_JUMP_EMPTY_SPACE 1
+
 // voxel counts
 #define VOXELS_PER_WORD 64
 #define VOXELS_PER_CHUNK (1ULL << (BITS_PER_LEVEL * TREE_LEVELS))

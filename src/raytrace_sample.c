@@ -10,6 +10,7 @@
 #include "resource/resmanager.h"
 #include "rt/rt_shared.glsl"
 #include "sample_interface.h"
+#include "shaders/rt/rt_shared.glsl"
 #include "world/chunk.h"
 
 #include <math.h>

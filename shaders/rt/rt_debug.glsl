@@ -1,13 +1,8 @@
 #ifndef RT_DEBUG_GLSL
 #define RT_DEBUG_GLSL
 
-#include "../shader_base.glsl"
+#include "rt_shared.glsl"
 
-#define DEBUG_MODE_HIT                   0u
-#define DEBUG_MODE_ITER_GRAY             1u
-#define DEBUG_MODE_LEVEL                 2u
-#define DEBUG_MODE_ITER_GRAY_HIT_GREEN   3u
-#define DEBUG_MODE_ERRORS                4u
 
 vec4 debug_view_color(
   uint debug_mode,
@@ -17,7 +12,9 @@ vec4 debug_view_color(
   uint hit_level,
   uint hit_slot,
   uint err_code,
-  vec3 hit_color)
+  vec3 hit_color, 
+  vec3 n_smooth,
+  float ao)
 {
   if (debug_mode == DEBUG_MODE_HIT) {
     return hit ? vec4(hit_color, 1.0) : vec4(0.0, 0.5, 0.0, 1.0);
@@ -36,6 +33,15 @@ vec4 debug_view_color(
   }
   if (debug_mode == DEBUG_MODE_ERRORS) {
     return trace_error_color(err_code);
+  }
+
+  if(debug_mode == DEBUG_MODE_NORMAL){
+     vec3 nn = normalize(n_smooth);
+   return vec4(nn * 0.5 + 0.5, 1.0);
+  }
+
+  if(debug_mode == DEBUG_MODE_OCCULUSION){
+    return vec4(ao, ao, ao, 1.0);
   }
   return vec4(0, 0, 0, 1);
 }

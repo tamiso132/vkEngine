@@ -1,22 +1,15 @@
-#ifndef RT_TYPES_GLSL
-#define RT_TYPES_GLSL
+#ifndef RT_TYPES_H
+#define RT_TYPES_H
 
 #include "../shader_base.glsl"
 
-#ifdef __STDC__
-#define DEBUG_MODE_HIT          0u  // red if hit else black
-#define DEBUG_MODE_ITER_GRAY    1u  // black->white by iterations
-#define DEBUG_MODE_LEVEL        2u  // visualize hit_level
-#define DEBUG_MODE_ITER_GRAY_HIT_GREEN 3u
-#define DEBUG_MODE_ERRORS 4u
-
-#else
-const uint DEBUG_MODE_HIT = 0u;
-const uint DEBUG_MODE_ITER_GRAY = 1u; // black->white by iterations
-const uint DEBUG_MODE_LEVEL = 2u; // visualize hit_level
-const uint DEBUG_MODE_ITER_GRAY_HIT_GREEN = 3u;
-const uint DEBUG_MODE_ERRORS = 4u;
-#endif
+SHARED_CONST_U32(DEBUG_MODE_HIT, 0);
+SHARED_CONST_U32(DEBUG_MODE_ITER_GRAY, 1);
+SHARED_CONST_U32(DEBUG_MODE_LEVEL, 2);
+SHARED_CONST_U32(DEBUG_MODE_ITER_GRAY_HIT_GREEN, 3);
+SHARED_CONST_U32(DEBUG_MODE_ERRORS, 4);
+SHARED_CONST_U32(DEBUG_MODE_NORMAL, 5);
+SHARED_CONST_U32(DEBUG_MODE_OCCULUSION, 6);
 
 
 #define TREE_LEVELS 4

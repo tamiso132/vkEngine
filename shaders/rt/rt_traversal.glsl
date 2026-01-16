@@ -39,7 +39,9 @@ bool traverse_one_chunk(
     out uint hit_slot,
     out uint iter_count,
     out uint err_code,
-    out vec3 hit_color)
+    out vec3 hit_color, 
+    out vec3 n_smooth,
+    out float ao)
 {
     hit_pos   = vec3(0.0);
     hit_level = 0u;
@@ -209,10 +211,16 @@ bool traverse_one_chunk(
                 else hit_n = normalize(hit_n);
                 
                 vec3 p0 = (hit_pos - chunk_min) - hit_n * 1e-3; // chunk-local continuous
-                float ao = neighborhood_ao_soft(p0, hit_n);
+                
+                
+                ao_and_normal_soft(p0, hit_n, ao, n_smooth);
 
-               // float ao = neighborhood_ao(uvec3(vi), hit_n);
                 hit_color *= ao;
+
+                #ifdef LIGHTING
+                    float ndotl = max(0.0, dot(n_smooth, vec3(0,1,0)));
+                    hit_color *= ndotl;
+                #endif
 
                 return true;
             }

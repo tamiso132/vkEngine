@@ -51,7 +51,10 @@ add_executable(${PROJECT_NAME}
   ${SOURCES_FILES_GAME_ENGINE}
 )
 
-add_compile_definitions(PROJECT_ROOT="${CMAKE_SOURCE_DIR}/")
+add_compile_definitions(
+  PROJECT_ROOT="${CMAKE_SOURCE_DIR}/"
+  VKENGINE_C=1
+)
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
 shaders

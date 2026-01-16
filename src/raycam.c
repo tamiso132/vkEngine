@@ -14,8 +14,29 @@
 #include "system_manager.h"
 
 #include "shaders/rt/rt_shared.glsl"
+#include "util.h"
+
+typedef struct {
+  int key;
+  uint32_t mode;
+  const char *name;
+} DebugModeKey;
+
+static const DebugModeKey kDebugKeys[] = {
+    {GLFW_KEY_F1, DEBUG_MODE_HIT, "HIT"},
+    {GLFW_KEY_F2, DEBUG_MODE_ITER_GRAY, "ITER_GRAY"},
+    {GLFW_KEY_F3, DEBUG_MODE_LEVEL, "LEVEL"},
+    {GLFW_KEY_F4, DEBUG_MODE_ITER_GRAY_HIT_GREEN, "ITER_GRAY_HIT_GREEN"},
+    {GLFW_KEY_F5, DEBUG_MODE_ERRORS, "ERRORS"},
+    {GLFW_KEY_F6, DEBUG_MODE_NORMAL, "NORMAL"},
+    {GLFW_KEY_F7, DEBUG_MODE_OCCULUSION, "OCCLUSION"},
+};
+
+static int s_key_was_down[GLFW_KEY_LAST + 1];
 
 // --- Private Prototypes ---
+static void set_debug_mode(Camera *cam, GLFWwindow *window, uint32_t mode, const char *name);
+static void handle_debug_keys(Camera *cam, GLFWwindow *window);
 static void _update_basis(Camera *cam);
 static void _move(Camera *cam, GLFWwindow *window, float dt);
 static void toggle_cursor(GLFWwindow *window);
@@ -30,7 +51,6 @@ Camera camera_init(VkExtent2D extent, float fovy) {
   return cam;
 }
 
-static double last_x, last_y;
 static int first_mouse = 1;
 
 void camera_update(Camera *cam, GLFWwindow *window, double delta) {
@@ -61,8 +81,6 @@ void camera_update(Camera *cam, GLFWwindow *window, double delta) {
     // 1) Update pitch (clamped)
     cam->yaw += dx * sensitivity;
     cam->pitch += dy * sensitivity;
-
-    cam->pitch = glm_clamp(cam->pitch, -pitch_limit, pitch_limit);
   }
 
   _update_basis(cam);
@@ -71,65 +89,67 @@ void camera_update(Camera *cam, GLFWwindow *window, double delta) {
 // --- Private Functions ---
 
 static void _update_basis(Camera *cam) {
-  // Clamp pitch to avoid flipping
-  if (cam->pitch > 1.55f)
-    cam->pitch = 1.55f;
-  if (cam->pitch < -1.55f)
-    cam->pitch = -1.55f;
-  // Forward from yaw/pitch
-  // Right-handed, -Z forward when yaw=pitch=0
-  cam->w[0] = cosf(cam->pitch) * sinf(cam->yaw);
-  cam->w[1] = sinf(cam->pitch);
-  cam->w[2] = -cosf(cam->pitch) * cosf(cam->yaw);
+  const float pitch_limit = 1.553343f;
+  cam->pitch = glm_clamp(cam->pitch, -pitch_limit, pitch_limit);
+
+  float cy = cosf(cam->yaw);
+  float sy = sinf(cam->yaw);
+  float cp = cosf(cam->pitch);
+  float sp = sinf(cam->pitch);
+
+  // forward (looking direction). Here: yaw=0 looks down -Z.
+  cam->w[0] = sy * cp;
+  cam->w[1] = sp;
+  cam->w[2] = -cy * cp;
   glm_vec3_normalize(cam->w);
 
   vec3 world_up = {0, 1, 0};
+
+  // right = forward x world_up  (right-handed with forward=-Z at yaw=0)
   glm_vec3_cross(cam->w, world_up, cam->u);
   glm_vec3_normalize(cam->u);
 
+  // up = right x forward
   glm_vec3_cross(cam->u, cam->w, cam->v);
   glm_vec3_normalize(cam->v);
 }
 
 static void _move(Camera *cam, GLFWwindow *window, float dt) {
   float speed = 5.0f * dt;
+  float speed_modifer = 1;
+
+  if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+    speed_modifer = 5;
+  }
+
+  float new_speed = speed_modifer * speed;
 
   if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-    glm_vec3_muladds(cam->w, speed, cam->pos);
+    glm_vec3_muladds(cam->w, new_speed, cam->pos);
   }
   if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-    glm_vec3_muladds(cam->w, -speed, cam->pos);
+    glm_vec3_muladds(cam->w, -new_speed, cam->pos);
   }
   if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-    glm_vec3_muladds(cam->u, -speed, cam->pos);
+    glm_vec3_muladds(cam->u, -new_speed, cam->pos);
   }
   if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-    glm_vec3_muladds(cam->u, speed, cam->pos);
+    glm_vec3_muladds(cam->u, new_speed, cam->pos);
   }
   if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
-    glm_vec3_muladds(cam->v, -speed, cam->pos);
+    glm_vec3_muladds(cam->v, -new_speed, cam->pos);
   }
   if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
-    glm_vec3_muladds(cam->v, speed, cam->pos);
+    glm_vec3_muladds(cam->v, new_speed, cam->pos);
   }
-  if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+
+  int esc_down = (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS);
+  if (esc_down && !s_key_was_down[GLFW_KEY_ESCAPE])
     toggle_cursor(window);
-  }
 
-  if (glfwGetKey(window, GLFW_KEY_F1) == GLFW_PRESS)
-    cam->debug_mode = DEBUG_MODE_HIT;
+  s_key_was_down[GLFW_KEY_ESCAPE] = esc_down;
 
-  if (glfwGetKey(window, GLFW_KEY_F2) == GLFW_PRESS)
-    cam->debug_mode = DEBUG_MODE_ITER_GRAY;
-
-  if (glfwGetKey(window, GLFW_KEY_F3) == GLFW_PRESS)
-    cam->debug_mode = DEBUG_MODE_LEVEL;
-
-  if (glfwGetKey(window, GLFW_KEY_F4) == GLFW_PRESS)
-    cam->debug_mode = DEBUG_MODE_ITER_GRAY_HIT_GREEN;
-
-  if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS)
-    cam->debug_mode = DEBUG_MODE_ERRORS;
+  handle_debug_keys(cam, window);
 }
 
 static void toggle_cursor(GLFWwindow *window) {
@@ -148,5 +168,30 @@ static void toggle_cursor(GLFWwindow *window) {
     int w, h;
     glfwGetWindowSize(window, &w, &h);
     glfwSetCursorPos(window, w * 0.5, h * 0.5);
+  }
+}
+
+static void set_debug_mode(Camera *cam, GLFWwindow *window, uint32_t mode, const char *name) {
+  if (cam->debug_mode == mode)
+    return;
+  cam->debug_mode = mode;
+
+  // Pick one (or keep both):
+  LOG_INFO("Debug mode: %s (%u)\n", name, mode);
+
+  char title[128];
+  snprintf(title, sizeof(title), "%s", name);
+  glfwSetWindowTitle(window, title);
+}
+
+static void handle_debug_keys(Camera *cam, GLFWwindow *window) {
+  for (size_t i = 0; i < sizeof(kDebugKeys) / sizeof(kDebugKeys[0]); ++i) {
+    int key = kDebugKeys[i].key;
+    int down = (glfwGetKey(window, key) == GLFW_PRESS);
+
+    if (down && !s_key_was_down[key]) { // rising edge
+      set_debug_mode(cam, window, kDebugKeys[i].mode, kDebugKeys[i].name);
+    }
+    s_key_was_down[key] = down;
   }
 }

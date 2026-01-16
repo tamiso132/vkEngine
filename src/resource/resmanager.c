@@ -3,13 +3,15 @@
 #include "rm_internal.h"
 
 // System lifecycle glue
-static void _system_destroy(void);
-static bool _system_init(void *config, u32 *mem_req);
 
 // Keep consistent with your engine (looks like MAX_FRAMES_IN_FLIGHT = 3 usage)
 #ifndef RM_FRAMES_IN_FLIGHT
 #define RM_FRAMES_IN_FLIGHT 3
 #endif
+
+// --- Private Prototypes ---
+static void _system_destroy(void);
+static bool _system_init(void *config, u32 *mem_req);
 
 SystemFunc rm_system_get_func() {
   return (SystemFunc){
@@ -173,8 +175,14 @@ RmStageSlice rm_get_stage_buffer(M_Resource *rm, const void *data, VkDeviceSize 
   return rm_stage_push(rm, gpu, data, size, alignment);
 }
 
-// -------------------- system init/shutdown --------------------
+// --- Private Functions ---
 
+static void _system_destroy(void) {
+  M_Resource *rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
+  rm_destroy(rm);
+}
+
+// -------------------- system init/shutdown --------------------
 static bool _system_init(void *config, u32 *mem_req) {
   SYSTEM_HELPER_MEM(mem_req, M_Resource);
 
@@ -194,9 +202,4 @@ static bool _system_init(void *config, u32 *mem_req) {
   memset(rm->b_counter, 0, sizeof(rm->b_counter));
 
   return true;
-}
-
-static void _system_destroy(void) {
-  M_Resource *rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
-  rm_destroy(rm);
 }

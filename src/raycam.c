@@ -116,10 +116,13 @@ static void _update_basis(Camera *cam) {
 
 static void _move(Camera *cam, GLFWwindow *window, float dt) {
   float speed = 5.0f * dt;
-  float speed_modifer = 1;
+  static float speed_modifer = 1;
 
   if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
     speed_modifer = 5;
+  }
+  if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_RELEASE) {
+    speed_modifer = 1;
   }
 
   float new_speed = speed_modifer * speed;

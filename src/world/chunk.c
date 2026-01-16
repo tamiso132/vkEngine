@@ -14,7 +14,7 @@ ChunkTree *chunk_init(M_Resource *rm) {
   vec_init(&chunk->palette, sizeof(u32), NULL);
   vec_init(&chunk->leaf_mats, sizeof(u16), NULL);
 
-  chunk_import_vox_file(chunk, "assets/room.vox", VOX_AXIS_SWAP_YZ, false);
+  chunk_import_vox_file(chunk, "assets/cars.vox", VOX_AXIS_SWAP_YZ, false);
   // u32 red = _edit_add_color(chunk, RGBA(255, 0, 0, 255));
   // u32 blue = _edit_add_color(chunk, RGBA(0, 255, 0, 255));
 

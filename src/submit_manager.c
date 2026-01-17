@@ -7,14 +7,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+typedef struct FramePresent {
+  VkSemaphore binary_acquire;
+  u64 signal_submit;
+} FramePresent;
+
 typedef struct M_Submit {
   VkDevice device;
   VkQueue queue;
   VkSemaphore timeline;
   VkSemaphore binary_acquire;
 
-  uint64_t frame_index;
-  uint32_t frames_in_flight; // Hur många frames GPU får ligga efter
+  u64 curr_signal_count;
+  u32 frame_index;
+  u32 frames_in_flight;
+
+  FramePresent *frames;
+  bool is_present_enabled;
 } M_Submit;
 
 // --- Private Prototypes ---
@@ -29,24 +38,19 @@ SystemFunc sm_system_get_func() { return (SystemFunc){.on_init = _system_init, .
 
 void sm_begin_frame(M_Submit *mgr) {
 
-  mgr->frame_index++;
-  if (mgr->frame_index <= mgr->frames_in_flight) {
-    return; // Bufferten är inte full än, bara kör.
-  }
-
-  uint64_t wait_value = mgr->frame_index - mgr->frames_in_flight;
-
   uint64_t current_val;
   vkGetSemaphoreCounterValue(mgr->device, mgr->timeline, &current_val);
+  u64 submit_signal = mgr->frames[mgr->frame_index].signal_submit;
 
-  if (current_val < wait_value) {
+  if (current_val < submit_signal) {
+
     VkSemaphoreWaitInfo waitInfo = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
                                     .semaphoreCount = 1,
                                     .pSemaphores = &mgr->timeline,
-                                    .pValues = &wait_value};
+                                    .pValues = &submit_signal};
+
     vkWaitSemaphores(mgr->device, &waitInfo, UINT64_MAX);
   }
-  mgr->frame_index++;
 }
 
 void sm_acquire_swapchain(M_Submit *mgr, M_Swapchain *swapchain) {
@@ -61,8 +65,8 @@ void sm_acquire_swapchain(M_Submit *mgr, M_Swapchain *swapchain) {
 
   vkAcquireNextImage2KHR(mgr->device, &info, &swapchain->current_img_idx);
 }
-
-void sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit) {
+// TODO, might have to later, do that submits, rely on each other
+u64 sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit) {
 
   VkCommandBufferSubmitInfo cmd_info = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = cmd};
 
@@ -74,7 +78,7 @@ void sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is
       {
           .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
           .semaphore = mgr->timeline,
-          .value = mgr->frame_index,
+          .value = mgr->curr_signal_count,
           .stageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
       },
 
@@ -82,20 +86,40 @@ void sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is
        .semaphore = VEC_AT(&swapchain->imgs, swapchain->current_img_idx, PresentFrame)->sem_rend_done,
        .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT}};
 
+  u32 wait_count = is_first_submit && mgr->is_present_enabled;
+  u32 signal_count = (mgr->is_present_enabled && is_last_in_frame) ? 2 : 1;
+
   VkSubmitInfo2 submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
                           .commandBufferInfoCount = 1,
                           .pCommandBufferInfos = &cmd_info,
 
                           // wait on aquire first submit
                           // TODO: optimize so only waits if it uses swapchain image
-                          .waitSemaphoreInfoCount = is_first_submit ? 1 : 0,
+                          .waitSemaphoreInfoCount = wait_count,
                           .pWaitSemaphoreInfos = &wait_info,
 
                           // Vi signalerar ENDAST om det är sista biten av framen.
-                          .signalSemaphoreInfoCount = is_last_in_frame ? 2 : 0,
+                          .signalSemaphoreInfoCount = signal_count,
                           .pSignalSemaphoreInfos = signal_info};
 
   vkQueueSubmit2(mgr->queue, 1, &submit, VK_NULL_HANDLE);
+
+  if (is_last_in_frame) {
+    mgr->frames[mgr->frame_index].signal_submit = mgr->curr_signal_count;
+    mgr->frame_index = (mgr->frame_index + 1) % mgr->frames_in_flight;
+  }
+
+  mgr->curr_signal_count += 1;
+
+  return mgr->curr_signal_count - 1;
+}
+
+u64 sm_get_cpu_signal_count(M_Submit *mgr) { return mgr->curr_signal_count; }
+
+u64 sm_get_gpu_signal_count(M_Submit *mgr) {
+  u64 gpu_counter = 0;
+  vkGetSemaphoreCounterValue(mgr->device, mgr->timeline, &gpu_counter);
+  return gpu_counter;
 }
 
 void sm_present(M_Submit *mgr, M_Swapchain *swapchain) {
@@ -114,12 +138,15 @@ void sm_present(M_Submit *mgr, M_Swapchain *swapchain) {
   vkQueuePresentKHR(mgr->queue, &present_info);
 }
 
-void init_system(M_Submit *mgr, VkDevice device, VkQueue queue, uint32_t frames_in_flight) {
+void init_submit(M_Submit *mgr, VkDevice device, VkQueue queue, bool is_present, uint32_t frames_in_flight) {
 
   mgr->device = device;
   mgr->queue = queue;
   mgr->frames_in_flight = frames_in_flight;
   mgr->frame_index = 0; // Vi börjar räkna frames från 1 vid första submit
+  mgr->frames = calloc(sizeof(PresentFrame), frames_in_flight);
+  mgr->is_present_enabled = is_present;
+  mgr->curr_signal_count = 1;
 
   // Skapa en enda Timeline Semaphore
   VkSemaphoreTypeCreateInfo typeInfo = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
@@ -136,7 +163,10 @@ void init_system(M_Submit *mgr, VkDevice device, VkQueue queue, uint32_t frames_
 
   VkSemaphoreCreateInfo binary_info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
 
-  vkCreateSemaphore(device, &binary_info, NULL, &mgr->binary_acquire);
+  if (is_present)
+    for (u32 i = 0; i < mgr->frames_in_flight; i++) {
+      vkCreateSemaphore(device, &binary_info, NULL, &mgr->binary_acquire);
+    }
 }
 
 // --- Private Functions ---
@@ -153,6 +183,6 @@ static bool _system_init(void *config, u32 *mem_req) {
   auto *mgr = SYSTEM_GET(SYSTEM_TYPE_SUBMIT, M_Submit);
 
   VkExtent2D extent = {};
-  _init(mgr, dev->device, dev->graphics_queue, 1);
+  init_submit(mgr, dev->device, dev->graphics_queue, true, 1);
   return true;
 }

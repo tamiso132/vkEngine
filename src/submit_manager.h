@@ -20,10 +20,15 @@ typedef struct {
 } SubmitInfo;
 
 // PUBLIC FUNCTIONS
+
 SystemFunc sm_system_get_func();
-void init_system(M_Submit *mgr, VkDevice device, VkQueue queue, uint32_t frames_in_flight);
+u64 sm_get_cpu_signal_count(M_Submit *mgr);
+u64 sm_get_gpu_signal_count(M_Submit *mgr);
+//
+u64 sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit);
+void init_submit(M_Submit *mgr, VkDevice device, VkQueue queue, bool is_present, uint32_t frames_in_flight);
+//
 void sm_acquire_swapchain(M_Submit *mgr, M_Swapchain *swapchain);
 void sm_begin_frame(M_Submit *mgr);
 void sm_present(M_Submit *mgr, M_Swapchain *swapchain);
-void sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit);
 // END PUBLIC FUNCTIONS

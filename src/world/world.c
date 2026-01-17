@@ -42,6 +42,10 @@ WorldGridView *world_init() {
   return view;
 }
 
+void world_tick_cpu(WorldGridView *view) {
+  // tick the cpu things
+}
+
 void _world_load_chunk(WorldGridView *view, vec3 chunk_world_coord) {
   // CHECK IF ALREADY EXISTED
   // LOAD IF NOT EXISTED

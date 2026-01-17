@@ -20,13 +20,10 @@ typedef struct {
 } SubmitInfo;
 
 // PUBLIC FUNCTIONS
-
 SystemFunc sm_system_get_func();
-
-void sm_begin_frame(M_Submit *mgr);
-
+void init_system(M_Submit *mgr, VkDevice device, VkQueue queue, uint32_t frames_in_flight);
 void sm_acquire_swapchain(M_Submit *mgr, M_Swapchain *swapchain);
-
-void sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit);
-
+void sm_begin_frame(M_Submit *mgr);
 void sm_present(M_Submit *mgr, M_Swapchain *swapchain);
+void sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit);
+// END PUBLIC FUNCTIONS

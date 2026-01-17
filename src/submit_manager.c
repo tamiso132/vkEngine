@@ -19,7 +19,6 @@ typedef struct M_Submit {
 
 // --- Private Prototypes ---
 static void _system_destroy();
-static void _init(M_Submit *mgr, VkDevice device, VkQueue queue, uint32_t frames_in_flight);
 static bool _system_init(void *config, u32 *mem_req);
 
 SystemFunc sm_system_get_func() { return (SystemFunc){.on_init = _system_init, .on_shutdown = _system_destroy}; }
@@ -115,14 +114,7 @@ void sm_present(M_Submit *mgr, M_Swapchain *swapchain) {
   vkQueuePresentKHR(mgr->queue, &present_info);
 }
 
-// --- Private Functions ---
-
-static void _system_destroy() {
-  auto *mgr = SYSTEM_GET(SYSTEM_TYPE_SUBMIT, M_Submit);
-  vkDestroySemaphore(mgr->device, mgr->timeline, NULL);
-}
-
-static void _init(M_Submit *mgr, VkDevice device, VkQueue queue, uint32_t frames_in_flight) {
+void init_system(M_Submit *mgr, VkDevice device, VkQueue queue, uint32_t frames_in_flight) {
 
   mgr->device = device;
   mgr->queue = queue;
@@ -145,6 +137,13 @@ static void _init(M_Submit *mgr, VkDevice device, VkQueue queue, uint32_t frames
   VkSemaphoreCreateInfo binary_info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
 
   vkCreateSemaphore(device, &binary_info, NULL, &mgr->binary_acquire);
+}
+
+// --- Private Functions ---
+
+static void _system_destroy() {
+  auto *mgr = SYSTEM_GET(SYSTEM_TYPE_SUBMIT, M_Submit);
+  vkDestroySemaphore(mgr->device, mgr->timeline, NULL);
 }
 
 static bool _system_init(void *config, u32 *mem_req) {

@@ -3,7 +3,9 @@
 #include "gpu/gpu.h"
 #include "gpu/pipeline.h"
 #include "resource/resmanager.h"
+#include "resource/staging_arena.h"
 #include "vector.h"
+#include <vulkan/vulkan_core.h>
 
 typedef struct {
   VkPipelineStageFlags2 stage;
@@ -12,10 +14,6 @@ typedef struct {
   VkImageLayout read_layout;
   VkImageLayout write_layout;
 } StateProperties;
-
-// --- Private Prototypes ---
-static SyncDef _resolve_sync(ResourceState state, AccessType access);
-static void _cmd_reset(VkDevice device, CmdBuffer cmd);
 
 // The Master Lookup Table
 static const StateProperties STATE_TABLE[] = {[STATE_SHADER] = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
@@ -43,6 +41,11 @@ static const StateProperties STATE_TABLE[] = {[STATE_SHADER] = {.stage = VK_PIPE
                                                                  .write_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR}
 
 };
+
+// --- Private Prototypes ---
+static void _cmd_reset(VkDevice device, CmdBuffer cmd);
+
+static SyncDef _resolve_sync(ResourceState state, AccessType access);
 
 CmdBuffer cmd_init(VkDevice device, u32 queue_fam) {
   CmdBuffer cmd = {.device = device};
@@ -235,6 +238,21 @@ void cmd_sync_buffer(CmdBuffer cmd, M_Resource *rm, ResHandle buf_handle, Resour
   vkCmdPipelineBarrier2(cmd.buffer, &dep);
 }
 
+void cmd_buffer_copy(CmdBuffer cmd, M_Resource *rm, VmaAllocator allocator, ResHandle dst_handle, StagingSlice slice) {
+
+  RBuffer *buffer = rm_get_buffer(rm, dst_handle);
+  cmd_sync_buffer(cmd, rm, dst_handle, STATE_TRANSFER, ACCESS_WRITE);
+
+  VkBufferCopy2 copy = {.sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2, .srcOffset = slice.offset, .size = slice.size};
+
+  VkCopyBufferInfo2 copy_info = {.sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+                                 .srcBuffer = slice.buffer,
+                                 .dstBuffer = buffer->handle,
+                                 .pRegions = &copy,
+                                 .regionCount = 1};
+
+  vkCmdCopyBuffer2(cmd.buffer, &copy_info);
+}
 void cmd_buffer_upload(CmdBuffer cmd, M_GPU *dev, M_Resource *rm, ResHandle handle, void *data, u32 size) {
   RBuffer *buffer = rm_get_buffer(rm, handle);
   cmd_sync_buffer(cmd, rm, handle, STATE_TRANSFER, ACCESS_WRITE);
@@ -265,6 +283,8 @@ void cmd_buffer_upload(CmdBuffer cmd, M_GPU *dev, M_Resource *rm, ResHandle hand
 
 // --- Private Functions ---
 
+static void _cmd_reset(VkDevice device, CmdBuffer cmd) { vkResetCommandPool(device, cmd.pool, 0); }
+
 static SyncDef _resolve_sync(ResourceState state, AccessType access) {
   const StateProperties *props = &STATE_TABLE[state];
   SyncDef res = {.stage = props->stage};
@@ -282,5 +302,3 @@ static SyncDef _resolve_sync(ResourceState state, AccessType access) {
 
   return res;
 }
-
-static void _cmd_reset(VkDevice device, CmdBuffer cmd) { vkResetCommandPool(device, cmd.pool, 0); }

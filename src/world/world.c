@@ -3,6 +3,7 @@
 #include "cglm/vec3.h"
 #include "common.h"
 #include "hashmaputil.h"
+#include "transfer_queue.h"
 #include "vector.h"
 
 #include "shaders/rt/rt_shared.glsl"
@@ -45,6 +46,8 @@ WorldGridView *world_init() {
 void world_tick_cpu(WorldGridView *view) {
   // tick the cpu things
 }
+
+void world_async_transfer(WorldGridView *view, TransferQueue *transfer) {}
 
 void _world_load_chunk(WorldGridView *view, vec3 chunk_world_coord) {
   // CHECK IF ALREADY EXISTED

@@ -1,4 +1,5 @@
 #include "submit_manager.h"
+#include "common.h"
 #include "filewatch.h"
 #include "gpu/gpu.h"
 #include "gpu/swapchain.h"
@@ -27,6 +28,8 @@ typedef struct M_Submit {
 } M_Submit;
 
 // --- Private Prototypes ---
+static void _init(M_Submit *mgr, VkDevice device, VkQueue queue, bool is_present, uint32_t frames_in_flight);
+
 static void _system_destroy();
 static bool _system_init(void *config, u32 *mem_req);
 
@@ -68,6 +71,11 @@ void sm_acquire_swapchain(M_Submit *mgr, M_Swapchain *swapchain) {
 // TODO, might have to later, do that submits, rely on each other
 u64 sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit) {
 
+  // PRETTY CURSED, might do something more normal later
+  M_Swapchain temp = {};
+  if (swapchain == NULL)
+    swapchain = &temp;
+
   VkCommandBufferSubmitInfo cmd_info = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = cmd};
 
   VkSemaphoreSubmitInfo wait_info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
@@ -98,7 +106,6 @@ u64 sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is_
                           .waitSemaphoreInfoCount = wait_count,
                           .pWaitSemaphoreInfos = &wait_info,
 
-                          // Vi signalerar ENDAST om det är sista biten av framen.
                           .signalSemaphoreInfoCount = signal_count,
                           .pSignalSemaphoreInfos = signal_info};
 
@@ -138,7 +145,15 @@ void sm_present(M_Submit *mgr, M_Swapchain *swapchain) {
   vkQueuePresentKHR(mgr->queue, &present_info);
 }
 
-void init_submit(M_Submit *mgr, VkDevice device, VkQueue queue, bool is_present, uint32_t frames_in_flight) {
+M_Submit *init_submit(VkDevice device, VkQueue queue, bool is_present, uint32_t frames_in_flight) {
+  M_Submit *mgr = calloc(sizeof(M_Submit), 1);
+  _init(mgr, device, queue, is_present, frames_in_flight);
+  return mgr;
+}
+
+// --- Private Functions ---
+
+static void _init(M_Submit *mgr, VkDevice device, VkQueue queue, bool is_present, uint32_t frames_in_flight) {
 
   mgr->device = device;
   mgr->queue = queue;
@@ -169,8 +184,6 @@ void init_submit(M_Submit *mgr, VkDevice device, VkQueue queue, bool is_present,
     }
 }
 
-// --- Private Functions ---
-
 static void _system_destroy() {
   auto *mgr = SYSTEM_GET(SYSTEM_TYPE_SUBMIT, M_Submit);
   vkDestroySemaphore(mgr->device, mgr->timeline, NULL);
@@ -183,6 +196,6 @@ static bool _system_init(void *config, u32 *mem_req) {
   auto *mgr = SYSTEM_GET(SYSTEM_TYPE_SUBMIT, M_Submit);
 
   VkExtent2D extent = {};
-  init_submit(mgr, dev->device, dev->graphics_queue, true, 1);
+  _init(mgr, dev->device, dev->graphics_queue, true, 1);
   return true;
 }

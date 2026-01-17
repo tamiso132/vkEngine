@@ -1,26 +1,92 @@
+#include "transfer_queue.h"
+#include "command.h"
 #include "common.h"
+#include "resource/rm_internal.h"
+#include "resource/staging_arena.h"
+#include "submit_manager.h"
+#include "util.h"
+#include "vector.h"
 
-typedef struct InternalBufferWrite {
-  bool is_free;
-  void *data;
-  u32 size;
-  ResHandle handle;
-} InternalBufferWrite;
+typedef struct {
+  CmdBuffer cmd;
+  u32 submit_signal;
+} Frame;
 
 typedef struct TransferQueue {
-  u64 semp_value;
+  StagingGrowRing *staging_ring;
+  M_Submit *submit;
+  VkDevice device;
+  VkQueue transfer;
+  VmaAllocator allocator;
+  bool is_cmd_on;
+  u32 max_frames_in_flight;
+  u32 frame_index;
+  Frame frames[];
 } TransferQueue;
 
-u64 transfer_completed_value() {}
+// --- Private Prototypes ---
+static Frame _get_frame(TransferQueue *transfer);
 
-u64 transfer_allocate_signal_value() {}
+TransferQueue *init_queue(VkDevice device, VkQueue transfer, u32 queue_fam, VmaAllocator allocator, u64 capacity,
+                          u32 max_frame_in_flight) {
 
-void submit() {}
+  TransferQueue *tq = calloc(1, sizeof(TransferQueue) + sizeof(Frame) * max_frame_in_flight);
+  tq->submit = init_submit(device, transfer, false, max_frame_in_flight);
+  tq->staging_ring = sgr_init(allocator, capacity, max_frame_in_flight, true);
+  tq->device = device;
+  tq->transfer = transfer;
+  tq->allocator = allocator;
+  tq->max_frames_in_flight = max_frame_in_flight;
 
-typedef struct StagingAllocator {
-  u32 len;
-  u32 capacity;
-  void *gpu_ptr;
-} StagingAllocator;
+  for (u32 i = 0; i < max_frame_in_flight; i++) {
+    tq->frames[i].cmd = cmd_init(device, queue_fam);
+  }
 
-void _stage_copy_to_buffer() {}
+  return tq;
+}
+
+// LATER ON; SHOULD PROBABLY COPY OVER
+Ticket transfer_push_upload(TransferQueue *transfer, M_Resource *rm, ResHandle handle, u32 size, u32 aligment) {
+  StagingSlice slice = sgr_alloc(transfer->staging_ring, size, aligment);
+
+  if (!transfer->is_cmd_on) {
+    cmd_begin(transfer->device, _get_frame(transfer).cmd);
+    transfer->is_cmd_on = true;
+  }
+  cmd_buffer_copy(_get_frame(transfer).cmd, rm, transfer->allocator, handle, slice);
+
+  return sm_get_cpu_signal_count(transfer->submit);
+}
+
+void transfer_on_new_frame(TransferQueue *transfer) {
+  u32 old_frame_index = transfer->frame_index;
+  transfer->frame_index = (old_frame_index + 1) % transfer->max_frames_in_flight;
+  if (sm_get_gpu_signal_count(transfer->submit) >= _get_frame(transfer).submit_signal) {
+    cmd_begin(transfer->device, _get_frame(transfer).cmd);
+    transfer->is_cmd_on = true;
+
+    sgr_on_new_frame(transfer->staging_ring, transfer->frame_index);
+    sm_begin_frame(transfer->submit);
+  }
+  LOG_ERROR("UGH, MUST IMPLEMENT NOW");
+  abort();
+}
+
+Ticket transfer_get_current_ticket_completed(TransferQueue *transfer) {
+  return sm_get_gpu_signal_count(transfer->submit);
+}
+
+void transfer_submit_on_frame_end(TransferQueue *transfer) {
+
+  cmd_end(transfer->device, _get_frame(transfer).cmd);
+  transfer->is_cmd_on = false;
+
+  sgr_flush(transfer->staging_ring, transfer->frame_index);
+
+  transfer->frames[transfer->frame_index].submit_signal =
+      sm_work(transfer->submit, NULL, _get_frame(transfer).cmd.buffer, true, true);
+}
+
+// --- Private Functions ---
+
+static Frame _get_frame(TransferQueue *transfer) { return transfer->frames[transfer->frame_index]; }

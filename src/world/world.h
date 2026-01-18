@@ -1,6 +1,6 @@
-#pragma once
-#include "common.h"
 #include <cglm/types.h> // vec3
+
+#include "common.h"
 
 typedef struct TransferQueue TransferQueue;
 typedef struct World World;
@@ -12,12 +12,8 @@ typedef struct WorldConfig {
   u32 max_cached;  // cache budget; 0 means no cache limit
 } WorldConfig;
 
-// ---- lifecycle ----
+// PUBLIC FUNCTIONS
+void world_cpu_tick(World *w, vec3 player_pos);
 World *world_create(const WorldConfig *cfg);
 void world_destroy(World *w);
-
-void world_cpu_tick(World *w, vec3 player_pos);
-void world_async_transfer(World *w, TransferQueue *transfer);
-
-// ---- convenience ----
-u32 world_active_count(const World *w);
+// END PUBLIC FUNCTIONS

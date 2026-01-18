@@ -7,36 +7,35 @@
 #include "cglm/ivec3.h"
 #include "cglm/types.h"
 #include "cglm/vec3.h"
+#include "common.h"
 #include "grid.h"
+#include "iterator.h"
 #include "vector.h"
 #include "world/chunk.h"
+#include "world/chunk_gpu.h"
 #include "world/storage.h"
+
+typedef struct GPUGridSlot {
+  i32 nodes_id;
+  i32 child_id;
+  i32 palette_id;
+  i32 leaf_mats_id;
+} GPUGridSlot;
 
 struct World {
   WorldConfig cfg;
   FixedGrid *grid;
   ChunkStore chunks;
+  bool is_descriptor_dirty;
 };
 
-// --- coord conversion only belongs in World (game-space -> chunk-space) ---
-static void _player_pos_to_chunk_coord(const World *w, vec3 player_pos, ivec3 out_chunk) {
-  vec3 rel;
-  glm_vec3_sub(player_pos, (float *)w->cfg.min_corner, rel);
-  out_chunk[0] = (int)floorf(rel[0] / (float)w->cfg.chunk_size);
-  out_chunk[1] = (int)floorf(rel[1] / (float)w->cfg.chunk_size);
-  out_chunk[2] = (int)floorf(rel[2] / (float)w->cfg.chunk_size);
-}
+// --- Private Prototypes ---
+static void _player_pos_to_chunk_coord(const World *w, vec3 player_pos, ivec3 out_chunk);
 
-// --- FixedGrid callbacks: just forward lists to ChunkStore ---
-static void _on_entered(const Vector *entered, void *user) {
-  World *w = (World *)user;
-  (void)chunk_store_apply_entered(&w->chunks, entered);
-}
+static void _update_slots(World *w, vec3 player_pos);
 
-static void _on_left(const Vector *left, void *user) {
-  World *w = (World *)user;
-  (void)chunk_store_apply_left_to_cache(&w->chunks, left);
-}
+static void _on_entered(const Vector *entered, void *user);
+static void _on_left(const Vector *left, void *user);
 
 World *world_create(const WorldConfig *cfg) {
   if (!cfg || cfg->visibility == 0 || cfg->chunk_size == 0)
@@ -83,7 +82,32 @@ void world_destroy(World *w) {
   free(w);
 }
 
-void _update_slots(World *w, vec3 player_pos) {
+void world_cpu_tick(World *w, vec3 player_pos) {
+  if (!w)
+    return;
+
+  _update_slots(w, player_pos);
+
+  if (w->is_descriptor_dirty) {
+    IndirectIter it = chunk_store_get_active(&w->chunks);
+    IITER_FOREACH(ci, ChunkItem, &it){chunk_gpu_state(const ChunkGpu *cg, ChunkResType res_type)};
+  }
+
+  // iterate active chunks
+}
+
+// --- Private Functions ---
+
+// --- coord conversion only belongs in World (game-space -> chunk-space) ---
+static void _player_pos_to_chunk_coord(const World *w, vec3 player_pos, ivec3 out_chunk) {
+  vec3 rel;
+  glm_vec3_sub(player_pos, (float *)w->cfg.min_corner, rel);
+  out_chunk[0] = (int)floorf(rel[0] / (float)w->cfg.chunk_size);
+  out_chunk[1] = (int)floorf(rel[1] / (float)w->cfg.chunk_size);
+  out_chunk[2] = (int)floorf(rel[2] / (float)w->cfg.chunk_size);
+}
+
+static void _update_slots(World *w, vec3 player_pos) {
   if (!w)
     return;
   ivec3 player_chunk;
@@ -91,20 +115,15 @@ void _update_slots(World *w, vec3 player_pos) {
   fixed_grid_set_center(w->grid, player_chunk); // callbacks do the real work
 }
 
-void world_cpu_tick(World *w, vec3 player_pos) {
-  if (!w)
-    return;
-
-  _update_slots(w, player_pos);
-
-  // iterate active chunks
-  const Vector *act = chunk_store_active_indices(&w->chunks);
-  for (u32 i = 0; i < (u32)vec_len((Vector *)act); ++i) {
-    u32 chunk_index = ((u32 *)act->data)[i];
-    ChunkTree *ch = chunk_store_chunk_at(&w->chunks, chunk_index);
-    if (ch)
-      chunk_build_if_needed(ch);
-  }
+// --- FixedGrid callbacks: just forward lists to ChunkStore ---
+static void _on_entered(const Vector *entered, void *user) {
+  World *w = (World *)user;
+  (void)chunk_store_apply_entered(&w->chunks, entered);
+  w->is_descriptor_dirty = true;
 }
 
-u32 world_active_count(const World *w) { return w ? chunk_store_active_count(&w->chunks) : 0u; }
+static void _on_left(const Vector *left, void *user) {
+  World *w = (World *)user;
+  (void)chunk_store_apply_left_to_cache(&w->chunks, left);
+  w->is_descriptor_dirty = true;
+}

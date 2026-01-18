@@ -1,3 +1,5 @@
+// PUBLIC FUNCTIONS
+// END PUBLIC FUNCTIONS
 // fixed_grid.h
 #pragma once
 #include "common.h"

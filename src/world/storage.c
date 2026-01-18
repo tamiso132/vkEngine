@@ -4,141 +4,24 @@
 #include "world/chunk.h"
 #include <string.h>
 
-static inline u64 _key_from_coord(ivec3 c) { return hm_pack_vec3_i21(c[0], c[1], c[2]); }
+// --- Private Prototypes ---
+static u32 _alloc_index(ChunkStore *cs);
 
-static inline u32 _u32_at(const Vector *v, u32 i) { return ((u32 *)v->data)[i]; }
-static inline void _u32_set(Vector *v, u32 i, u32 x) { ((u32 *)v->data)[i] = x; }
+static ChunkStoreEntryItem *_ensure_loaded(ChunkStore *cs, ivec3 coord);
 
-static inline ChunkItem *_item_at(ChunkStore *cs, u32 idx) { return &((ChunkItem *)cs->chunk_items.data)[idx]; }
+static void _evict_until_budget(ChunkStore *cs);
 
-static u32 _alloc_index(ChunkStore *cs) {
-  if (vec_len(&cs->free_chunk_indices) > 0) {
-    u32 last = (u32)vec_len(&cs->free_chunk_indices) - 1u;
-    u32 idx = _u32_at(&cs->free_chunk_indices, last);
-    cs->free_chunk_indices.length = last;
-    return idx;
-  }
-  // grow chunk_items
-  ChunkItem it;
-  memset(&it, 0, sizeof(it));
-  vec_push(&cs->chunk_items, &it);
-  return (u32)vec_len(&cs->chunk_items) - 1u;
-}
+static ChunkStoreEntryItem *_get_item(ChunkStore *cs, u64 key);
 
-static ChunkStoreEntryItem *_get_item(ChunkStore *cs, u64 key) {
-  return hm_chunk_store_entry_get_u64(cs->coord_to_ent, key);
-}
+static inline ChunkItem *_item_at(ChunkStore *cs, u32 idx);
 
-static ChunkStoreEntryItem *_ensure_loaded(ChunkStore *cs, ivec3 coord) {
-  u64 key = _key_from_coord(coord);
-  ChunkStoreEntryItem *found = _get_item(cs, key);
-  if (found)
-    return found;
+static inline u64 _key_from_coord(ivec3 c);
 
-  u32 idx = _alloc_index(cs);
-  ChunkItem *slot = _item_at(cs, idx);
+static void _make_active(ChunkStore *cs, ChunkStoreEntryItem *it);
+static void _make_cached(ChunkStore *cs, ChunkStoreEntryItem *it);
 
-  // allocate chunk if slot was free
-  if (slot->tree == NULL) {
-    slot->tree = chunk_create();
-  }
-  glm_ivec3_copy(coord, slot->coord);
-
-  // insert as CACHED (then caller can activate)
-  ChunkStoreEntryItem ni;
-  memset(&ni, 0, sizeof(ni));
-  ni.key = key;
-  ni.ent.chunk_index = idx;
-  ni.ent.where = CHUNK_RES_CACHED;
-  ni.ent.cache_pos = (u32)vec_len(&cs->cached_chunk_indices);
-
-  vec_push(&cs->cached_chunk_indices, &idx);
-  hm_chunk_store_entry_set(cs->coord_to_ent, ni);
-
-  return _get_item(cs, key);
-}
-
-static void _make_active(ChunkStore *cs, ChunkStoreEntryItem *it) {
-  ChunkEntry *e = &it->ent;
-  if (e->where == CHUNK_RES_ACTIVE)
-    return;
-
-  // remove from cached list via swap-remove
-  u32 removed_pos = e->cache_pos;
-  u32 last_pos = (u32)vec_len(&cs->cached_chunk_indices) - 1u;
-
-  if (removed_pos != last_pos) {
-    u32 moved_idx = *VEC_AT(&cs->cached_chunk_indices, removed_pos, u32);
-    vec_remove_swap(&cs->cached_chunk_indices, removed_pos);
-
-    // update moved entry cache_pos
-    ChunkItem *moved_item = _item_at(cs, moved_idx);
-    u64 moved_key = _key_from_coord(moved_item->coord);
-    ChunkStoreEntryItem *moved_ent = _get_item(cs, moved_key);
-    if (moved_ent)
-      moved_ent->ent.cache_pos = removed_pos;
-  } else {
-    cs->cached_chunk_indices.length = last_pos;
-  }
-
-  // append to active
-  e->active_pos = (u32)vec_len(&cs->active_chunk_indices);
-  vec_push(&cs->active_chunk_indices, &e->chunk_index);
-  e->where = CHUNK_RES_ACTIVE;
-}
-
-static void _make_cached(ChunkStore *cs, ChunkStoreEntryItem *it) {
-  ChunkEntry *e = &it->ent;
-  if (e->where == CHUNK_RES_CACHED)
-    return;
-
-  // remove from active list via swap-remove
-  u32 removed_pos = e->active_pos;
-  u32 last_pos = (u32)vec_len(&cs->active_chunk_indices) - 1u;
-
-  if (removed_pos != last_pos) {
-    u32 moved_idx = *VEC_AT(&cs->cached_chunk_indices, removed_pos, u32);
-    vec_remove_swap(&cs->active_chunk_indices, removed_pos);
-
-    // update moved entry active_pos
-    ChunkItem *moved_item = _item_at(cs, moved_idx);
-    u64 moved_key = _key_from_coord(moved_item->coord);
-    ChunkStoreEntryItem *moved_ent = _get_item(cs, moved_key);
-    if (moved_ent)
-      moved_ent->ent.active_pos = removed_pos;
-  } else {
-    cs->active_chunk_indices.length = last_pos;
-  }
-
-  // append to cache
-  e->cache_pos = (u32)vec_len(&cs->cached_chunk_indices);
-  vec_push(&cs->cached_chunk_indices, &e->chunk_index);
-  e->where = CHUNK_RES_CACHED;
-}
-
-static void _evict_until_budget(ChunkStore *cs) {
-  if (cs->max_cached == 0)
-    return;
-
-  while (vec_len(&cs->cached_chunk_indices) > cs->max_cached) {
-    u32 last = (u32)vec_len(&cs->cached_chunk_indices) - 1u;
-    u32 idx = _u32_at(&cs->cached_chunk_indices, last);
-    cs->cached_chunk_indices.length = last;
-
-    ChunkItem *slot = _item_at(cs, idx);
-    u64 key = _key_from_coord(slot->coord);
-
-    // delete map entry
-    hm_chunk_store_entry_del_u64(cs->coord_to_ent, key);
-
-    // destroy chunk + free slot
-    if (slot->tree) {
-      chunk_destroy(slot->tree);
-      slot->tree = NULL;
-    }
-    vec_push(&cs->free_chunk_indices, &idx);
-  }
-}
+static inline u32 _u32_at(const Vector *v, u32 i);
+static inline void _u32_set(Vector *v, u32 i, u32 x);
 
 ChunkStoreResult chunk_store_init(ChunkStore *cs, u32 max_cached) {
   if (!cs)
@@ -225,3 +108,144 @@ ChunkTree *chunk_store_chunk_at(ChunkStore *cs, u32 chunk_index) {
     return NULL;
   return _item_at(cs, chunk_index)->tree;
 }
+
+void chunk_storage_get_active(ChunkStore *cs) {}
+
+// --- Private Functions ---
+
+static u32 _alloc_index(ChunkStore *cs) {
+  if (vec_len(&cs->free_chunk_indices) > 0) {
+    u32 last = (u32)vec_len(&cs->free_chunk_indices) - 1u;
+    u32 idx = _u32_at(&cs->free_chunk_indices, last);
+    cs->free_chunk_indices.length = last;
+    return idx;
+  }
+  // grow chunk_items
+  ChunkItem it;
+  memset(&it, 0, sizeof(it));
+  vec_push(&cs->chunk_items, &it);
+  return (u32)vec_len(&cs->chunk_items) - 1u;
+}
+
+static ChunkStoreEntryItem *_ensure_loaded(ChunkStore *cs, ivec3 coord) {
+  u64 key = _key_from_coord(coord);
+  ChunkStoreEntryItem *found = _get_item(cs, key);
+  if (found)
+    return found;
+
+  u32 idx = _alloc_index(cs);
+  ChunkItem *slot = _item_at(cs, idx);
+
+  // allocate chunk if slot was free
+  if (slot->tree == NULL) {
+    slot->tree = chunk_create();
+  }
+  glm_ivec3_copy(coord, slot->coord);
+
+  // insert as CACHED (then caller can activate)
+  ChunkStoreEntryItem ni;
+  memset(&ni, 0, sizeof(ni));
+  ni.key = key;
+  ni.ent.chunk_index = idx;
+  ni.ent.where = CHUNK_STATE_CACHED;
+  ni.ent.cache_pos = (u32)vec_len(&cs->cached_chunk_indices);
+
+  vec_push(&cs->cached_chunk_indices, &idx);
+  hm_chunk_store_entry_set(cs->coord_to_ent, ni);
+
+  return _get_item(cs, key);
+}
+
+static void _evict_until_budget(ChunkStore *cs) {
+  if (cs->max_cached == 0)
+    return;
+
+  while (vec_len(&cs->cached_chunk_indices) > cs->max_cached) {
+    u32 last = (u32)vec_len(&cs->cached_chunk_indices) - 1u;
+    u32 idx = _u32_at(&cs->cached_chunk_indices, last);
+    cs->cached_chunk_indices.length = last;
+
+    ChunkItem *slot = _item_at(cs, idx);
+    u64 key = _key_from_coord(slot->coord);
+
+    // delete map entry
+    hm_chunk_store_entry_del_u64(cs->coord_to_ent, key);
+
+    // destroy chunk + free slot
+    if (slot->tree) {
+      chunk_destroy(slot->tree);
+      slot->tree = NULL;
+    }
+    vec_push(&cs->free_chunk_indices, &idx);
+  }
+}
+
+static ChunkStoreEntryItem *_get_item(ChunkStore *cs, u64 key) {
+  return hm_chunk_store_entry_get_u64(cs->coord_to_ent, key);
+}
+
+static inline ChunkItem *_item_at(ChunkStore *cs, u32 idx) { return &((ChunkItem *)cs->chunk_items.data)[idx]; }
+
+static inline u64 _key_from_coord(ivec3 c) { return hm_pack_vec3_i21(c[0], c[1], c[2]); }
+
+static void _make_active(ChunkStore *cs, ChunkStoreEntryItem *it) {
+  ChunkEntry *e = &it->ent;
+  if (e->where == CHUNK_STATE_ACTIVE)
+    return;
+
+  // remove from cached list via swap-remove
+  u32 removed_pos = e->cache_pos;
+  u32 last_pos = (u32)vec_len(&cs->cached_chunk_indices) - 1u;
+
+  if (removed_pos != last_pos) {
+    u32 moved_idx = *VEC_AT(&cs->cached_chunk_indices, removed_pos, u32);
+    vec_remove_swap(&cs->cached_chunk_indices, removed_pos);
+
+    // update moved entry cache_pos
+    ChunkItem *moved_item = _item_at(cs, moved_idx);
+    u64 moved_key = _key_from_coord(moved_item->coord);
+    ChunkStoreEntryItem *moved_ent = _get_item(cs, moved_key);
+    if (moved_ent)
+      moved_ent->ent.cache_pos = removed_pos;
+  } else {
+    cs->cached_chunk_indices.length = last_pos;
+  }
+
+  // append to active
+  e->active_pos = (u32)vec_len(&cs->active_chunk_indices);
+  vec_push(&cs->active_chunk_indices, &e->chunk_index);
+  e->where = CHUNK_STATE_ACTIVE;
+}
+
+static void _make_cached(ChunkStore *cs, ChunkStoreEntryItem *it) {
+  ChunkEntry *e = &it->ent;
+  if (e->where == CHUNK_STATE_CACHED)
+    return;
+
+  // remove from active list via swap-remove
+  u32 removed_pos = e->active_pos;
+  u32 last_pos = (u32)vec_len(&cs->active_chunk_indices) - 1u;
+
+  if (removed_pos != last_pos) {
+    u32 moved_idx = *VEC_AT(&cs->cached_chunk_indices, removed_pos, u32);
+    vec_remove_swap(&cs->active_chunk_indices, removed_pos);
+
+    // update moved entry active_pos
+    ChunkItem *moved_item = _item_at(cs, moved_idx);
+    u64 moved_key = _key_from_coord(moved_item->coord);
+    ChunkStoreEntryItem *moved_ent = _get_item(cs, moved_key);
+    if (moved_ent)
+      moved_ent->ent.active_pos = removed_pos;
+  } else {
+    cs->active_chunk_indices.length = last_pos;
+  }
+
+  // append to cache
+  e->cache_pos = (u32)vec_len(&cs->cached_chunk_indices);
+  vec_push(&cs->cached_chunk_indices, &e->chunk_index);
+  e->where = CHUNK_STATE_CACHED;
+}
+
+static inline u32 _u32_at(const Vector *v, u32 i) { return ((u32 *)v->data)[i]; }
+
+static inline void _u32_set(Vector *v, u32 i, u32 x) { ((u32 *)v->data)[i] = x; }

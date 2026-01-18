@@ -51,3 +51,6 @@ FixedGridResult fixed_grid_move_center(FixedGrid *g, ivec3 delta);
 // ---- Optional: access last diff without callbacks ----
 const Vector *fixed_grid_last_entered(const FixedGrid *g); // Vector<ivec3>
 const Vector *fixed_grid_last_left(const FixedGrid *g);    // Vector<ivec3>
+
+// --- Private Prototypes ---
+// --- Private Functions ---

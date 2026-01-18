@@ -1,10 +1,10 @@
 #pragma once
 #include "common.h"
 #include "hashmaputil.h"
+#include "iterator.h"
 #include "vector.h"
 #include <cglm/types.h> // ivec3
 #include <stdbool.h>
-
 typedef struct ChunkTree ChunkTree;
 
 /*
@@ -19,9 +19,10 @@ ChunkStore responsibility:
     - left coords    -> move active -> cached
 */
 
-typedef enum ChunkResidence {
-  CHUNK_RES_ACTIVE = 1,
-  CHUNK_RES_CACHED = 2,
+typedef enum ChunkState {
+  CHUNK_STATE_NONE,
+  CHUNK_STATE_ACTIVE = 1,
+  CHUNK_STATE_CACHED = 2,
 } ChunkResidence;
 
 typedef struct ChunkEntry {
@@ -58,20 +59,15 @@ typedef enum ChunkStoreResult {
   CHUNK_STORE_ERR_BAD_ARG,
 } ChunkStoreResult;
 
-// ---- lifecycle ----
-ChunkStoreResult chunk_store_init(ChunkStore *cs, u32 max_cached);
-void chunk_store_destroy(ChunkStore *cs);
-
-// ---- applying diffs from FixedGrid ----
-// entered_coords: Vector<ivec3>
+// PUBLIC FUNCTIONS
+void chunk_storage_get_active(ChunkStore *cs);
 ChunkStoreResult chunk_store_apply_entered(ChunkStore *cs, const Vector *entered_coords);
-
-// left_coords: Vector<ivec3>
 ChunkStoreResult chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector *left_coords);
-
-// ---- iteration ----
-static inline u32 chunk_store_active_count(const ChunkStore *cs) {
-  return (u32)vec_len((Vector *)&cs->active_chunk_indices);
-}
-static inline const Vector *chunk_store_active_indices(const ChunkStore *cs) { return &cs->active_chunk_indices; }
 ChunkTree *chunk_store_chunk_at(ChunkStore *cs, u32 chunk_index);
+void chunk_store_destroy(ChunkStore *cs);
+ChunkStoreResult chunk_store_init(ChunkStore *cs, u32 max_cached);
+
+static inline IndirectIter chunk_store_get_active(ChunkStore *cs) {
+  return iiter_make_from_vector(cs->active_chunk_indices, cs->chunk_items);
+}
+// END PUBLIC FUNCTIONS

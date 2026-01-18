@@ -53,19 +53,20 @@ typedef struct Vector {
 #define VECTOR_TYPES(...) _GET_MACRO(__VA_ARGS__, _VT_5, _VT_4, _VT_3, _VT_2, _VT_1)(__VA_ARGS__);
 
 // PUBLIC FUNCTIONS
+void *vec_at(Vector *vec, size_t index);
 
 u32 vec_bytes_len(const Vector *vec);
-u32 vec_len(const Vector *vec);
-u32 vec_push(Vector *vec, void *element);
-void *default_alloc(size_t size, void *ctx);
-void *default_realloc(void *ptr, size_t old, size_t new_s, void *ctx);
-void *vec_at(Vector *vec, size_t index);
-void default_free(void *ptr, void *ctx);
 void vec_clear(Vector *vec);
 void vec_destroy(Vector *vec);
 void vec_free(Vector *vec);
 void vec_init(Vector *vec, size_t elem_size, Allocator *allocator);
 void vec_init_with_capacity(Vector *vec, size_t capacity, size_t elem_size, Allocator *allocator);
+u32 vec_len(const Vector *vec);
+u32 vec_push(Vector *vec, void *element);
 void vec_realloc_capacity(Vector *vec, size_t new_cap);
 void vec_remove_at(Vector *vec, u32 index);
+void vec_remove_swap(Vector *vec, u32 index);
+void *default_alloc(size_t size, void *ctx);
+void default_free(void *ptr, void *ctx);
+void *default_realloc(void *ptr, size_t old, size_t new_s, void *ctx);
 // END PUBLIC FUNCTIONS

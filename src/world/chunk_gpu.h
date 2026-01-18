@@ -58,5 +58,5 @@ bool chunk_gpu_enqueue_upload(ChunkGpu *cg, ResourceManager *rm, TransferQueue *
 ChunkDescriptorIndices chunk_gpu_get_descriptor_indices(ChunkGpu *cg, M_Resource *rm);
 void chunk_gpu_init(ChunkGpu *cg, M_Resource *rm, ChunkUploadView view);
 bool chunk_gpu_poll(ChunkGpu *cg, M_Resource *rm, TransferQueue *queue);
-ChunkGpuUploadState chunk_gpu_state(const ChunkGpu *cg, ChunkGpuResKind res_type);
+ChunkGpuUploadState chunk_gpu_state(const ChunkGpu *cg, ChunkResType res_type);
 // END PUBLIC FUNCTIONS

@@ -38,7 +38,17 @@ u32 vec_push(Vector *vec, void *element) {
 
   return vec->length - 1;
 }
+void vec_remove_swap(Vector *vec, u32 index) {
+  if (vec->length > 1 && index != (vec->length - 1)) {
+    vec->length--;
+    return;
+  }
 
+  void *src = &vec->data[(vec->length - 1) * vec->element_size];
+  void *dst = &vec->data[index * vec->element_size];
+
+  memcpy(dst, src, vec->element_size);
+}
 void vec_remove_at(Vector *vec, u32 index) {
   memmove(&vec->data[index], &vec[index + 1], vec->element_size * (vec->length - index));
   vec->length--;

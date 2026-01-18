@@ -46,7 +46,8 @@ TransferQueue *transfer_init(VkDevice device, VkQueue transfer, u32 queue_fam, V
 }
 
 // LATER ON; SHOULD PROBABLY COPY OVER
-Ticket transfer_push_upload(TransferQueue *transfer, M_Resource *rm, ResHandle handle, u32 size, u32 aligment) {
+Ticket transfer_push_upload(TransferQueue *transfer, M_Resource *rm, ResHandle handle, u32 size, void *data,
+                            u32 aligment) {
   StagingSlice slice = sgr_alloc(transfer->staging_ring, size, aligment);
 
   if (!transfer->is_cmd_on) {

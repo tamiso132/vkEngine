@@ -1,69 +1,110 @@
-#include "cglm/call/vec3.h"
-#include "cglm/vec3-ext.h"
+#include "world.h"
+
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "cglm/ivec3.h"
+#include "cglm/types.h"
 #include "cglm/vec3.h"
-#include "common.h"
-#include "hashmaputil.h"
-#include "transfer_queue.h"
+#include "grid.h"
 #include "vector.h"
+#include "world/chunk.h"
+#include "world/storage.h"
 
-#include "shaders/rt/rt_shared.glsl"
-#include "world/chunk_internal.h"
-#include "world/world_internal.h"
+struct World {
+  WorldConfig cfg;
+  FixedGrid *grid;
+  ChunkStore chunks;
+};
 
-typedef struct WorldGridView {
-  vec3 min_corner;
-  GridSlots slots;
-} WorldGridView;
-
-WorldGridView *world_init() {
-  WorldGridView *view = calloc(sizeof(WorldGridView), 1);
-  view->slots.grid_slot = hm_grid_slot_new(64);
-  vec_init(&view->slots.chunk_trees, sizeof(ChunkTree), NULL);
-  return view;
+// --- coord conversion only belongs in World (game-space -> chunk-space) ---
+static void _player_pos_to_chunk_coord(const World *w, vec3 player_pos, ivec3 out_chunk) {
+  vec3 rel;
+  glm_vec3_sub(player_pos, (float *)w->cfg.min_corner, rel);
+  out_chunk[0] = (int)floorf(rel[0] / (float)w->cfg.chunk_size);
+  out_chunk[1] = (int)floorf(rel[1] / (float)w->cfg.chunk_size);
+  out_chunk[2] = (int)floorf(rel[2] / (float)w->cfg.chunk_size);
 }
 
-void world_tick_cpu(WorldGridView *view) {
-  // tick the cpu things
+// --- FixedGrid callbacks: just forward lists to ChunkStore ---
+static void _on_entered(const Vector *entered, void *user) {
+  World *w = (World *)user;
+  (void)chunk_store_apply_entered(&w->chunks, entered);
 }
 
-void world_async_transfer(WorldGridView *view, TransferQueue *transfer) {}
-
-void _world_load_chunk(WorldGridView *view, vec3 chunk_world_coord) {
-  // CHECK IF ALREADY EXISTED
-  // LOAD IF NOT EXISTED
-  // ADD TO UPLOAD LIST
-  // SET FLAG
+static void _on_left(const Vector *left, void *user) {
+  World *w = (World *)user;
+  (void)chunk_store_apply_left_to_cache(&w->chunks, left);
 }
 
-void _world_unload_chunk(WorldGridView *view, vec3 chunk_world_coord) {
-  // CHECK IF EXIST
-  // GET THE INDEX AND SET TO -1
-  // TRANSFER TO A LOADED HASHMAP,
+World *world_create(const WorldConfig *cfg) {
+  if (!cfg || cfg->visibility == 0 || cfg->chunk_size == 0)
+    return NULL;
+
+  World *w = (World *)calloc(1, sizeof(World));
+  if (!w)
+    return NULL;
+  w->cfg = *cfg;
+
+  // init chunk storage/residency
+  if (chunk_store_init(&w->chunks, cfg->max_cached) != CHUNK_STORE_OK) {
+    free(w);
+    return NULL;
+  }
+
+  // create fixed grid with callbacks
+  FixedGridConfig gc;
+  memset(&gc, 0, sizeof(gc));
+  gc.visibility = cfg->visibility;
+  glm_ivec3_zero(gc.initial_center);
+  gc.cb.on_entered = _on_entered;
+  gc.cb.on_left = _on_left;
+  gc.cb.user = w;
+
+  if (fixed_grid_create(&w->grid, &gc) != FIXED_GRID_OK) {
+    chunk_store_destroy(&w->chunks);
+    free(w);
+    return NULL;
+  }
+
+  // Optionally seed initial window (so store becomes populated immediately)
+  fixed_grid_set_center(w->grid, gc.initial_center);
+
+  return w;
 }
 
-// --- Private Prototypes ---
-static void _get_vec3_grid(WorldGridView *view, vec3 world_cordinate, vec3 out_grid_slot);
-
-void world_update_slots(WorldGridView *view, vec3 player_pos) {
-  vec3 player_grid = {};
-  _get_vec3_grid(view, player_pos, player_grid);
+void world_destroy(World *w) {
+  if (!w)
+    return;
+  if (w->grid)
+    fixed_grid_destroy(w->grid);
+  chunk_store_destroy(&w->chunks);
+  free(w);
 }
 
-// --- Private Functions ---
-
-static void _get_vec3_grid(WorldGridView *view, vec3 world_cordinate, vec3 out_grid_slot) {
-
-  vec3 relative_pos;
-  glm_vec3_sub(world_cordinate, view->min_corner, relative_pos);
-  glm_vec3_floor(relative_pos, relative_pos);
-  glm_vec3_scale(relative_pos, 1.0 / CHUNK_SIZE, out_grid_slot);
+void _update_slots(World *w, vec3 player_pos) {
+  if (!w)
+    return;
+  ivec3 player_chunk;
+  _player_pos_to_chunk_coord(w, player_pos, player_chunk);
+  fixed_grid_set_center(w->grid, player_chunk); // callbacks do the real work
 }
 
-static u32 _get_slot_grid(WorldGridView *view, vec3 world_cordinate) {
-  vec3 grid_coordinate = {};
-  _get_vec3_grid(view, world_cordinate, grid_coordinate);
+void world_cpu_tick(World *w, vec3 player_pos) {
+  if (!w)
+    return;
 
-  // x->z->y
-  return grid_coordinate[0] + grid_coordinate[2] * MAX_CHUNK_VISIBILITY +
-         grid_coordinate[1] * MAX_CHUNK_VISIBILITY * MAX_CHUNK_VISIBILITY;
+  _update_slots(w, player_pos);
+
+  // iterate active chunks
+  const Vector *act = chunk_store_active_indices(&w->chunks);
+  for (u32 i = 0; i < (u32)vec_len((Vector *)act); ++i) {
+    u32 chunk_index = ((u32 *)act->data)[i];
+    ChunkTree *ch = chunk_store_chunk_at(&w->chunks, chunk_index);
+    if (ch)
+      chunk_build_if_needed(ch);
+  }
 }
+
+u32 world_active_count(const World *w) { return w ? chunk_store_active_count(&w->chunks) : 0u; }

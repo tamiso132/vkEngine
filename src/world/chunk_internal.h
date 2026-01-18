@@ -8,6 +8,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "chunk.h"
+
 // ----- internal constants/types -----
 
 typedef struct ChunkTree ChunkTree;
@@ -16,13 +18,7 @@ typedef struct ChunkTree ChunkTree;
 
 typedef enum { NODE_EMPTY = 0, NODE_FULL = 1, NODE_MIXED = 2 } NodeState;
 
-typedef enum ChunkResType {
-  CHUNK_RES_NODES = 0,
-  CHUNK_RES_CHILDREN,
-  CHUNK_RES_PALETTE,
-  CHUNK_RES_LEAF_MATS,
-  CHUNK_RES__COUNT,
-} ChunkResType;
+
 
 typedef enum ChunkResTypeBits {
   CHUNK_RES_BITMASK_NODES = 1 << CHUNK_RES_NODES,

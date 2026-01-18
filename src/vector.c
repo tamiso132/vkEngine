@@ -63,8 +63,8 @@ void *vec_at(Vector *vec, size_t index) {
   return (char *)vec->data + (index * vec->element_size);
 }
 
-u32 vec_len(Vector *vec) { return vec->length; }
-u32 vec_bytes_len(Vector *vec) { return vec->length * vec->element_size; }
+u32 vec_len(const Vector *vec) { return vec->length; }
+u32 vec_bytes_len(const Vector *vec) { return vec->length * vec->element_size; }
 
 void vec_destroy(Vector *vec) {
   if (vec->data) {

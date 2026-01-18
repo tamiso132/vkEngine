@@ -1,5 +1,6 @@
 //! chunk_internal.h
 #include "chunk_internal.h"
+#include "shaders/rt/rt_shared.glsl"
 #include "vector.h"
 
 typedef struct WorkItem {
@@ -20,21 +21,23 @@ typedef struct Pyramid {
 #define BYTES_TO_KB 0.001
 
 // --- Private Prototypes ---
-static inline u32 u32_pow3(u32 a);
-static bool pyramid_init(Pyramid *p, u32 chunk_size, u32 tree_levels);
-static void pyramid_free(Pyramid *p);
-static u16 leaf_material_from_node(const ChunkBuildInput *in, u32 dense_idx, u32 axis_size, bool is_level0_brick);
+static void _print_vram_usage(ChunkBuildOutput *out);
+
 static void build_leaf_level0(const ChunkBuildInput *in, u64 *leaf_masks, NodeState *leaf_states, u32 axis);
 static void build_parent_level(u32 level, u64 **masks, NodeState **states, const u32 *axis);
+
 static void flatten_tree_bfs(const ChunkBuildInput *in, const Pyramid *p, ChunkBuildOutput *out);
+
 static bool in_bounds(int v);
-static u32 voxel_linear_index_u32(int x, int y, int z);
-static u32 idx3_linear_u32(u32 x, u32 y, u32 z, u32 N);
-static void idx_to_xyz_u32(u32 idx, u32 N, u32 *x, u32 *y, u32 *z);
-static u32 slot_linear_4x4x4(u32 lx, u32 ly, u32 lz);
-static u32 xorshift32(u32 *state);
+
+static u16 leaf_material_from_node(const ChunkBuildInput *in, u32 dense_idx, u32 axis_size, bool is_level0_brick);
+
+static void pyramid_free(Pyramid *p);
+static bool pyramid_init(Pyramid *p, u32 chunk_size, u32 tree_levels);
+
 static float rand01(u32 *state);
-static void _print_vram_usage(ChunkBuildOutput *out);
+
+static inline u32 u32_pow3(u32 a);
 
 // ----------------------------
 // Public API
@@ -72,6 +75,8 @@ ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scra
   return CHUNK_BUILD_OK;
 }
 
+// --- Private Functions ---
+
 static void _print_vram_usage(ChunkBuildOutput *out) {
   // 1. Calculate sizes (cast to size_t for %zu compatibility)
   size_t size_nodes = (size_t)vec_bytes_len(out->nodes);
@@ -95,94 +100,6 @@ static void _print_vram_usage(ChunkBuildOutput *out) {
            "========================",
            size_nodes, (u32)vec_len(out->nodes), size_indices, (u32)vec_len(out->child_indices), size_mats, voxel_count,
            voxel_count, total_bytes, (double)total_bytes / (1024.0 * 1024.0));
-}
-
-void _build_chunk_free(ChunkBuildOutput *out) {
-  if (!out)
-    return;
-  if (out->nodes->data)
-    free(out->nodes->data);
-  if (out->child_indices->data)
-    free(out->child_indices->data);
-  memset(out, 0, sizeof(*out));
-}
-
-// --- Private Functions ---
-
-// ----------------------------
-// Local helpers
-// ----------------------------
-static inline u32 u32_pow3(u32 a) { return a * a * a; }
-
-static bool pyramid_init(Pyramid *p, u32 chunk_size, u32 tree_levels) {
-  memset(p, 0, sizeof(*p));
-  p->level_count = tree_levels;
-
-  // Level 0 is bricks: (chunk_size/4)^3
-  p->axis[0] = chunk_size / 4u;
-  if (p->axis[0] == 0u)
-    return false;
-
-  for (u32 d = 0; d < p->level_count; ++d) {
-    if (d > 0)
-      p->axis[d] = p->axis[d - 1] / 4u;
-    if (p->axis[d] == 0u)
-      return false;
-
-    p->node_count[d] = u32_pow3(p->axis[d]);
-
-    p->masks[d] = (u64 *)calloc((size_t)p->node_count[d], sizeof(u64));
-    p->states[d] = (NodeState *)calloc((size_t)p->node_count[d], sizeof(NodeState));
-    if (!p->masks[d] || !p->states[d])
-      return false;
-  }
-  return true;
-}
-
-static void pyramid_free(Pyramid *p) {
-  for (u32 d = 0; d < p->level_count; ++d) {
-    free(p->masks[d]);
-    free(p->states[d]);
-    p->masks[d] = NULL;
-    p->states[d] = NULL;
-  }
-}
-
-static u16 leaf_material_from_node(const ChunkBuildInput *in, u32 dense_idx, u32 axis_size, bool is_level0_brick) {
-  const u32 chunk_size = in->chunk_size;
-
-  if (!is_level0_brick) {
-    // For FULL internal nodes, sample one voxel within the covered region.
-    u32 px, py, pz;
-    idx_to_xyz_u32(dense_idx, axis_size, &px, &py, &pz);
-
-    u32 scale = chunk_size / axis_size;
-    u32 vx = px * scale;
-    u32 vy = py * scale;
-    u32 vz = pz * scale;
-
-    return in->vox_mat[voxel_linear_index_u32((int)vx, (int)vy, (int)vz)];
-  }
-
-  // Level-0 bricks: find first set voxel and return its material.
-  u32 bx, by, bz;
-  idx_to_xyz_u32(dense_idx, axis_size, &bx, &by, &bz);
-
-  for (u32 i = 0; i < 64u; ++i) {
-    u32 lx = i & 3u;
-    u32 ly = (i >> 2u) & 3u;
-    u32 lz = (i >> 4u) & 3u;
-
-    u32 vx = bx * 4u + lx;
-    u32 vy = by * 4u + ly;
-    u32 vz = bz * 4u + lz;
-
-    u32 vidx = voxel_linear_index_u32((int)vx, (int)vy, (int)vz);
-    if ((in->bits[vidx >> 6] >> (vidx & 63u)) & 1ull)
-      return in->vox_mat[vidx];
-  }
-
-  return 0;
 }
 
 // Stage A: leaf masks
@@ -384,8 +301,83 @@ static void flatten_tree_bfs(const ChunkBuildInput *in, const Pyramid *p, ChunkB
 
 static bool in_bounds(int v) { return (v >= 0) && (v < (int)CHUNK_SIZE); }
 
+static u16 leaf_material_from_node(const ChunkBuildInput *in, u32 dense_idx, u32 axis_size, bool is_level0_brick) {
+  const u32 chunk_size = in->chunk_size;
+
+  if (!is_level0_brick) {
+    // For FULL internal nodes, sample one voxel within the covered region.
+    u32 px, py, pz;
+    idx_to_xyz_u32(dense_idx, axis_size, &px, &py, &pz);
+
+    u32 scale = chunk_size / axis_size;
+    u32 vx = px * scale;
+    u32 vy = py * scale;
+    u32 vz = pz * scale;
+
+    return in->vox_mat[voxel_linear_index_u32((int)vx, (int)vy, (int)vz)];
+  }
+
+  // Level-0 bricks: find first set voxel and return its material.
+  u32 bx, by, bz;
+  idx_to_xyz_u32(dense_idx, axis_size, &bx, &by, &bz);
+
+  for (u32 i = 0; i < 64u; ++i) {
+    u32 lx = i & 3u;
+    u32 ly = (i >> 2u) & 3u;
+    u32 lz = (i >> 4u) & 3u;
+
+    u32 vx = bx * 4u + lx;
+    u32 vy = by * 4u + ly;
+    u32 vz = bz * 4u + lz;
+
+    u32 vidx = voxel_linear_index_u32((int)vx, (int)vy, (int)vz);
+    if ((in->bits[vidx >> 6] >> (vidx & 63u)) & 1ull)
+      return in->vox_mat[vidx];
+  }
+
+  return 0;
+}
+
+static void pyramid_free(Pyramid *p) {
+  for (u32 d = 0; d < p->level_count; ++d) {
+    free(p->masks[d]);
+    free(p->states[d]);
+    p->masks[d] = NULL;
+    p->states[d] = NULL;
+  }
+}
+
+static bool pyramid_init(Pyramid *p, u32 chunk_size, u32 tree_levels) {
+  memset(p, 0, sizeof(*p));
+  p->level_count = tree_levels;
+
+  // Level 0 is bricks: (chunk_size/4)^3
+  p->axis[0] = chunk_size / 4u;
+  if (p->axis[0] == 0u)
+    return false;
+
+  for (u32 d = 0; d < p->level_count; ++d) {
+    if (d > 0)
+      p->axis[d] = p->axis[d - 1] / 4u;
+    if (p->axis[d] == 0u)
+      return false;
+
+    p->node_count[d] = u32_pow3(p->axis[d]);
+
+    p->masks[d] = (u64 *)calloc((size_t)p->node_count[d], sizeof(u64));
+    p->states[d] = (NodeState *)calloc((size_t)p->node_count[d], sizeof(NodeState));
+    if (!p->masks[d] || !p->states[d])
+      return false;
+  }
+  return true;
+}
+
 // -------------------- Linear helpers --------------------
 // idx = x + N*(y + N*z)
-
 // 24-bit fraction -> [0,1)
 static float rand01(u32 *state) { return (xorshift32(state) & 0x00FFFFFFu) / 16777216.0f; }
+
+// ----------------------------
+// Local helpers
+// ----------------------------
+static inline u32 u32_pow3(u32 a) { return a * a * a; }

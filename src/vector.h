@@ -54,8 +54,8 @@ typedef struct Vector {
 
 // PUBLIC FUNCTIONS
 
-u32 vec_bytes_len(Vector *vec);
-u32 vec_len(Vector *vec);
+u32 vec_bytes_len(const Vector *vec);
+u32 vec_len(const Vector *vec);
 u32 vec_push(Vector *vec, void *element);
 void *default_alloc(size_t size, void *ctx);
 void *default_realloc(void *ptr, size_t old, size_t new_s, void *ctx);

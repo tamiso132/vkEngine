@@ -1,32 +1,27 @@
-// chunk.h
+
 #pragma once
-#include "command.h"
-#include "common.h"
+
+#include "world/chunk_internal.h"
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef struct ChunkTree ChunkTree; // opaque to users
+typedef struct ChunkTree ChunkTree; // opaque outside of chunk internals
 
-typedef struct ChunkGpuResources {
-  ResHandle gpu_node;
-  ResHandle gpu_child_indices;
-  ResHandle gpu_palette;
-  ResHandle gpu_leaf_mats;
-} ChunkGpuResources;
+// A CPU-only description of what a renderer/uploader may want to upload.
+// Pointers remain valid until the next successful rebuild of the same chunk.
+typedef struct ChunkUploadView {
+  Vector p_res_data[CHUNK_RES__COUNT];
+  uint64_t build_version;
+} ChunkUploadView;
 
 // PUBLIC FUNCTIONS
 
-void chunk_tick(ChunkTree *chunk, M_GPU *gpu, M_Resource *rm, CmdBuffer cmd);
+void chunk_build_if_needed(ChunkTree *chunk);
+uint64_t chunk_build_version(const ChunkTree *chunk);
 
-// lifecycle
-ChunkTree *chunk_init(M_Resource *rm);
+// ---- Lifecycle (CPU only) ----
+ChunkTree *chunk_create(void);
 void chunk_destroy(ChunkTree *chunk);
-
-void chunk_rebuild_if_needed(ChunkTree *chunk);
-
-// editing (public)
-bool _edit_get_voxel(const ChunkTree *chunk, int x, int y, int z);
-void _edit_set_voxel(ChunkTree *chunk, int x, int y, int z, bool on);
-void _edit_set_voxel_color(ChunkTree *chunk, int x, int y, int z, bool on, uint16_t mat);
-
-ChunkGpuResources chunk_get_gpu_resource(ChunkTree *chunk);
+bool chunk_get_upload_view(const ChunkTree *chunk, ChunkUploadView *out_view);
+bool chunk_is_dirty(const ChunkTree *chunk);
+// END PUBLIC FUNCTIONS

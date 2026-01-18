@@ -1,47 +1,57 @@
-// chunk_internal.h
+
+// chunk_internal.h (CPU-only internals)
 #pragma once
 
-#include "chunk.h" // brings ChunkTree forward decl
 #include "common.h"
+#include "res_async.h"
 #include "vector.h"
-#include "vox_loader.h"
 #include <stdbool.h>
 #include <stdint.h>
-#include "shaders/rt/rt_shared.glsl"
-// ----- internal constants -----
 
-typedef struct CmdBuffer CmdBuffer;
+// ----- internal constants/types -----
 
-typedef uint32_t u32;
-typedef uint16_t u16;
-typedef uint64_t u64;
+typedef struct ChunkTree ChunkTree;
+
+#define CHUNK_SIZE 64
 
 typedef enum { NODE_EMPTY = 0, NODE_FULL = 1, NODE_MIXED = 2 } NodeState;
+
+typedef enum ChunkResType {
+  CHUNK_RES_NODES = 0,
+  CHUNK_RES_CHILDREN,
+  CHUNK_RES_PALETTE,
+  CHUNK_RES_LEAF_MATS,
+  CHUNK_RES__COUNT,
+} ChunkResType;
+
+typedef enum ChunkResTypeBits {
+  CHUNK_RES_BITMASK_NODES = 1 << CHUNK_RES_NODES,
+  CHUNK_RES_BITMASK_CHILDREN = 1 << CHUNK_RES_CHILDREN,
+  CHUNK_RES_BITMASK_PALETTE = 1 << CHUNK_RES_PALETTE,
+  CHUNK_RES_BITMASK_LEAF_MATS = 1 << CHUNK_RES_LEAF_MATS,
+} ChunkResTypeBits;
 
 typedef struct Node {
   u64 mask;
 } Node;
+
 typedef struct ChildIndex {
   u32 first_child_index;
 } ChildIndex;
 
 struct ChunkTree {
-  // Source
   u64 bits[(CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE + 63) / 64];
   u16 vox_mat[CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE];
 
-  // Derived products
-  Vector nodes;         // Node[]
-  Vector child_indices; // ChildIndex[]
-  Vector palette;       // u32 RGBA[]
-  Vector leaf_mats;
+  // Node[]
+  // ChildIndex[]
+  // u32 RGBA[]
+  // u16 materials[]
+  Vector p_res_data[CHUNK_RES__COUNT];
 
-  // Dirty tracking
+  ChunkResTypeBits pending_bits;
   bool is_dirty;
-  bool need_upload;
-  u32 pending_edits;
-
-  ChunkGpuResources res;
+  u64 build_version;
 };
 
 // --- Build interface (Input -> Output) ---
@@ -55,8 +65,15 @@ typedef struct {
 typedef struct {
   Vector *nodes;         // Node[]
   Vector *child_indices; // ChildIndex[]
-  Vector *leaf_mats;
+  Vector *leaf_mats;     // u16[]
 } ChunkBuildOutput;
+
+typedef struct ChunkBuildScratch {
+  void *mem;
+  size_t size;
+  size_t offset;
+  size_t peak_offset;
+} ChunkBuildScratch;
 
 typedef enum {
   CHUNK_BUILD_OK = 0,
@@ -64,73 +81,21 @@ typedef enum {
   CHUNK_BUILD_ERR_BAD_CONFIG,
 } ChunkBuildResult;
 
-typedef struct {
-  int x, y, z;
-  u16 mat;
-} ChunkVoxelEdit;
-
-typedef enum {
-  CHUNK_VOX_IMPORT_OK = 0,
-  CHUNK_VOX_IMPORT_ERR_IO,
-  CHUNK_VOX_IMPORT_ERR_OOM,
-} ChunkVoxImportResult;
-
-// --- GPU upload interface (Input -> Output) ---
-typedef struct {
-  const void *node_bytes;
-  u32 node_size;
-  const void *child_bytes;
-  u32 child_size;
-  const void *pal_bytes;
-  u32 pal_size;
-} ChunkGpuUploadInput;
-
-typedef struct {
-  u32 gpu_node;
-  u32 gpu_child;
-  u32 gpu_palette;
-} ChunkGpuUploadOutput;
-
-typedef struct ChunkGpuCreateDesc {
-  // Minimum capacities; you can pass exact sizes or a growth policy.
-  size_t node_capacity_bytes;
-  size_t child_capacity_bytes;
-  size_t palette_capacity_bytes;
-} ChunkGpuCreateDesc;
-
-typedef enum ChunkGpuResult {
-  CHUNK_GPU_OK = 0,
-  CHUNK_GPU_ERR_CREATE,
-  CHUNK_GPU_ERR_UPLOAD,
-} ChunkGpuResult;
-
-typedef struct ChunkBuildScratch {
-  // If provided, builder uses this as a bump allocator for temporary memory.
-  // If NULL or size==0, builder falls back to calloc/free internally (Option A).
-  void *mem;
-  size_t size;
-  size_t offset;
-
-  // Optional: counters for debugging/profiling
-  size_t peak_offset;
-} ChunkBuildScratch;
-
 // PUBLIC FUNCTIONS
 
-void _resource_init(ChunkTree *chunk, M_Resource *rm);
+ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scratch, ChunkBuildOutput *out);
+
+u32 _edit_add_color(ChunkTree *chunk, u32 rgba);
+bool _edit_get_voxel(const ChunkTree *chunk, int x, int y, int z);
+void _edit_set_voxel(ChunkTree *chunk, int x, int y, int z, bool set_active);
+void _edit_set_voxel_color(ChunkTree *chunk, int x, int y, int z, bool on, u16 mat);
+u32 _edit_add_color(ChunkTree *chunk, u32 rgba);
+bool chunk_in_bounds(int v);
 void _upload_chunk(ChunkTree *chunk, M_GPU *gpu, M_Resource *rm, CmdBuffer cmd);
 
-// VOXEL EDITS
-bool chunk_in_bounds(int v);
-void _edit_fill_random(ChunkTree *chunk, u32 seed, float density);
-void _edit_set_box(ChunkTree *chunk, int x, int y, int z, u32 palette_index, u32 size);
-void _edit_set_voxel_color(ChunkTree *chunk, int x, int y, int z, bool on, u16 mat);
-bool chunk_import_vox_file(ChunkTree *chunk, const char *path, VoxAxisPreset vox_flags, bool center_in_chunk);
-u32 _edit_add_color(ChunkTree *chunk, u32 rgba);
+// END PUBLIC FUNCTIONS
 
-ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scratch, ChunkBuildOutput *out);
-void _build_chunk_free(ChunkBuildOutput *out);
-
+// --- Helpers ---
 inline static u32 voxel_linear_index_u32(int x, int y, int z) {
   return (u32)x + (u32)CHUNK_SIZE * ((u32)y + (u32)CHUNK_SIZE * (u32)z);
 }

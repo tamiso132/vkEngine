@@ -1,70 +1,73 @@
-// chunk.c
+
 #include "chunk.h"
 #include "chunk_internal.h"
-#include "common.h"
-#include "vox_loader.h"
+#include <stdlib.h>
 #include <string.h>
 
+#include "shaders/rt/rt_shared.glsl"
+
 // --- Private Prototypes ---
+ChunkTree *chunk_create(void) {
+  ChunkTree *chunk = (ChunkTree *)calloc(1, sizeof(ChunkTree));
+  if (!chunk)
+    return NULL;
 
-ChunkTree *chunk_init(M_Resource *rm) {
-  ChunkTree *chunk = calloc(sizeof(ChunkTree), 1);
-  vec_init(&chunk->nodes, sizeof(Node), NULL);
-  vec_init(&chunk->child_indices, sizeof(ChildIndex), NULL);
-  vec_init(&chunk->palette, sizeof(u32), NULL);
-  vec_init(&chunk->leaf_mats, sizeof(u16), NULL);
+  vec_init(&chunk->p_res_data[CHUNK_RES_NODES], sizeof(Node), NULL);
+  vec_init(&chunk->p_res_data[CHUNK_RES_CHILDREN], sizeof(ChildIndex), NULL);
+  vec_init(&chunk->p_res_data[CHUNK_RES_CHILDREN], sizeof(u32), NULL);
+  vec_init(&chunk->p_res_data[CHUNK_RES_LEAF_MATS], sizeof(u16), NULL);
 
-  chunk_import_vox_file(chunk, "assets/room.vox", VOX_AXIS_SWAP_YZ, false);
-  // u32 red = _edit_add_color(chunk, RGBA(255, 0, 0, 255));
-  // u32 blue = _edit_add_color(chunk, RGBA(0, 255, 0, 255));
-
-  // _edit_add_color(chunk, RGBA(0, 0, 255, 255));
-  // _edit_set_box(chunk, 5, 5, 5, red, 1);
-  // _edit_set_box(chunk, 6, 6, 6, blue, 1);
-
-  chunk->is_dirty = true;
-  chunk_rebuild_if_needed(chunk);
-  _resource_init(chunk, rm);
+  chunk->is_dirty = false;
+  chunk->build_version = 0;
   return chunk;
-  // Example content lives elsewhere, not in init long-term.
 }
 
 void chunk_destroy(ChunkTree *chunk) {
-  if (chunk->nodes.data)
-    free(chunk->nodes.data);
-  if (chunk->child_indices.data)
-    free(chunk->child_indices.data);
-  if (chunk->palette.data)
-    free(chunk->palette.data);
+  if (!chunk)
+    return;
+
+  for (u32 i = 0; i < CHUNK_RES__COUNT; i++)
+    vec_free(&chunk->p_res_data[i]);
+
   memset(chunk, 0, sizeof(*chunk));
+  free(chunk);
 }
 
-void chunk_rebuild_if_needed(ChunkTree *chunk) {
-  if (!chunk->is_dirty)
+uint64_t chunk_build_version(const ChunkTree *chunk) { return chunk ? chunk->build_version : 0; }
+bool chunk_is_dirty(const ChunkTree *chunk) { return chunk ? chunk->is_dirty : false; }
+
+void chunk_build_if_needed(ChunkTree *chunk) {
+  if (!chunk || !chunk->is_dirty)
     return;
 
   ChunkBuildOutput out = {
-      .child_indices = &chunk->child_indices, .nodes = &chunk->nodes, .leaf_mats = &chunk->leaf_mats};
+      .child_indices = &chunk->p_res_data[CHUNK_RES_CHILDREN],
+      .nodes = &chunk->p_res_data[CHUNK_RES_NODES],
+      .leaf_mats = &chunk->p_res_data[CHUNK_RES_LEAF_MATS],
+  };
 
   ChunkBuildInput input = {
-      .chunk_size = CHUNK_SIZE, .bits = chunk->bits, .tree_levels = TREE_LEVELS, .vox_mat = chunk->vox_mat};
-  _build_chunk(&input, NULL, &out);
-  chunk->pending_edits = 0;
-}
+      .chunk_size = CHUNK_SIZE,
+      .bits = chunk->bits,
+      .tree_levels = TREE_LEVELS,
+      .vox_mat = chunk->vox_mat,
+  };
 
-void chunk_tick(ChunkTree *chunk, M_GPU *gpu, M_Resource *rm, CmdBuffer cmd) {
-  if (chunk->is_dirty) {
-
-    ChunkBuildOutput out = {
-        .child_indices = &chunk->child_indices, .nodes = &chunk->nodes, .leaf_mats = &chunk->leaf_mats};
-    ChunkBuildInput input = {
-        .chunk_size = CHUNK_SIZE, .bits = chunk->bits, .tree_levels = TREE_LEVELS, .vox_mat = chunk->vox_mat};
-
-    _build_chunk(&input, NULL, &out);
-    chunk->pending_edits = 0;
+  ChunkBuildResult r = _build_chunk(&input, NULL, &out);
+  if (r == CHUNK_BUILD_OK) {
+    chunk->is_dirty = false;
+    chunk->build_version += 1;
   }
-  chunk->pending_edits = 0;
-  _upload_chunk(chunk, gpu, rm, cmd);
+  // If build fails, keep dirty so you can retry later.
 }
 
-ChunkGpuResources chunk_get_gpu_resource(ChunkTree *chunk) { return chunk->res; }
+bool chunk_get_upload_view(const ChunkTree *chunk, ChunkUploadView *out_view) {
+  if (!chunk || !out_view)
+    return false;
+
+  if (chunk->build_version == 0)
+    return false;
+
+  memcpy(out_view->p_res_data, chunk->p_res_data, sizeof(chunk->p_res_data));
+}
+// --- Private Functions ---

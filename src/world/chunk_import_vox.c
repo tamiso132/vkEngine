@@ -1,7 +1,31 @@
-//
+
 #include "chunk_internal.h"
-#include "vox_loader.h"
-#include "world/chunk.h"
+#include "vox_loader.h" // only here, not in chunk.h
+// --- Private Prototypes ---
+static void import_vox_models(ChunkTree *chunk, u32 palette_base, const VoxFile *vf, i32 base_x, i32 base_y, i32 base_z,
+                              bool center_in_chunk);
+
+bool chunk_import_vox_file(ChunkTree *chunk, const char *path, int vox_flags, bool center_in_chunk) {
+  if (!chunk || !path)
+    return false;
+
+  VoxFile vf = {};
+  if (!vox_load(path, (VoxAxisPreset)vox_flags, &vf, NULL))
+    return false;
+
+  u32 palette_base = (u32)vec_len(&chunk->p_res_data[CHUNK_RES_PALETTE]);
+  u32 added_colors_len = vec_len(&vf.used_rgba);
+  for (u32 i = 0; i < added_colors_len; ++i) {
+    u32 rgba = *VEC_AT(&vf.used_rgba, i, u32);
+    vec_push(&chunk->p_res_data[CHUNK_RES_PALETTE], &rgba);
+    chunk->pending_bits |= CHUNK_RES_PALETTE;
+  }
+
+  import_vox_models(chunk, palette_base, &vf, 0, 0, 0, center_in_chunk);
+  return true;
+}
+
+// --- Private Functions ---
 
 static void import_vox_models(ChunkTree *chunk, u32 palette_base, const VoxFile *vf, i32 base_x, i32 base_y, i32 base_z,
                               bool center_in_chunk) {
@@ -40,23 +64,4 @@ static void import_vox_models(ChunkTree *chunk, u32 palette_base, const VoxFile 
       _edit_set_voxel_color(chunk, x, y, z, true, mat_index);
     }
   }
-
-  chunk->is_dirty = true;
-}
-
-bool chunk_import_vox_file(ChunkTree *chunk, const char *path, VoxAxisPreset vox_flags, bool center_in_chunk) {
-  VoxFile vf = {};
-  if (!vox_load(path, vox_flags, &vf, NULL))
-    return false;
-
-  // append used palette
-  u32 palette_base = (u32)vec_len(&chunk->palette);
-  for (u32 i = 0; i < (u32)vec_len(&vf.used_rgba); ++i) {
-    u32 rgba = *VEC_AT(&vf.used_rgba, i, u32);
-    vec_push(&chunk->palette, &rgba);
-  }
-
-  import_vox_models(chunk, palette_base, &vf, 0, 0, 0, center_in_chunk);
-  // (free vf if needed by your loader)
-  return true;
 }

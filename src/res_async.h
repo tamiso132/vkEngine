@@ -1,10 +1,18 @@
 #pragma once
 #include "command.h"
-typedef struct AsyncBuffer AsyncBuffer;
+
+typedef struct AsyncBuffer {
+  // front and back buffer
+  ResHandle buffers[2];
+  u32 active_b_index;
+} AsyncBuffer;
+
 // PUBLIC FUNCTIONS
 
-ResHandle async_get_active_handle(AsyncBuffer *ab);
+ResHandle async_get_active_buffer(AsyncBuffer *ab);
+ResHandle async_get_backbuffer(AsyncBuffer *async);
 
-void async_check_upload_ready(M_Resource *rm, AsyncBuffer *ab);
 void async_init(M_Resource *rm, RGBufferInfo *info, AsyncBuffer *ab);
-void async_update(M_Resource *rm, CmdBuffer cmd, AsyncBuffer *ab, VkFence *fence, void *data, uint64_t size);
+void async_swap(M_Resource *rm, AsyncBuffer *ab);
+
+// END PUBLIC FUNCTIONS

@@ -1,53 +1,155 @@
-//! chunk_internal.h
+#include "chunk_gpu.h"
 #include "chunk.h"
 #include "chunk_internal.h"
 #include "command.h"
+#include "common.h"
+#include "res_async.h"
+#include "resource/rm_internal.h"
+#include "transfer_queue.h"
+
+u32 PENDING_BIT_MASK = (1 << (CHUNK_GPU_UPLOAD__COUNT)) - 1;
 
 // --- Private Prototypes ---
 
-void _resource_init(ChunkTree *chunk, M_Resource *rm) {
+static inline void _set_chunk_state(u32 *pending_mask, ChunkGpuResKind type, ChunkGpuUploadState new_state);
+
+static inline ChunkGpuUploadState _get_chunk_state(const u32 pending_mask, ChunkGpuResKind type);
+
+static inline u32 _get_pending_idle_mask();
+
+void chunk_gpu_init(ChunkGpu *cg, M_Resource *rm, ChunkUploadView view) {
+  memset(cg, 0, sizeof(*cg));
+
   RGBufferInfo node_info = {.name = "NodeBuffer",
-                            .capacity = vec_bytes_len(&chunk->nodes),
+                            .capacity = view.p_size[CHUNK_GPU_RES_NODES],
                             .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                             .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
 
   RGBufferInfo child_info = {.name = "childIndexBuffer",
-                             .capacity = vec_bytes_len(&chunk->child_indices),
+                             .capacity = view.p_size[CHUNK_GPU_RES_CHILDREN],
                              .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                              .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
 
   RGBufferInfo pal_info = {.name = "Palette",
-                           .capacity = vec_bytes_len(&chunk->palette),
+                           .capacity = view.p_size[CHUNK_GPU_RES_PALETTE],
                            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                            .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
 
   RGBufferInfo leaf_info = {.name = "LeafMatBuffer",
-                            .capacity = vec_bytes_len(&chunk->leaf_mats),
+                            .capacity = view.p_size[CHUNK_GPU_RES_LEAFMATS],
                             .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                             .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
 
-  chunk->res.gpu_leaf_mats = rm_create_buffer(rm, &leaf_info);
-
-  chunk->res.gpu_child_indices = rm_create_buffer(rm, &child_info);
-  chunk->res.gpu_node = rm_create_buffer(rm, &node_info);
-  chunk->res.gpu_palette = rm_create_buffer(rm, &pal_info);
-
-  // After creating GPU buffers, you likely want an upload
-  chunk->need_upload = true;
+  async_init(rm, &node_info, &cg->buffers[CHUNK_GPU_RES_NODES]->async);
+  async_init(rm, &child_info, &cg->buffers[CHUNK_GPU_RES_CHILDREN]->async);
+  async_init(rm, &node_info, &cg->buffers[CHUNK_GPU_RES_PALETTE]->async);
+  async_init(rm, &node_info, &cg->buffers[CHUNK_GPU_RES_LEAFMATS]->async);
 }
 
-void _upload_chunk(ChunkTree *chunk, M_GPU *gpu, M_Resource *rm, CmdBuffer cmd) {
-  if (!chunk->need_upload)
+void chunk_gpu_deinit(ChunkGpu *cg, ResourceManager *rm) {
+  if (!cg)
     return;
-
-  cmd_buffer_upload(cmd, gpu, rm, chunk->res.gpu_node, chunk->nodes.data, vec_bytes_len(&chunk->nodes));
-  cmd_buffer_upload(cmd, gpu, rm, chunk->res.gpu_palette, chunk->palette.data, vec_bytes_len(&chunk->palette));
-
-  cmd_buffer_upload(cmd, gpu, rm, chunk->res.gpu_child_indices, chunk->child_indices.data,
-                    vec_bytes_len(&chunk->child_indices));
-
-  cmd_buffer_upload(cmd, gpu, rm, chunk->res.gpu_leaf_mats, chunk->leaf_mats.data, vec_bytes_len(&chunk->leaf_mats));
-
-  chunk->need_upload = false;
+  for (u32 k = 0; k < CHUNK_GPU_RES__COUNT; ++k) {
+    if (cg->buffers[k]) {
+      // TODO  async_destroy(rm, cg->buffers[k]);
+      free(cg->buffers[k]);
+      cg->buffers[k] = NULL;
+    }
+  }
+  memset(cg, 0, sizeof(*cg));
 }
+
+// ============================================================
+// query
+// ============================================================
+ChunkGpuUploadState chunk_gpu_state(const ChunkGpu *cg, ChunkGpuResKind res_type) { return cg->pending_mask; }
+
+ChunkDescriptorIndices chunk_gpu_get_descriptor_indices(ChunkGpu *cg, M_Resource *rm) {
+  ChunkDescriptorIndices out = {0};
+  if (!cg)
+    return out;
+
+  out.nodes_id = rm_get_buffer_index(rm, async_get_active_buffer(&cg->buffers[CHUNK_GPU_RES_NODES]->async));
+  out.child_index_id = rm_get_buffer_index(rm, async_get_active_buffer(&cg->buffers[CHUNK_GPU_RES_CHILDREN]->async));
+  out.palette_id = rm_get_buffer_index(rm, async_get_active_buffer(&cg->buffers[CHUNK_GPU_RES_PALETTE]->async));
+  out.leaf_mat_id = rm_get_buffer_index(rm, async_get_active_buffer(&cg->buffers[CHUNK_GPU_RES_LEAFMATS]->async));
+
+  return out;
+}
+
+// ============================================================
+// enqueue upload
+// ============================================================
+bool chunk_gpu_enqueue_upload(ChunkGpu *cg, ResourceManager *rm, TransferQueue *transfer,
+                              const ChunkUploadView *upload_data) {
+
+  const ChunkUploadView *ud = (const ChunkUploadView *)upload_data;
+
+  const u32 aligment = 16;
+
+  // Issue per-resource staging allocations + memcpy into staging
+  for (u32 k = 0; k < CHUNK_GPU_RES__COUNT; ++k) {
+
+    if (upload_data->p_size[k] == 0)
+      continue;
+
+    AsyncBuffer *ab = &cg->buffers[k]->async;
+
+    ResHandle back_buffer = async_get_backbuffer(ab);
+
+    cg->pending_ticket = transfer_push_upload(transfer, (M_Resource *)rm, back_buffer, upload_data->p_size[k], 16);
+    _set_chunk_state(&cg->pending_mask, k, CHUNK_GPU_UPLOAD_IN_FLIGHT);
+  }
+
+  return true;
+}
+
+// ============================================================
+// poll + swap
+// ============================================================
+bool chunk_gpu_poll(ChunkGpu *cg, M_Resource *rm, TransferQueue *queue) {
+  u32 idle_mask = _get_pending_idle_mask();
+  if ((cg->pending_mask & idle_mask) == idle_mask)
+    return true;
+
+  u64 current_ticket = transfer_get_current_ticket_completed(queue);
+  if (current_ticket >= cg->pending_ticket) {
+    // TODO, ITERATE OVER ALL BUFFERS AND SWAP IF NOT IDLE
+    for (u32 i = 0; i < CHUNK_GPU_RES__COUNT; i++) {
+      u32 pending_state = _get_chunk_state(cg->pending_mask, i);
+      if (pending_state != 1 << CHUNK_GPU_UPLOAD_IN_FLIGHT)
+        continue;
+
+      async_swap(rm, &cg->buffers[i]->async);
+      _set_chunk_state(&cg->pending_mask, i, CHUNK_GPU_UPLOAD_IDLE);
+
+      if (cg->buffers[i]->queued_copy.length != 0) {
+        // TODO, Enqueue stuff here and set it to PENDING AGAIN
+      }
+    }
+  }
+  return true;
+}
+
 // --- Private Functions ---
+
+static inline void _set_chunk_state(u32 *pending_mask, ChunkGpuResKind type, ChunkGpuUploadState new_state) {
+
+  u32 shift_base = type * CHUNK_GPU_UPLOAD__COUNT;
+  *pending_mask &= ~(PENDING_BIT_MASK << shift_base);
+  *pending_mask |= (1 << (shift_base + new_state));
+}
+
+static inline ChunkGpuUploadState _get_chunk_state(const u32 pending_mask, ChunkGpuResKind type) {
+  u32 shift_base = type * CHUNK_GPU_UPLOAD__COUNT;
+  return (pending_mask >> shift_base) & PENDING_BIT_MASK;
+}
+
+static inline u32 _get_pending_idle_mask() {
+  u32 m = 0;
+  for (u32 type = 0; type < (u32)CHUNK_GPU_RES__COUNT; ++type) {
+    u32 shift_base = type * (u32)CHUNK_GPU_UPLOAD__COUNT;
+    m |= (1u << shift_base); // idle is bit0 in each field
+  }
+  return m;
+}

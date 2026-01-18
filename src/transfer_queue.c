@@ -27,8 +27,8 @@ typedef struct TransferQueue {
 // --- Private Prototypes ---
 static Frame _get_frame(TransferQueue *transfer);
 
-TransferQueue *init_queue(VkDevice device, VkQueue transfer, u32 queue_fam, VmaAllocator allocator, u64 capacity,
-                          u32 max_frame_in_flight) {
+TransferQueue *transfer_init(VkDevice device, VkQueue transfer, u32 queue_fam, VmaAllocator allocator, u64 capacity,
+                             u32 max_frame_in_flight) {
 
   TransferQueue *tq = calloc(1, sizeof(TransferQueue) + sizeof(Frame) * max_frame_in_flight);
   tq->submit = init_submit(device, transfer, false, max_frame_in_flight);

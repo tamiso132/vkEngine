@@ -1,7 +1,9 @@
 #include "storage.h"
 #include "cglm/ivec3.h"
+#include "resource/rm_internal.h"
 #include "vector.h"
 #include "world/chunk.h"
+#include "world/chunk_gpu.h"
 #include <string.h>
 
 // --- Private Prototypes ---
@@ -84,6 +86,15 @@ ChunkStoreResult chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector *l
   return CHUNK_STORE_OK;
 }
 
+void chunk_store_gpu_tick(ChunkStore *cs, M_Resource *rm, TransferQueue *transfer) {
+  for (u32 i = 0; i < cs->active_chunk_indices.length; i++) {
+    u32 active_idx = *VEC_AT(&cs->active_chunk_indices, i, u32);
+    ChunkItem item = *VEC_AT(&cs->chunk_items, active_idx, ChunkItem);
+    assert(item.chunk_gpu);
+
+    chunk_gpu_tick(item.chunk_gpu, rm, transfer);
+  }
+}
 ChunkStoreResult chunk_store_apply_entered(ChunkStore *cs, const Vector *entered_coords) {
   if (!cs || !entered_coords)
     return CHUNK_STORE_ERR_BAD_ARG;

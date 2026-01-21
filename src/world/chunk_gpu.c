@@ -14,9 +14,10 @@ u32 PENDING_BIT_MASK = (1 << (CHUNK_GPU_UPLOAD__COUNT)) - 1;
 
 static inline void _set_chunk_state(u32 *pending_mask, ChunkResType type, ChunkGpuUploadState new_state);
 
-static inline ChunkGpuUploadState _get_chunk_state(const u32 pending_mask, ChunkResType type);
-
 static inline u32 _get_pending_idle_mask();
+
+static ChunkGpuUploadState _get_chunk_state(const u32 pending_mask, ChunkResType type);
+static ChunkGpuUploadState _get_chunk_state_all(const u32 pending_mask);
 
 void chunk_gpu_init(ChunkGpu *cg, M_Resource *rm, ChunkUploadView view) {
   memset(cg, 0, sizeof(*cg));
@@ -65,6 +66,7 @@ void chunk_gpu_deinit(ChunkGpu *cg, ResourceManager *rm) {
 // ============================================================
 ChunkGpuUploadState chunk_gpu_state(const ChunkGpu *cg, ChunkResType res_type) { return cg->pending_mask; }
 
+ChunkGpuUploadState chunk_gpu_state_all(const ChunkGpu *cg) { return _get_chunk_state_all(cg->pending_mask); }
 ChunkDescriptorIndices chunk_gpu_get_descriptor_indices(ChunkGpu *cg, M_Resource *rm) {
   ChunkDescriptorIndices out = {0};
   if (!cg)
@@ -144,11 +146,6 @@ static inline void _set_chunk_state(u32 *pending_mask, ChunkResType type, ChunkG
   *pending_mask |= (1 << (shift_base + new_state));
 }
 
-static inline ChunkGpuUploadState _get_chunk_state(const u32 pending_mask, ChunkResType type) {
-  u32 shift_base = type * CHUNK_GPU_UPLOAD__COUNT;
-  return (pending_mask >> shift_base) & PENDING_BIT_MASK;
-}
-
 static inline u32 _get_pending_idle_mask() {
   u32 m = 0;
   for (u32 type = 0; type < (u32)CHUNK_RES__COUNT; ++type) {
@@ -156,4 +153,17 @@ static inline u32 _get_pending_idle_mask() {
     m |= (1u << shift_base); // idle is bit0 in each field
   }
   return m;
+}
+
+static ChunkGpuUploadState _get_chunk_state(const u32 pending_mask, ChunkResType type) {
+  u32 shift_base = type * CHUNK_GPU_UPLOAD__COUNT;
+  return (pending_mask >> shift_base) & PENDING_BIT_MASK;
+}
+
+static ChunkGpuUploadState _get_chunk_state_all(const u32 pending_mask) {
+  ChunkGpuUploadState state = {};
+  for (u32 i = 0; i < CHUNK_RES__COUNT; i++) {
+    state |= _get_chunk_state(pending_mask, i);
+  }
+  return state;
 }

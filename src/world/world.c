@@ -89,8 +89,6 @@ void world_cpu_tick(World *w, vec3 player_pos) {
   _update_slots(w, player_pos);
 
   if (w->is_descriptor_dirty) {
-    IndirectIter it = chunk_store_get_active(&w->chunks);
-    IITER_FOREACH(ci, ChunkItem, &it){chunk_gpu_state(const ChunkGpu *cg, ChunkResType res_type)};
   }
 
   // iterate active chunks

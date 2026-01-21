@@ -3,9 +3,9 @@
 #include "hashmaputil.h"
 #include "iterator.h"
 #include "vector.h"
+#include "world/chunk_gpu.h"
 #include <cglm/types.h> // ivec3
 #include <stdbool.h>
-typedef struct ChunkTree ChunkTree;
 
 /*
 ChunkStore responsibility:
@@ -18,6 +18,9 @@ ChunkStore responsibility:
     - entered coords -> ensure loaded + activate
     - left coords    -> move active -> cached
 */
+typedef struct ChunkTree ChunkTree;
+typedef struct TransferQueue TransferQueue;
+typedef struct ChunkGpu ChunkGpu;
 
 typedef enum ChunkState {
   CHUNK_STATE_NONE,
@@ -34,7 +37,8 @@ typedef struct ChunkEntry {
 
 typedef struct ChunkItem {
   ChunkTree *tree; // NULL means slot is free
-  ivec3 coord;     // coord for this index (valid if tree != NULL)
+  ChunkGpu *chunk_gpu;
+  ivec3 coord; // coord for this index (valid if tree != NULL)
 } ChunkItem;
 
 typedef struct ChunkStoreEntryItem {
@@ -65,9 +69,7 @@ ChunkStoreResult chunk_store_apply_entered(ChunkStore *cs, const Vector *entered
 ChunkStoreResult chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector *left_coords);
 ChunkTree *chunk_store_chunk_at(ChunkStore *cs, u32 chunk_index);
 void chunk_store_destroy(ChunkStore *cs);
+void chunk_store_gpu_tick(ChunkStore *cs, M_Resource *rm, TransferQueue *transfer);
 ChunkStoreResult chunk_store_init(ChunkStore *cs, u32 max_cached);
 
-static inline IndirectIter chunk_store_get_active(ChunkStore *cs) {
-  return iiter_make_from_vector(cs->active_chunk_indices, cs->chunk_items);
-}
 // END PUBLIC FUNCTIONS

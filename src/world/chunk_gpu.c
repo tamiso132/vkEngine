@@ -121,6 +121,7 @@ bool chunk_gpu_tick(ChunkGpu *cg, M_Resource *rm, TransferQueue *queue) {
   u64 current_ticket = transfer_get_current_ticket_completed(queue);
   if (current_ticket >= cg->pending_ticket) {
     // TODO, ITERATE OVER ALL BUFFERS AND SWAP IF NOT IDLE
+    // TODO, return some type of result, telling what descriptors are dirty
     for (u32 i = 0; i < CHUNK_RES__COUNT; i++) {
       u32 pending_state = _get_chunk_state(cg->pending_mask, i);
       if (pending_state != 1 << CHUNK_GPU_UPLOAD_IN_FLIGHT)

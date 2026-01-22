@@ -40,3 +40,28 @@ str_sub(const char *s, int start, int len);
 
 /** * Extract directory from path (Non-destructive) * Example: "src/main.c" -> returns "src/" */ char *
 str_get_dir(const char *path);
+
+#define defer(end) for (int _i = 0; _i == 0; (_i = 1), end)
+
+// FOR DEFERRING
+typedef struct {
+  void *p;
+  void (*fn)(void *);
+} _defer_guard;
+
+static inline void _defer_cleanup(_defer_guard *g) {
+  if (g->fn && g->p)
+    g->fn(g->p);
+}
+
+#define _DEFER_JOIN2(a, b) a##b
+#define _DEFER_JOIN(a, b) _DEFER_JOIN2(a, b)
+
+// Generic: run `fn(ptr)` at scope exit
+#define DEFER_PTR(ptr_expr, fn_expr)                                                                                   \
+  __attribute__((cleanup(_defer_cleanup))) _defer_guard _DEFER_JOIN(_defer_, __COUNTER__) = {                          \
+      (void *)(ptr_expr), (void (*)(void *))(fn_expr)}
+
+// Convenience: assume free(ptr)
+#define DEFER_FREE_PTR(ptr_expr) DEFER_PTR((ptr_expr), free)
+#define DEFER_VEC(ptr_expr) DEFER_PTR((ptr_expr), vec_free)

@@ -14,6 +14,6 @@ typedef struct WorldConfig {
 
 // PUBLIC FUNCTIONS
 void world_cpu_tick(World *w, vec3 player_pos);
-World *world_create(const WorldConfig *cfg);
+World *world_create(const WorldConfig *cfg, vec3 player_pos);
 void world_destroy(World *w);
 // END PUBLIC FUNCTIONS

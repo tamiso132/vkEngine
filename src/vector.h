@@ -1,6 +1,7 @@
 #pragma once
 
 #include "util.h"
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -23,7 +24,12 @@ typedef struct Vector {
   Allocator *allocator;
 } Vector;
 
-#define VEC_AT(vec, index, type) ((type *)vec_at((vec), index))
+#define VEC_AT(vec, index, T)                                                                                          \
+  ({                                                                                                                   \
+    assert(sizeof(T) == (vec)->element_size);                                                                          \
+    assert((size_t)index < vec_len(vec));                                                                              \
+    (T *)vec_at(vec, index);                                                                                           \
+  })
 
 #define _CHECK_TYPE(T) _Static_assert(sizeof(T), "Type Validated: " #T)
 

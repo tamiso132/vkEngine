@@ -96,7 +96,7 @@ typedef struct RmStageSlice {
 
 typedef struct {
   char name[50];
-  u32 bindlessIndex;
+  i32 bindlessIndex;
   VkBuffer handle;
   VkMemoryPropertyFlags mem;
   VmaAllocation alloc;

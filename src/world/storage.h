@@ -63,13 +63,21 @@ typedef enum ChunkStoreResult {
   CHUNK_STORE_ERR_BAD_ARG,
 } ChunkStoreResult;
 
+typedef struct ChunkApplyResult {
+  ChunkStoreResult err_code;
+  Vector chunk_idxs; // u32[]
+} ChunkApplyResult;
+
 // PUBLIC FUNCTIONS
 void chunk_storage_get_active(ChunkStore *cs);
-ChunkStoreResult chunk_store_apply_entered(ChunkStore *cs, const Vector *entered_coords);
-ChunkStoreResult chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector *left_coords);
+ChunkApplyResult chunk_store_apply_entered(ChunkStore *cs, const Vector *entered_coords);
+ChunkStoreResult chunk_store_apply_left_idxs(ChunkStore *cs, const Vector left_idxs);
+ChunkStoreResult chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector left_coords);
 ChunkTree *chunk_store_chunk_at(ChunkStore *cs, u32 chunk_index);
 void chunk_store_destroy(ChunkStore *cs);
+u32 chunk_store_get_descriptors(ChunkStore *cs, M_Resource *rm, u32 active_idx);
 void chunk_store_gpu_tick(ChunkStore *cs, M_Resource *rm, TransferQueue *transfer);
+ChunkStoreResult chunk_store_init(ChunkStore *cs, u32 max_cached);
 ChunkStoreResult chunk_store_init(ChunkStore *cs, u32 max_cached);
 
 // END PUBLIC FUNCTIONS

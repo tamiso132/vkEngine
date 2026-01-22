@@ -11,7 +11,7 @@
 #include "rt/rt_shared.glsl"
 #include "sample_interface.h"
 #include "shaders/rt/rt_shared.glsl"
-#include "world/chunk.h"
+#include "world/world.h"
 
 #include <math.h>
 
@@ -19,7 +19,7 @@ typedef struct RaytraceData {
   PipelineHandle cs_pipeline;
   ResHandle cs_output_img;
   ResHandle cam_buffer;
-  ChunkTree *chunk;
+  World *world;
 } RaytraceData;
 
 // --- Private Prototypes ---
@@ -33,8 +33,8 @@ Sample create_raytrace_sample() { return (Sample){.init = _init, .render = _rend
 
 static void _init(Sample *self, SampleContext *ctx) {
   RaytraceData *data = calloc(sizeof(RaytraceData), 1);
-  data->chunk = chunk_init(ctx->rm);
-  chunk_tick(data->chunk, ctx->gpu, ctx->rm, ctx->cmd);
+  WorldConfig w_config = {.chunk_size = CHUNK_SIZE, .visibility = 4};
+  world_create(&w_config, ctx->cam.pos);
 
   CpConfig config = cp_init("Raytrace Pipeline");
   cp_set_shader_path(&config, "shaders/rt/rt.comp");

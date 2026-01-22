@@ -1,5 +1,6 @@
 #include "storage.h"
 #include "cglm/ivec3.h"
+#include "res_async.h"
 #include "resource/rm_internal.h"
 #include "vector.h"
 #include "world/chunk.h"
@@ -19,7 +20,7 @@ static inline ChunkItem *_item_at(ChunkStore *cs, u32 idx);
 
 static inline u64 _key_from_coord(ivec3 c);
 
-static void _make_active(ChunkStore *cs, ChunkStoreEntryItem *it);
+static i32 _make_active(ChunkStore *cs, ChunkStoreEntryItem *it);
 static void _make_cached(ChunkStore *cs, ChunkStoreEntryItem *it);
 
 static inline u32 _u32_at(const Vector *v, u32 i);
@@ -44,6 +45,11 @@ ChunkStoreResult chunk_store_init(ChunkStore *cs, u32 max_cached) {
   return CHUNK_STORE_OK;
 }
 
+ChunkDescriptorIndices chunk_store_get_descriptors(ChunkStore *cs, M_Resource *rm, u32 active_idx) {
+  u32 chunk_idx = *VEC_AT(&cs->active_chunk_indices, active_idx, u32);
+  ChunkItem *item = VEC_AT(&cs->chunk_items, chunk_idx, ChunkItem);
+  return chunk_gpu_get_descriptor_indices(item->chunk_gpu, rm);
+}
 void chunk_store_destroy(ChunkStore *cs) {
   if (!cs)
     return;
@@ -68,13 +74,13 @@ void chunk_store_destroy(ChunkStore *cs) {
   vec_free(&cs->cached_chunk_indices);
 }
 
-ChunkStoreResult chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector *left_coords) {
-  if (!cs || !left_coords)
+ChunkStoreResult chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector left_coords) {
+  if (!cs || !left_coords.data)
     return CHUNK_STORE_ERR_BAD_ARG;
 
-  for (u32 i = 0; i < (u32)vec_len((Vector *)left_coords); ++i) {
+  for (u32 i = 0; i < (u32)vec_len(&left_coords); ++i) {
     ivec3 c;
-    glm_ivec3_copy(((ivec3 *)left_coords->data)[i], c);
+    glm_ivec3_copy(((ivec3 *)left_coords.data)[i], c);
     u64 key = _key_from_coord(c);
 
     ChunkStoreEntryItem *it = _get_item(cs, key);
@@ -82,6 +88,21 @@ ChunkStoreResult chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector *l
       _make_cached(cs, it);
   }
 
+  _evict_until_budget(cs);
+  return CHUNK_STORE_OK;
+}
+
+ChunkStoreResult chunk_store_apply_left_idxs(ChunkStore *cs, const Vector left_idxs) {
+
+  for (u32 i = 0; i < vec_len(&left_idxs); ++i) {
+    ChunkItem *item = VEC_AT(&cs->chunk_items, *VEC_AT(&cs->active_chunk_indices, i, u32), ChunkItem);
+    ivec3 c = {};
+    glm_ivec3_copy(((ivec3 *)item->coord)[i], c);
+    u64 key = _key_from_coord(c);
+    ChunkStoreEntryItem *it = _get_item(cs, key);
+    if (it)
+      _make_cached(cs, it);
+  }
   _evict_until_budget(cs);
   return CHUNK_STORE_OK;
 }
@@ -95,21 +116,28 @@ void chunk_store_gpu_tick(ChunkStore *cs, M_Resource *rm, TransferQueue *transfe
     chunk_gpu_tick(item.chunk_gpu, rm, transfer);
   }
 }
-ChunkStoreResult chunk_store_apply_entered(ChunkStore *cs, const Vector *entered_coords) {
+ChunkApplyResult chunk_store_apply_entered(ChunkStore *cs, const Vector *entered_coords) {
+
+  ChunkApplyResult result = {.err_code = CHUNK_STORE_ERR_BAD_ARG};
   if (!cs || !entered_coords)
-    return CHUNK_STORE_ERR_BAD_ARG;
+    return result;
+
+  vec_init(&result.chunk_idxs, sizeof(u32), NULL);
 
   for (u32 i = 0; i < (u32)vec_len((Vector *)entered_coords); ++i) {
     ivec3 c;
     glm_ivec3_copy(((ivec3 *)entered_coords->data)[i], c);
 
     ChunkStoreEntryItem *it = _ensure_loaded(cs, c);
+    u32 active_idx = it->ent.active_pos;
     if (it)
-      _make_active(cs, it);
+      active_idx = _make_active(cs, it);
+
+    vec_push(&result.chunk_idxs, &active_idx);
   }
 
   _evict_until_budget(cs);
-  return CHUNK_STORE_OK;
+  return result;
 }
 
 ChunkTree *chunk_store_chunk_at(ChunkStore *cs, u32 chunk_index) {
@@ -199,10 +227,10 @@ static inline ChunkItem *_item_at(ChunkStore *cs, u32 idx) { return &((ChunkItem
 
 static inline u64 _key_from_coord(ivec3 c) { return hm_pack_vec3_i21(c[0], c[1], c[2]); }
 
-static void _make_active(ChunkStore *cs, ChunkStoreEntryItem *it) {
+static i32 _make_active(ChunkStore *cs, ChunkStoreEntryItem *it) {
   ChunkEntry *e = &it->ent;
   if (e->where == CHUNK_STATE_ACTIVE)
-    return;
+    return e->active_pos;
 
   // remove from cached list via swap-remove
   u32 removed_pos = e->cache_pos;
@@ -224,8 +252,8 @@ static void _make_active(ChunkStore *cs, ChunkStoreEntryItem *it) {
 
   // append to active
   e->active_pos = (u32)vec_len(&cs->active_chunk_indices);
-  vec_push(&cs->active_chunk_indices, &e->chunk_index);
   e->where = CHUNK_STATE_ACTIVE;
+  return vec_push(&cs->active_chunk_indices, &e->chunk_index);
 }
 
 static void _make_cached(ChunkStore *cs, ChunkStoreEntryItem *it) {

@@ -1,6 +1,7 @@
 #pragma once
 #include "common.h"
 #include "hashmaputil.h"
+#include <hashmap.h>
 /* ------------------------------------------------------------
    Typed map for STRING key field: item->KEYFIELD is const char*
 

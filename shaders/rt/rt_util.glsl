@@ -422,6 +422,28 @@ vec3 u32_rgb8_to_vec3(uint rgb)
         return vec3(r, g, b);
 }
 
+// world position -> integer grid slot (x,y,z)
+ivec3 grid_world_to_slot(vec3 world_pos, vec3 grid_min_corner, u32 chunk_size)
+{
+        vec3 local_pos = world_pos - grid_min_corner;
+        return ivec3(floor(local_pos / chunk_size));
+}
+
+// grid slot -> linear index (x + y*W + z*W*W)
+int grid_slot_to_index(ivec3 grid_slot, i32 m_chunk_visibility)
+{
+        return grid_slot.x
+                + grid_slot.y * m_chunk_visibility
+                + grid_slot.z * m_chunk_visibility * m_chunk_visibility;
+}
+
+// world position -> linear chunk index
+int grid_world_to_chunk_index(vec3 world_pos, vec3 grid_min_corner, i32 chunk_size, i32 chunk_visibility)
+{
+        ivec3 grid_slot = grid_world_to_slot(world_pos, grid_min_corner, chunk_size);
+        return grid_slot_to_index(grid_slot, chunk_visibility);
+}
+
 struct TraverseFrame {
         uint node_index;
         float t_base;
@@ -469,4 +491,3 @@ vec4 trace_error_color(uint err)
 }
 
 #endif
-

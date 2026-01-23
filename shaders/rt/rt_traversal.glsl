@@ -30,6 +30,7 @@ uint leaf_index_for_slot(uint packed, uint64_t node_mask, uint slot)
 bool traverse_one_chunk(
         Ray ray,
         vec3 chunk_min,
+        inout t_dist,
         out vec3 hit_pos,
         out uint hit_level,
         out uint hit_slot,
@@ -78,6 +79,7 @@ bool traverse_one_chunk(
         int stack_top = 0;
 
         float cur_t_base = max(t0, 0.0);
+        cur_t_base = t_dist;
 
         TraverseFrame cur;
         cur.node_index = 0u;
@@ -109,6 +111,7 @@ bool traverse_one_chunk(
                                 any(isnan(cur.dda.delta_dist)) || any(isinf(cur.dda.delta_dist)) ||
                                 isnan(cur.dda.t_tot) || isinf(cur.dda.t_tot)) {
                         err_code = TRACE_ERR_DDA_NAN_INF;
+                        t_dist = cur.t_base;
                         return false;
                 }
                 #endif
@@ -121,6 +124,7 @@ bool traverse_one_chunk(
                         // Popped above root => exited chunk: miss
                         if (stack_top == 0) {
                                 err_code = TRACE_OK;
+                                t_dist = cur.t_base;
                                 return false;
                         }
 

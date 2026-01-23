@@ -78,16 +78,17 @@ static void _render(Sample *self, SampleContext *ctx) {
   gpu_cam.w[3] = ctx->cam.pos[2];
 
   cmd_buffer_upload(ctx->cmd, ctx->gpu, ctx->rm, data->cam_buffer, &gpu_cam, sizeof(gpu_cam));
-  auto chunk_res = chunk_get_gpu_resource(data->chunk);
+
+  vec3 min_corner = {};
+  world_grid_get_min_corner(data->world, min_corner);
+  i32 grid_id = world_grid_get_push_id(data->world, ctx->rm);
   PushRay p = {
       .extent = {ctx->extent.width, ctx->extent.height},
       .cam_id = rm_get_buffer_index(ctx->rm, data->cam_buffer),
-      .child_id = rm_get_buffer_index(ctx->rm, chunk_res.gpu_child_indices),
-      .node_id = rm_get_buffer_index(ctx->rm, chunk_res.gpu_node),
-      .palette_id = rm_get_buffer_index(ctx->rm, chunk_res.gpu_palette),
-      .leaf_mats_id = rm_get_buffer_index(ctx->rm, chunk_res.gpu_leaf_mats),
       .debug_mode = ctx->cam.debug_mode,
+      .grid_id = grid_id,
   };
+  glm_vec3_copy(min_corner, p.grid_min_corner);
 
   BindPipelineInfo b = {.p_push = &p, .push_size = sizeof(PushRay), .handle = data->cs_pipeline};
 

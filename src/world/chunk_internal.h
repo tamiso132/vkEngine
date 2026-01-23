@@ -2,23 +2,19 @@
 // chunk_internal.h (CPU-only internals)
 #pragma once
 
+#include "chunk.h"
 #include "common.h"
 #include "res_async.h"
+#include "shaders/rt/rt_shared.glsl"
 #include "vector.h"
 #include <stdbool.h>
 #include <stdint.h>
-
-#include "chunk.h"
 
 // ----- internal constants/types -----
 
 typedef struct ChunkTree ChunkTree;
 
-#define CHUNK_SIZE 64
-
 typedef enum { NODE_EMPTY = 0, NODE_FULL = 1, NODE_MIXED = 2 } NodeState;
-
-
 
 typedef enum ChunkResTypeBits {
   CHUNK_RES_BITMASK_NODES = 1 << CHUNK_RES_NODES,

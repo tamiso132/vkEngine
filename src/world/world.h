@@ -16,4 +16,7 @@ typedef struct WorldConfig {
 void world_cpu_tick(World *w, vec3 player_pos);
 World *world_create(const WorldConfig *cfg, vec3 player_pos);
 void world_destroy(World *w);
+void world_grid_get_min_corner(World *w, vec3 out_min_corner);
+i32 world_grid_get_push_id(World *w, M_Resource *rm);
+void world_init_gpu(World *w, M_Resource *rm, TransferQueue *transfer);
 // END PUBLIC FUNCTIONS

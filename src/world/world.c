@@ -9,9 +9,10 @@
 #include "cglm/types.h"
 #include "cglm/vec3.h"
 #include "common.h"
-#include "grid.h"
 #include "iterator.h"
+#include "resource/resmanager.h"
 #include "resource/rm_internal.h"
+#include "transfer_queue.h"
 #include "util.h"
 #include "vector.h"
 #include "world/chunk.h"
@@ -33,7 +34,7 @@ typedef struct GridResult {
 typedef struct Grid {
   vec3 min_corner;
   i32 chunks[MAX_CHUNK_VISIBILITY * MAX_CHUNK_VISIBILITY * MAX_CHUNK_VISIBILITY];
-  ChunkDescriptorIndices gpu_indices[MAX_CHUNK_VISIBILITY * MAX_CHUNK_VISIBILITY * MAX_CHUNK_VISIBILITY];
+  GPUGridSlot gpu_indices[MAX_CHUNK_VISIBILITY * MAX_CHUNK_VISIBILITY * MAX_CHUNK_VISIBILITY];
 } Grid;
 
 struct World {
@@ -42,6 +43,8 @@ struct World {
   ChunkStore chunks;
   GridSlot prev_player;
   GridResult grid_result;
+
+  ResHandle descriptor_indices;
 };
 
 // --- Private Prototypes ---
@@ -56,7 +59,7 @@ static i32 grid_get_chunk_idx(i32 *chunk_idxs, GridSlot grid_slot);
 static void grid_get_world_coords(Grid *grid, GridSlot slot, vec3 coords_out);
 
 static void grid_set_chunk_idx(i32 *chunk_idxs, GridSlot slot, u32 new_idx);
-static void grid_set_descriptor_index(ChunkDescriptorIndices *indices, GridSlot src_slot, GridSlot dst_slot);
+static void grid_set_descriptor_index(GPUGridSlot *indices, GridSlot src_slot, GridSlot dst_slot);
 
 World *world_create(const WorldConfig *cfg, vec3 player_pos) {
   if (!cfg || cfg->visibility == 0 || cfg->chunk_size == 0)
@@ -79,11 +82,20 @@ World *world_create(const WorldConfig *cfg, vec3 player_pos) {
   return w;
 }
 
+void world_init_gpu(World *w, M_Resource *rm, TransferQueue *transfer) {
+  chunk_store_gpu_tick(&w->chunks, rm, transfer);
+}
+
 void world_destroy(World *w) {
   if (!w)
     return;
   chunk_store_destroy(&w->chunks);
   free(w);
+}
+
+void world_grid_get_min_corner(World *w, vec3 out_min_corner) { glm_vec3_copy(w->grid.min_corner, out_min_corner); }
+i32 world_grid_get_push_id(World *w, M_Resource *rm) {
+  return rm_get_buffer_descriptor_index(rm, w->descriptor_indices);
 }
 
 void world_cpu_tick(World *w, vec3 player_pos) {
@@ -282,7 +294,7 @@ static void grid_set_chunk_idx(i32 *chunk_idxs, GridSlot slot, u32 new_idx) {
       new_idx;
 }
 
-static void grid_set_descriptor_index(ChunkDescriptorIndices *indices, GridSlot src_slot, GridSlot dst_slot) {
+static void grid_set_descriptor_index(GPUGridSlot *indices, GridSlot src_slot, GridSlot dst_slot) {
   auto src_idx = _get_slot_index(src_slot);
   auto dst_idx = _get_slot_index(dst_slot);
 

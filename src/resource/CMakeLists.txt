@@ -6,4 +6,5 @@ add_sources(
    rm_image.c
    rm_retire.c
    rm_stage.c
+   staging_arena.c
 )

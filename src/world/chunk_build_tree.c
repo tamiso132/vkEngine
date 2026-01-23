@@ -59,7 +59,6 @@ ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scra
   Pyramid p;
   if (!pyramid_init(&p, in->chunk_size, in->tree_levels)) {
     pyramid_free(&p);
-    _build_chunk_free(out);
     return CHUNK_BUILD_ERR_OOM;
   }
 

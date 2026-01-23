@@ -2,6 +2,7 @@
 #include "cglm/ivec3.h"
 #include "res_async.h"
 #include "resource/rm_internal.h"
+#include "rt/rt_shared.glsl"
 #include "vector.h"
 #include "world/chunk.h"
 #include "world/chunk_gpu.h"
@@ -45,7 +46,7 @@ ChunkStoreResult chunk_store_init(ChunkStore *cs, u32 max_cached) {
   return CHUNK_STORE_OK;
 }
 
-ChunkDescriptorIndices chunk_store_get_descriptors(ChunkStore *cs, M_Resource *rm, u32 active_idx) {
+GPUGridSlot chunk_store_get_descriptors(ChunkStore *cs, M_Resource *rm, u32 active_idx) {
   u32 chunk_idx = *VEC_AT(&cs->active_chunk_indices, active_idx, u32);
   ChunkItem *item = VEC_AT(&cs->chunk_items, chunk_idx, ChunkItem);
   return chunk_gpu_get_descriptor_indices(item->chunk_gpu, rm);
@@ -111,7 +112,11 @@ void chunk_store_gpu_tick(ChunkStore *cs, M_Resource *rm, TransferQueue *transfe
   for (u32 i = 0; i < cs->active_chunk_indices.length; i++) {
     u32 active_idx = *VEC_AT(&cs->active_chunk_indices, i, u32);
     ChunkItem item = *VEC_AT(&cs->chunk_items, active_idx, ChunkItem);
-    assert(item.chunk_gpu);
+    if (!item.chunk_gpu) {
+      ChunkUploadView out_view = {};
+      chunk_get_upload_view(item.tree, &out_view);
+      item.chunk_gpu = chunk_gpu_init(rm, out_view);
+    }
 
     chunk_gpu_tick(item.chunk_gpu, rm, transfer);
   }

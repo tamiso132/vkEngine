@@ -8,30 +8,33 @@
 
 // Buffers / images
 layout(set = 0, binding = BINDING_STORAGE_BUFFER, std430) readonly buffer CamBuf {
-  ShaderRayCam data;
+        ShaderRayCam data;
 } g_cam[];
 
 layout(set = 0, binding = BINDING_STORAGE_BUFFER, std430) readonly buffer NodesBuf {
-  uint64_t data[];
+        uint64_t data[];
 } g_nodes[];
 
 layout(set = 0, binding = BINDING_STORAGE_BUFFER, std430) readonly buffer ChildIdxBuf {
-  uint data[];
+        uint data[];
 } g_child_indices[];
 
 layout(set = 0, binding = BINDING_STORAGE_BUFFER, std430) readonly buffer PaletteColor {
-  u32 data[];
+        u32 data[];
 } g_palette[];
 
 layout(set = 0, binding = BINDING_STORAGE_BUFFER, std430) readonly buffer LeafMatBuf {
-  uint data[];
+        uint data[];
 } g_leaf_mats[];
+
+layout(set = 0, binding = BINDING_STORAGE_BUFFER, std430) readonly buffer ChunkIndices {
+        GPUGridSlot data[];
+} g_grid_indices[];
 
 layout(rgba8, set = 0, binding = BINDING_STORAGE_IMAGE) uniform image2D g_images[];
 
-
 layout(push_constant) uniform constants {
-  PushRay pc;
+        PushRay pc;
 };
 
 // Accessors (avoid repeating nonuniformEXT everywhere)

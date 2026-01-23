@@ -69,5 +69,6 @@ bool chunk_get_upload_view(const ChunkTree *chunk, ChunkUploadView *out_view) {
     return false;
 
   memcpy(out_view->p_res_data, chunk->p_res_data, sizeof(chunk->p_res_data));
+  return true;
 }
 // --- Private Functions ---

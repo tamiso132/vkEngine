@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "res_async.h"
+#include "shaders/rt/rt_shared.glsl"
 #include "world/chunk_internal.h"
 
 typedef struct Device Device;
@@ -43,20 +44,13 @@ typedef struct ChunkGpu {
   Ticket pending_ticket;
 } ChunkGpu;
 
-typedef struct ChunkDescriptorIndices {
-  u32 nodes_id;
-  u32 child_index_id;
-  u32 palette_id;
-  u32 leaf_mat_id;
-} ChunkDescriptorIndices;
-
 // PUBLIC FUNCTIONS
 void chunk_gpu_deinit(ChunkGpu *cg, ResourceManager *rm);
 bool chunk_gpu_enqueue_upload(ChunkGpu *cg, ResourceManager *rm, TransferQueue *transfer,
                               const ChunkUploadView *upload_data);
 
-ChunkDescriptorIndices chunk_gpu_get_descriptor_indices(ChunkGpu *cg, M_Resource *rm);
-void chunk_gpu_init(ChunkGpu *cg, M_Resource *rm, ChunkUploadView view);
+GPUGridSlot chunk_gpu_get_descriptor_indices(ChunkGpu *cg, M_Resource *rm);
+ChunkGpu *chunk_gpu_init(M_Resource *rm, ChunkUploadView view);
 ChunkGpuUploadState chunk_gpu_state(const ChunkGpu *cg, ChunkResType res_type);
 ChunkGpuUploadState chunk_gpu_state_all(const ChunkGpu *cg);
 bool chunk_gpu_tick(ChunkGpu *cg, M_Resource *rm, TransferQueue *queue);

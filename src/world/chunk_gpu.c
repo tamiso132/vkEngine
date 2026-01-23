@@ -5,6 +5,7 @@
 #include "common.h"
 #include "res_async.h"
 #include "resource/rm_internal.h"
+#include "rt/rt_shared.glsl"
 #include "transfer_queue.h"
 #include "vector.h"
 
@@ -19,7 +20,8 @@ static inline u32 _get_pending_idle_mask();
 static ChunkGpuUploadState _get_chunk_state(const u32 pending_mask, ChunkResType type);
 static ChunkGpuUploadState _get_chunk_state_all(const u32 pending_mask);
 
-void chunk_gpu_init(ChunkGpu *cg, M_Resource *rm, ChunkUploadView view) {
+ChunkGpu *chunk_gpu_init(M_Resource *rm, ChunkUploadView view) {
+  ChunkGpu *cg = calloc(sizeof(ChunkGpu), 1);
   memset(cg, 0, sizeof(*cg));
 
   RGBufferInfo node_info = {.name = "NodeBuffer",
@@ -46,6 +48,8 @@ void chunk_gpu_init(ChunkGpu *cg, M_Resource *rm, ChunkUploadView view) {
   async_init(rm, &child_info, &cg->buffers[CHUNK_RES_CHILDREN]->async);
   async_init(rm, &node_info, &cg->buffers[CHUNK_RES_PALETTE]->async);
   async_init(rm, &node_info, &cg->buffers[CHUNK_RES_LEAF_MATS]->async);
+
+  return cg;
 }
 
 void chunk_gpu_deinit(ChunkGpu *cg, ResourceManager *rm) {
@@ -67,8 +71,8 @@ void chunk_gpu_deinit(ChunkGpu *cg, ResourceManager *rm) {
 ChunkGpuUploadState chunk_gpu_state(const ChunkGpu *cg, ChunkResType res_type) { return cg->pending_mask; }
 
 ChunkGpuUploadState chunk_gpu_state_all(const ChunkGpu *cg) { return _get_chunk_state_all(cg->pending_mask); }
-ChunkDescriptorIndices chunk_gpu_get_descriptor_indices(ChunkGpu *cg, M_Resource *rm) {
-  ChunkDescriptorIndices out = {0};
+GPUGridSlot chunk_gpu_get_descriptor_indices(ChunkGpu *cg, M_Resource *rm) {
+  GPUGridSlot out = {0};
   if (!cg)
     return out;
 

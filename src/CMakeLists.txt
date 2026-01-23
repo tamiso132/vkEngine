@@ -22,6 +22,8 @@ add_sources(
     system_manager.c
 
     vox_loader.c
+    transfer_queue.c
+    hashmaputil.c
 )
 
 include_this()

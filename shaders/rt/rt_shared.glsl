@@ -11,7 +11,6 @@ SHARED_CONST_U32(DEBUG_MODE_ERRORS, 4);
 SHARED_CONST_U32(DEBUG_MODE_NORMAL, 5);
 SHARED_CONST_U32(DEBUG_MODE_OCCULUSION, 6);
 
-
 #define TREE_LEVELS 4
 #define BITS_PER_AXIS_PER_LEVEL 2
 #define AXIS_COUNT 3
@@ -40,15 +39,20 @@ vec4 w;
 vec2 half_w_h;
 } ;
 
+SHARED_STRUCT(GPUGridSlot, 8){
+u32 nodes_id;
+u32 child_index_id;
+u32 palette_id;
+u32 leaf_mat_id;
+} ;
+
 SHARED_STRUCT(PushRay, 16){
 u32 cam_id;
-u32 node_id;
-u32 child_id;
 u32 img_output_id;
 vec2 extent;
-u32 palette_id;
-u32 leaf_mats_id;
 u32 debug_mode;
+u32 grid_id;
+vec3 grid_min_corner;
 } ;
 
 struct Ray {

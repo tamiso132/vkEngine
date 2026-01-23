@@ -1,7 +1,10 @@
 #pragma once
+
+#include "command.h"
 #include "common.h"
 #include "hashmaputil.h"
 #include "iterator.h"
+#include "rt/rt_shared.glsl"
 #include "vector.h"
 #include "world/chunk_gpu.h"
 #include <cglm/types.h> // ivec3
@@ -75,9 +78,8 @@ ChunkStoreResult chunk_store_apply_left_idxs(ChunkStore *cs, const Vector left_i
 ChunkStoreResult chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector left_coords);
 ChunkTree *chunk_store_chunk_at(ChunkStore *cs, u32 chunk_index);
 void chunk_store_destroy(ChunkStore *cs);
-u32 chunk_store_get_descriptors(ChunkStore *cs, M_Resource *rm, u32 active_idx);
+GPUGridSlot chunk_store_get_descriptors(ChunkStore *cs, M_Resource *rm, u32 active_idx);
 void chunk_store_gpu_tick(ChunkStore *cs, M_Resource *rm, TransferQueue *transfer);
 ChunkStoreResult chunk_store_init(ChunkStore *cs, u32 max_cached);
-ChunkStoreResult chunk_store_init(ChunkStore *cs, u32 max_cached);
-
+void chunk_store_gpu_init(ChunkStore *cs, M_Resource *rm, CmdBuffer *cmd);
 // END PUBLIC FUNCTIONS

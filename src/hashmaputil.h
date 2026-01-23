@@ -93,7 +93,6 @@
 
 // PUBLIC FUNCTIONS
 uint64_t hm_mix_u64(uint64_t x);
-
-inline uint64_t hm_pack_i21(int32_t v);
-inline uint64_t hm_pack_vec3_i21(int32_t x, int32_t y, int32_t z);
+uint64_t hm_pack_i21(int32_t v);
+uint64_t hm_pack_vec3_i21(int32_t x, int32_t y, int32_t z);
 // END PUBLIC FUNCTIONS

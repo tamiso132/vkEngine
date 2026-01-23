@@ -1,5 +1,7 @@
 //! rm_internal.h
+#include "resource/resmanager.h"
 #include "rm_internal.h"
+#include "util.h"
 
 ResHandle rm_buffer_create(M_Resource *rm, M_GPU *gpu, RGBufferInfo *info) {
   RBuffer buffer = {
@@ -12,14 +14,36 @@ ResHandle rm_buffer_create(M_Resource *rm, M_GPU *gpu, RGBufferInfo *info) {
       .binding = RES_B_STORAGE_BUFFER,
       .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
   };
+  buffer.queue_count = 1;
+  buffer.sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
+ 
+  switch(info->queue_type){
+  case BUFFER_QUEUE_GRAPHIC:
+  buffer.queue_fam[0] = gpu->graphics_family;
+  break;
+  case BUFFER_QUEUE_TRANSFER: 
+    buffer.queue_fam[0] = gpu->transfer_family;
+  LOG_WARN("Wierd for a buffer to be transfer only");
+  break;
+  case BUFFER_QUEUE_ALL:
+   buffer.queue_fam[0] = gpu->graphics_family;
+    buffer.queue_fam[1] = gpu->transfer_family;
+    buffer.queue_count = BUFFER_QUEUE_COUNT;
+    buffer.sharing_mode = VK_SHARING_MODE_CONCURRENT;
+    break;
+
+    default:
+    LOG_ERROR("Need to pick a queue associated with the buffer: {%s}", info->name);
+    abort();
+  }
   strncpy(buffer.name, info->name ? info->name : "Buffer", sizeof(buffer.name) - 1);
   buffer.name[sizeof(buffer.name) - 1] = 0;
 
   VkBufferCreateInfo ci = {
-      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = info->capacity, .usage = buffer.usage};
+      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = info->capacity, .usage = buffer.usage, 
+      .sharingMode = buffer.sharing_mode, .pQueueFamilyIndices = buffer.queue_fam, .queueFamilyIndexCount = buffer.queue_count};
 
   VmaAllocationCreateInfo ai = {0};
-  // Keep your old behavior: hard-require flags
   ai.requiredFlags = info->mem;
 
   VkResult r = vmaCreateBuffer(gpu->allocator, &ci, &ai, &buffer.handle, &buffer.alloc, NULL);

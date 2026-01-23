@@ -2,6 +2,7 @@
 #include "command.h"
 #include "common.h"
 #include "raycam.h"
+#include "transfer_queue.h"
 
 typedef struct {
   CmdBuffer cmd; // Den aktuella kommandobuffern för denna frame
@@ -13,6 +14,7 @@ typedef struct {
   M_Pipeline *pm;
   M_GPU *gpu;
   Camera cam;
+  TransferQueue* tq;
 
 } SampleContext;
 

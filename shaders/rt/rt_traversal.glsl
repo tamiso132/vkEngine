@@ -21,16 +21,14 @@ uint leaf_index_for_slot(uint packed, uint64_t node_mask, uint slot)
         return base_idx + offset;
 }
 
-#define GET_LEAF_MATERIAL(buf_id, idx) \
-  ((g_leaf_mats[nonuniformEXT(buf_id)].data[(idx) >> 1u] >> (((idx) & 1u) << 4u)) & 0xFFFFu)
-
 // -----------------------------------------
 // Public API
 // -----------------------------------------
 bool traverse_one_chunk(
+        GPUGridSlot slot_indices,
         Ray ray,
         vec3 chunk_min,
-        inout t_dist,
+        inout float t_dist,
         out vec3 hit_pos,
         out uint hit_level,
         out uint hit_slot,
@@ -133,7 +131,7 @@ bool traverse_one_chunk(
                         cur_t_base = cur.t_base;
 
                         // step parent once to move off exhausted child
-                        uint64_t parent_mask = G_NODE_MASK(pc, cur.node_index);
+                        uint64_t parent_mask = G_NODE_MASK(slot_indices, cur.node_index);
                         cs.occupancy_mask = parent_mask;
 
                         ivec3 prev_pos = cur.dda.local_pos;
@@ -143,7 +141,7 @@ bool traverse_one_chunk(
                         dda_step(cur.dda, cs);
                         cur.steps_in_node++;
                         #if OPTIMIZATION_RT_JUMP_EMPTY_SPACE
-                        uint64_t pmask = G_NODE_MASK(pc, cur.node_index);
+                        uint64_t pmask = G_NODE_MASK(slot_indices, cur.node_index);
                         uint64_t reach = reachable_mask_4x4x4(cur.dda.local_pos, cs.step_dir_i32);
                         if ((pmask & reach) == u64(0)) {
                                 dda_skip_to_exit(cur.dda, cs);
@@ -180,8 +178,8 @@ bool traverse_one_chunk(
                 #endif
 
                 // fetch node data
-                uint64_t mask = G_NODE_MASK(pc, cur.node_index);
-                uint packed = G_CHILD_PACK(pc, cur.node_index);
+                uint64_t mask = G_NODE_MASK(slot_indices, cur.node_index);
+                uint packed = G_CHILD_PACK(slot_indices, cur.node_index);
 
                 bool level_leaf = (cur.level == (levels - 1u));
                 bool early_leaf = childindex_is_leaf(packed);
@@ -212,8 +210,8 @@ bool traverse_one_chunk(
                                 err_code = TRACE_OK;
 
                                 uint leaf_idx = leaf_index_for_slot(packed, mask, slot);
-                                uint mat_id = GET_LEAF_MATERIAL(pc.leaf_mats_id, leaf_idx);
-                                hit_color = u32_rgb8_to_vec3(G_PAL(pc, mat_id));
+                                uint mat_id = GET_LEAF_MATERIAL(slot_indices, leaf_idx);
+                                hit_color = u32_rgb8_to_vec3(G_PAL(slot_indices, mat_id));
 
                                 vec3 hit_n = vec3(cur.dda.prev_step_i32);
                                 if (dot(hit_n, hit_n) < 0.5) hit_n = normalize(-ray.dir); // fallback
@@ -221,7 +219,7 @@ bool traverse_one_chunk(
 
                                 vec3 p0 = (hit_pos - chunk_min) - hit_n * 1e-3; // chunk-local continuous
 
-                                ao_and_normal_soft(p0, hit_n, ao, n_smooth);
+                                ao_and_normal_soft(slot_indices, p0, hit_n, ao, n_smooth);
 
                                 hit_color *= ao;
 
@@ -279,7 +277,7 @@ bool traverse_one_chunk(
 
                                         #if OPTIMIZATION_RT_JUMP_EMPTY_SPACE
 
-                                        uint64_t cmask = G_NODE_MASK(pc, cur.node_index);
+                                        uint64_t cmask = G_NODE_MASK(slot_indices, cur.node_index);
                                         uint64_t reach = reachable_mask_4x4x4(cur.dda.local_pos, cs.step_dir_i32);
                                         if ((cmask & reach) == u64(0)) {
                                                 dda_skip_to_exit(cur.dda, cs);

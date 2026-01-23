@@ -17,7 +17,7 @@ bool in_bounds_i(ivec3 p)
                 all(lessThan(p, ivec3(CHUNK_SIZE)));
 }
 
-bool occ_leaf_voxel(uvec3 v)
+bool occ_leaf_voxel(GPUGridSlot slot_data, uvec3 v)
 {
         if (any(greaterThanEqual(v, uvec3(CHUNK_SIZE))))
                 return false;
@@ -26,8 +26,8 @@ bool occ_leaf_voxel(uvec3 v)
 
         for (uint level = 0u; level < uint(TREE_LEVELS); ++level)
         {
-                uint64_t mask = G_NODE_MASK(pc, node);
-                uint packed = G_CHILD_PACK(pc, node);
+                uint64_t mask = G_NODE_MASK(slot_data, node);
+                uint packed = G_CHILD_PACK(slot_data, node);
 
                 uint slot = child_slot_from_xyz(v, level, uint(TREE_LEVELS));
                 bool occ = child_present(mask, slot);
@@ -51,7 +51,7 @@ bool occ_leaf_voxel(uvec3 v)
         return false;
 }
 
-float occ_soft_oob_empty(vec3 p_local)
+float occ_soft_oob_empty(GPUGridSlot slot_data, vec3 p_local)
 {
         // If the base cell would require corners outside, treat as empty
         // (You can also only early-out on p_local itself, but this is cleaner.)
@@ -63,14 +63,14 @@ float occ_soft_oob_empty(vec3 p_local)
         vec3 f = p_local - vec3(b);
 
         // 8 corners; if OOB => 0
-        float c000 = in_bounds_i(b + ivec3(0, 0, 0)) ? (occ_leaf_voxel(uvec3(b + ivec3(0, 0, 0))) ? 1.0 : 0.0) : 0.0;
-        float c100 = in_bounds_i(b + ivec3(1, 0, 0)) ? (occ_leaf_voxel(uvec3(b + ivec3(1, 0, 0))) ? 1.0 : 0.0) : 0.0;
-        float c010 = in_bounds_i(b + ivec3(0, 1, 0)) ? (occ_leaf_voxel(uvec3(b + ivec3(0, 1, 0))) ? 1.0 : 0.0) : 0.0;
-        float c110 = in_bounds_i(b + ivec3(1, 1, 0)) ? (occ_leaf_voxel(uvec3(b + ivec3(1, 1, 0))) ? 1.0 : 0.0) : 0.0;
-        float c001 = in_bounds_i(b + ivec3(0, 0, 1)) ? (occ_leaf_voxel(uvec3(b + ivec3(0, 0, 1))) ? 1.0 : 0.0) : 0.0;
-        float c101 = in_bounds_i(b + ivec3(1, 0, 1)) ? (occ_leaf_voxel(uvec3(b + ivec3(1, 0, 1))) ? 1.0 : 0.0) : 0.0;
-        float c011 = in_bounds_i(b + ivec3(0, 1, 1)) ? (occ_leaf_voxel(uvec3(b + ivec3(0, 1, 1))) ? 1.0 : 0.0) : 0.0;
-        float c111 = in_bounds_i(b + ivec3(1, 1, 1)) ? (occ_leaf_voxel(uvec3(b + ivec3(1, 1, 1))) ? 1.0 : 0.0) : 0.0;
+        float c000 = in_bounds_i(b + ivec3(0, 0, 0)) ? (occ_leaf_voxel(slot_data, uvec3(b + ivec3(0, 0, 0))) ? 1.0 : 0.0) : 0.0;
+        float c100 = in_bounds_i(b + ivec3(1, 0, 0)) ? (occ_leaf_voxel(slot_data,  uvec3(b + ivec3(1, 0, 0))) ? 1.0 : 0.0) : 0.0;
+        float c010 = in_bounds_i(b + ivec3(0, 1, 0)) ? (occ_leaf_voxel(slot_data, uvec3(b + ivec3(0, 1, 0))) ? 1.0 : 0.0) : 0.0;
+        float c110 = in_bounds_i(b + ivec3(1, 1, 0)) ? (occ_leaf_voxel(slot_data, uvec3(b + ivec3(1, 1, 0))) ? 1.0 : 0.0) : 0.0;
+        float c001 = in_bounds_i(b + ivec3(0, 0, 1)) ? (occ_leaf_voxel(slot_data, uvec3(b + ivec3(0, 0, 1))) ? 1.0 : 0.0) : 0.0;
+        float c101 = in_bounds_i(b + ivec3(1, 0, 1)) ? (occ_leaf_voxel(slot_data, uvec3(b + ivec3(1, 0, 1))) ? 1.0 : 0.0) : 0.0;
+        float c011 = in_bounds_i(b + ivec3(0, 1, 1)) ? (occ_leaf_voxel(slot_data, uvec3(b + ivec3(0, 1, 1))) ? 1.0 : 0.0) : 0.0;
+        float c111 = in_bounds_i(b + ivec3(1, 1, 1)) ? (occ_leaf_voxel(slot_data, uvec3(b + ivec3(1, 1, 1))) ? 1.0 : 0.0) : 0.0;
 
         float c00 = mix(c000, c100, f.x);
         float c10 = mix(c010, c110, f.x);
@@ -83,7 +83,7 @@ float occ_soft_oob_empty(vec3 p_local)
         return mix(c0, c1, f.z);
 }
 
-float occ_soft(vec3 p_local) // p_local in chunk-local voxel space (0..CHUNK_SIZE)
+float occ_soft(GPUGridSlot slot_data, vec3 p_local) // p_local in chunk-local voxel space (0..CHUNK_SIZE)
 {
         // clamp inside so floor+1 stays valid
         p_local = clamp(p_local, vec3(0.0), vec3(float(CHUNK_SIZE) - 1.001));
@@ -92,14 +92,14 @@ float occ_soft(vec3 p_local) // p_local in chunk-local voxel space (0..CHUNK_SIZ
         vec3 f = p_local - vec3(b);
 
         // 8 corners
-        float c000 = occ_leaf_voxel(uvec3(b + ivec3(0, 0, 0))) ? 1.0 : 0.0;
-        float c100 = occ_leaf_voxel(uvec3(b + ivec3(1, 0, 0))) ? 1.0 : 0.0;
-        float c010 = occ_leaf_voxel(uvec3(b + ivec3(0, 1, 0))) ? 1.0 : 0.0;
-        float c110 = occ_leaf_voxel(uvec3(b + ivec3(1, 1, 0))) ? 1.0 : 0.0;
-        float c001 = occ_leaf_voxel(uvec3(b + ivec3(0, 0, 1))) ? 1.0 : 0.0;
-        float c101 = occ_leaf_voxel(uvec3(b + ivec3(1, 0, 1))) ? 1.0 : 0.0;
-        float c011 = occ_leaf_voxel(uvec3(b + ivec3(0, 1, 1))) ? 1.0 : 0.0;
-        float c111 = occ_leaf_voxel(uvec3(b + ivec3(1, 1, 1))) ? 1.0 : 0.0;
+        float c000 = occ_leaf_voxel(slot_data, uvec3(b + ivec3(0, 0, 0))) ? 1.0 : 0.0;
+        float c100 = occ_leaf_voxel(slot_data, uvec3(b + ivec3(1, 0, 0))) ? 1.0 : 0.0;
+        float c010 = occ_leaf_voxel(slot_data, uvec3(b + ivec3(0, 1, 0))) ? 1.0 : 0.0;
+        float c110 = occ_leaf_voxel(slot_data, uvec3(b + ivec3(1, 1, 0))) ? 1.0 : 0.0;
+        float c001 = occ_leaf_voxel(slot_data, uvec3(b + ivec3(0, 0, 1))) ? 1.0 : 0.0;
+        float c101 = occ_leaf_voxel(slot_data, uvec3(b + ivec3(1, 0, 1))) ? 1.0 : 0.0;
+        float c011 = occ_leaf_voxel(slot_data, uvec3(b + ivec3(0, 1, 1))) ? 1.0 : 0.0;
+        float c111 = occ_leaf_voxel(slot_data, uvec3(b + ivec3(1, 1, 1))) ? 1.0 : 0.0;
 
         float c00 = mix(c000, c100, f.x);
         float c10 = mix(c010, c110, f.x);
@@ -112,7 +112,7 @@ float occ_soft(vec3 p_local) // p_local in chunk-local voxel space (0..CHUNK_SIZ
         return mix(c0, c1, f.z);
 }
 
-float neighborhood_ao_soft(vec3 p0_local, vec3 n)
+float neighborhood_ao_soft(GPUGridSlot slot_data, vec3 p0_local, vec3 n)
 {
         // p0_local: chunk-local continuous position near the surface
         // n: unit normal (use normalize(vec3(cur.dda.prev_step_i32)))
@@ -149,7 +149,7 @@ float neighborhood_ao_soft(vec3 p0_local, vec3 n)
                 float w = h * wd;
 
                 // continuous occupancy sample
-                float filled = occ_soft(p0_local + o);
+                float filled = occ_soft(slot_data, p0_local + o);
 
                 occ += filled * w;
                 wsum += w;
@@ -172,7 +172,7 @@ float neighborhood_ao_soft(vec3 p0_local, vec3 n)
         return ao;
 }
 
-float neighborhood_ao(uvec3 v, vec3 n)
+float neighborhood_ao(GPUGridSlot slot_data, uvec3 v, vec3 n)
 {
         const ivec3 O[14] = ivec3[14](
                         ivec3(1, 0, 0), ivec3(-1, 0, 0),
@@ -206,9 +206,9 @@ float neighborhood_ao(uvec3 v, vec3 n)
                 if (any(lessThan(vi, ivec3(0))) || any(greaterThanEqual(vi, ivec3(CHUNK_SIZE))))
                         continue;
 
-                //    occ += (occ_leaf_voxel(uvec3(vi)) ? 1.0 : 0.0) * w;
+                //    occ += (occ_leaf_voxel(slot_data, uvec3(vi)) ? 1.0 : 0.0) * w;
 
-                float filled = occ_soft(v + o);
+                float filled = occ_soft(slot_data,v + o);
                 occ += filled * w;
 
                 wsum += w;
@@ -230,6 +230,7 @@ float neighborhood_ao(uvec3 v, vec3 n)
 }
 
 void ao_and_normal_soft(
+        GPUGridSlot slot_data,
         vec3 p0_local,
         vec3 n_hint, // can be face normal from dda (used only for hemisphere gating)
         out float ao,
@@ -268,7 +269,7 @@ void ao_and_normal_soft(
 
                 float w = h * wd;
 
-                float filled = occ_soft_oob_empty(p0_local + o);
+                float filled = occ_soft_oob_empty(slot_data, p0_local + o);
 
                 occ += filled * w;
                 wsum += w;
@@ -300,6 +301,7 @@ void ao_and_normal_soft(
 }
 
 void ao_and_normal_soft_stable(
+        GPUGridSlot slot_data,
         vec3 p_local, // (hit_pos - chunk_min)
         vec3 n_face, // face normal from DDA (only used for hemisphere gate)
         out float ao,
@@ -338,7 +340,7 @@ void ao_and_normal_soft_stable(
                 float wd = 1.0 / (t * t); // thin falloff
                 float w = h * wd;
 
-                float filled = occ_soft(p0 + o);
+                float filled = occ_soft(slot_data, p0 + o);
 
                 occ += filled * w;
                 wsum += w;

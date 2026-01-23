@@ -47,9 +47,6 @@ uint popcount64(uint64_t v)
         return uint(bitCount(lo) + bitCount(hi));
 }
 
-#define GET_LEAF_MATERIAL(buf_id, idx) \
-    ((g_leaf_mats[nonuniformEXT(buf_id)].data[(idx) >> 1u] >> (((idx) & 1u) << 4u)) & 0xFFFFu)
-
 bool child_present(uint64_t mask, uint slot)
 {
         return ((mask >> (slot & 63u)) & u64(1)) != u64(0);

@@ -27,6 +27,8 @@ struct M_GPU {
   VkQueue compute_queue;
   VkQueue transfer_queue;
   uint32_t graphics_family;
+  u32 present_family;
+  u32 transfer_family;
 
   VkDebugUtilsMessengerEXT debug_messenger;
 

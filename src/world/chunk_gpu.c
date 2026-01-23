@@ -4,6 +4,7 @@
 #include "command.h"
 #include "common.h"
 #include "res_async.h"
+#include "resource/resmanager.h"
 #include "resource/rm_internal.h"
 #include "rt/rt_shared.glsl"
 #include "transfer_queue.h"
@@ -22,32 +23,32 @@ static ChunkGpuUploadState _get_chunk_state_all(const u32 pending_mask);
 
 ChunkGpu *chunk_gpu_init(M_Resource *rm, ChunkUploadView view) {
   ChunkGpu *cg = calloc(sizeof(ChunkGpu), 1);
-  memset(cg, 0, sizeof(*cg));
 
   RGBufferInfo node_info = {.name = "NodeBuffer",
                             .capacity = vec_len(&view.p_res_data[CHUNK_RES_NODES]),
                             .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                            .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+                            .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                          .queue_type = BUFFER_QUEUE_ALL};
 
   RGBufferInfo child_info = {.name = "childIndexBuffer",
                              .capacity = vec_len(&view.p_res_data[CHUNK_RES_CHILDREN]),
                              .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                             .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+                             .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .queue_type = BUFFER_QUEUE_ALL};
 
   RGBufferInfo pal_info = {.name = "Palette",
                            .capacity = vec_len(&view.p_res_data[CHUNK_RES_PALETTE]),
                            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                           .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+                           .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .queue_type = BUFFER_QUEUE_ALL};
 
   RGBufferInfo leaf_info = {.name = "LeafMatBuffer",
                             .capacity = vec_len(&view.p_res_data[CHUNK_RES_LEAF_MATS]),
                             .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                            .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+                            .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .queue_type = BUFFER_QUEUE_ALL};
 
-  async_init(rm, &node_info, &cg->buffers[CHUNK_RES_NODES]->async);
-  async_init(rm, &child_info, &cg->buffers[CHUNK_RES_CHILDREN]->async);
-  async_init(rm, &node_info, &cg->buffers[CHUNK_RES_PALETTE]->async);
-  async_init(rm, &node_info, &cg->buffers[CHUNK_RES_LEAF_MATS]->async);
+  async_init(rm, &node_info, &cg->buffers[CHUNK_RES_NODES].async);
+  async_init(rm, &child_info, &cg->buffers[CHUNK_RES_CHILDREN].async);
+  async_init(rm, &node_info, &cg->buffers[CHUNK_RES_PALETTE].async);
+  async_init(rm, &node_info, &cg->buffers[CHUNK_RES_LEAF_MATS].async);
 
   return cg;
 }
@@ -55,13 +56,6 @@ ChunkGpu *chunk_gpu_init(M_Resource *rm, ChunkUploadView view) {
 void chunk_gpu_deinit(ChunkGpu *cg, ResourceManager *rm) {
   if (!cg)
     return;
-  for (u32 k = 0; k < CHUNK_RES__COUNT; ++k) {
-    if (cg->buffers[k]) {
-      // TODO  async_destroy(rm, cg->buffers[k]);
-      free(cg->buffers[k]);
-      cg->buffers[k] = NULL;
-    }
-  }
   memset(cg, 0, sizeof(*cg));
 }
 
@@ -76,10 +70,15 @@ GPUGridSlot chunk_gpu_get_descriptor_indices(ChunkGpu *cg, M_Resource *rm) {
   if (!cg)
     return out;
 
-  out.nodes_id = rm_get_buffer_index(rm, async_get_active_buffer(&cg->buffers[CHUNK_RES_NODES]->async));
-  out.child_index_id = rm_get_buffer_index(rm, async_get_active_buffer(&cg->buffers[CHUNK_RES_CHILDREN]->async));
-  out.palette_id = rm_get_buffer_index(rm, async_get_active_buffer(&cg->buffers[CHUNK_RES_PALETTE]->async));
-  out.leaf_mat_id = rm_get_buffer_index(rm, async_get_active_buffer(&cg->buffers[CHUNK_RES_LEAF_MATS]->async));
+ResHandle node_res =async_get_active_buffer(&cg->buffers[CHUNK_RES_NODES].async);
+ResHandle child_res =async_get_active_buffer(&cg->buffers[CHUNK_RES_CHILDREN].async);
+ResHandle palette_res =async_get_active_buffer(&cg->buffers[CHUNK_RES_PALETTE].async);
+ResHandle leaf_res =async_get_active_buffer(&cg->buffers[CHUNK_RES_LEAF_MATS].async);
+
+  out.nodes_id = rm_get_buffer_index(rm, node_res);
+  out.child_index_id = rm_get_buffer_index(rm, child_res);
+  out.palette_id = rm_get_buffer_index(rm, palette_res);
+  out.leaf_mat_id = rm_get_buffer_index(rm, leaf_res);
 
   return out;
 }
@@ -100,7 +99,7 @@ bool chunk_gpu_enqueue_upload(ChunkGpu *cg, ResourceManager *rm, TransferQueue *
     if (upload_data->p_res_data[k].length == 0)
       continue;
 
-    AsyncBuffer *ab = &cg->buffers[k]->async;
+    AsyncBuffer *ab = &cg->buffers[k].async;
 
     ResHandle back_buffer = async_get_backbuffer(ab);
     Vector upload = upload_data->p_res_data[k];
@@ -131,10 +130,10 @@ bool chunk_gpu_tick(ChunkGpu *cg, M_Resource *rm, TransferQueue *queue) {
       if (pending_state != 1 << CHUNK_GPU_UPLOAD_IN_FLIGHT)
         continue;
 
-      async_swap(rm, &cg->buffers[i]->async);
+      async_swap(rm, &cg->buffers[i].async);
       _set_chunk_state(&cg->pending_mask, i, CHUNK_GPU_UPLOAD_IDLE);
 
-      if (cg->buffers[i]->queued_copy.length != 0) {
+      if (cg->buffers[i].queued_copy.length != 0) {
         // TODO, Enqueue stuff here and set it to PENDING AGAIN
       }
     }

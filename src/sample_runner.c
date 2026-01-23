@@ -6,6 +6,7 @@
 #include "sample_interface.h"
 #include "submit_manager.h"
 #include "system_manager.h"
+#include "transfer_queue.h"
 #include <GLFW/glfw3.h>
 // --- Private Prototypes ---
 
@@ -18,17 +19,20 @@ void run_sample(Sample *sample, GLFWwindow *window) {
   auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
   auto *pr = SYSTEM_GET(SYSTEM_TYPE_HOTRELOAD, M_HotReload);
 
+
   CmdBuffer cmd = cmd_init(device->device, device->graphics_family);
   int width = 0, height = 0;
 
+  
   SampleContext ctx = {
-      .cmd = cmd,
-      .gpu = device,
-      .extent = swapchain->extent,
-      .pm = pm,
-      .pr = pr,
-      .rm = rm,
-      .cam = camera_init(swapchain->extent, 70),
+    .cmd = cmd,
+    .gpu = device,
+    .extent = swapchain->extent,
+    .pm = pm,
+    .pr = pr,
+    .rm = rm,
+    .cam = camera_init(swapchain->extent, 70),
+    .tq = transfer_init(device->device, device->transfer_queue, device->transfer_family, device->allocator,  MIB(100), 1),
   };
   cmd_begin(device->device, cmd);
   if (sample->init) {

@@ -27,8 +27,16 @@ typedef struct ChunkDelta {
   ivec3 dir;
 } ChunkDelta;
 
+typedef struct Range{
+
+}Range;
+
 typedef struct GridResult {
   Vector desc_dirty_indices; // u32[]
+  Vector loaded_chunks; // vec3[]
+  Vector unloaded_chunks; //u32[]
+
+  Vector internal_indices_loaded; // u32[]
 } GridResult;
 
 typedef struct Grid {
@@ -44,7 +52,7 @@ struct World {
   GridSlot prev_player;
   GridResult grid_result;
 
-  ResHandle descriptor_indices;
+  ResHandle gpu_grid_indices;
 };
 
 // --- Private Prototypes ---
@@ -52,8 +60,8 @@ static int _get_slot_index(GridSlot slot);
 
 static void _world_coord_to_chunk_pos(const World *w, vec3 player_pos, GridSlot out_chunk);
 
-static void grid_init(Grid *grid, ChunkStore *store, vec3 min_corner, GridResult *result);
-static void grid_step(Grid *grid, ChunkStore *store, ChunkDelta arrow);
+static void grid_init(Grid *grid, vec3 min_corner, GridResult *result);
+static void grid_step(Grid *grid, ChunkDelta arrow, GridResult *result);
 
 static i32 grid_get_chunk_idx(i32 *chunk_idxs, GridSlot grid_slot);
 static void grid_get_world_coords(Grid *grid, GridSlot slot, vec3 coords_out);
@@ -69,7 +77,12 @@ World *world_create(const WorldConfig *cfg, vec3 player_pos) {
   if (!w)
     return NULL;
   w->cfg = *cfg;
+  
   vec_init(&w->grid_result.desc_dirty_indices, sizeof(u32), NULL);
+  vec_init(&w->grid_result.unloaded_chunks, sizeof(u32), NULL);
+  vec_init(&w->grid_result.internal_indices_loaded, sizeof(u32), NULL);
+  vec_init(&w->grid_result.loaded_chunks, sizeof(vec3), NULL);
+  
   _world_coord_to_chunk_pos(w, player_pos, w->prev_player);
 
   // init chunk storage/residency
@@ -77,13 +90,23 @@ World *world_create(const WorldConfig *cfg, vec3 player_pos) {
     free(w);
     return NULL;
   }
-  grid_init(&w->grid, &w->chunks, (float *)cfg->min_corner, &w->grid_result);
+  grid_init(&w->grid, (float *)cfg->min_corner, &w->grid_result);
+  // chunk has to take the chunks that got updated and create them
+  // then gpu storage has to also add them as pending
+  // then the grid updates the descriptor indices
+  
+
+  
 
   return w;
 }
 
 void world_init_gpu(World *w, M_Resource *rm, TransferQueue *transfer) {
+  RGBufferInfo info = {.capacity = sizeof(w->grid.gpu_indices), .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT};
+  info.queue_type = BUFFER_QUEUE_ALL;
+  rm_create_buffer(rm, &info);
   chunk_store_gpu_tick(&w->chunks, rm, transfer);
+  
 }
 
 void world_destroy(World *w) {
@@ -95,7 +118,7 @@ void world_destroy(World *w) {
 
 void world_grid_get_min_corner(World *w, vec3 out_min_corner) { glm_vec3_copy(w->grid.min_corner, out_min_corner); }
 i32 world_grid_get_push_id(World *w, M_Resource *rm) {
-  return rm_get_buffer_descriptor_index(rm, w->descriptor_indices);
+  return rm_get_buffer_descriptor_index(rm, w->gpu_grid_indices);
 }
 
 void world_cpu_tick(World *w, vec3 player_pos) {
@@ -113,7 +136,12 @@ void world_cpu_tick(World *w, vec3 player_pos) {
   if (!is_zero) {
     ChunkDelta delta = {};
     glm_ivec3_copy(delta.dir, chunk_delta);
-    grid_step(&w->grid, &w->chunks, delta);
+    grid_step(&w->grid,  delta, &w->grid_result);
+
+    // chunk has to take the chunks that got updated and create them
+    // then gpu storage has to also add them as pending
+    // then the grid updates the descriptor indices
+
   }
 
   // iterate active chunks
@@ -133,7 +161,7 @@ static void _world_coord_to_chunk_pos(const World *w, vec3 player_pos, GridSlot 
   out_chunk[2] = (int)floorf(rel[2] / (float)w->cfg.chunk_size);
 }
 
-static void grid_init(Grid *grid, ChunkStore *store, vec3 min_corner, GridResult *result) {
+static void grid_init(Grid *grid, vec3 min_corner, GridResult *result) {
   memcpy(grid->min_corner, min_corner, sizeof(vec3));
   Vector loaded_coords = {};
   vec_init_with_capacity(&loaded_coords, sizeof(vec3),
@@ -147,30 +175,33 @@ static void grid_init(Grid *grid, ChunkStore *store, vec3 min_corner, GridResult
         GridSlot curr_slot = {x, y, z};
         vec3 world_coord_slot = {};
         grid_get_world_coords(grid, curr_slot, world_coord_slot);
-        vec_push(&loaded_coords, &world_coord_slot);
+        vec_push(&result->loaded_chunks, &world_coord_slot);
+
+         i32 curr_index = grid_get_chunk_idx(grid->chunks, curr_slot);
+        vec_push(&result->loaded_chunks, &curr_index);
       }
     }
   }
-  ChunkApplyResult result_entered = chunk_store_apply_entered(store, &loaded_coords);
-  DEFER_VEC(&result_entered.chunk_idxs);
+  //TODO, move it outside
+  // ChunkApplyResult result_entered = chunk_store_apply_entered(store, &loaded_coords);
 
-  u32 counter = 0;
-  for (u32 z = 0; z < MAX_CHUNK_VISIBILITY; z++) {
-    for (u32 y = 0; y < MAX_CHUNK_VISIBILITY; y++) {
-      for (u32 x = 0; x < MAX_CHUNK_VISIBILITY; x++) {
-        GridSlot curr_slot = {x, y, z};
+  // u32 counter = 0;
+  // for (u32 z = 0; z < MAX_CHUNK_VISIBILITY; z++) {
+  //   for (u32 y = 0; y < MAX_CHUNK_VISIBILITY; y++) {
+  //     for (u32 x = 0; x < MAX_CHUNK_VISIBILITY; x++) {
+  //       GridSlot curr_slot = {x, y, z};
 
-        i32 active_idx = *VEC_AT(&result_entered.chunk_idxs, counter, u32);
-        grid_set_chunk_idx(grid->chunks, curr_slot, active_idx);
-        i32 idx = _get_slot_index(curr_slot);
-        vec_push(&result->desc_dirty_indices, &idx);
-        counter += 1;
-      }
-    }
-  }
+  //       i32 active_idx = *VEC_AT(&result_entered.chunk_idxs, counter, u32);
+  //       grid_set_chunk_idx(grid->chunks, curr_slot, active_idx);
+  //       i32 idx = _get_slot_index(curr_slot);
+  //       vec_push(&result->desc_dirty_indices, &idx);
+  //       counter += 1;
+  //     }
+  //   }
+  // }
 }
 
-static void grid_step(Grid *grid, ChunkStore *store, ChunkDelta arrow) {
+static void grid_step(Grid *grid, ChunkDelta arrow, GridResult* result) {
   ivec3 dir_delta = {};
   glm_ivec3_copy(dir_delta, arrow.dir);
   i32 axis = 0;
@@ -236,10 +267,6 @@ static void grid_step(Grid *grid, ChunkStore *store, ChunkDelta arrow) {
       }
     }
   }
-  // ALL CHUNKS THAT NEED TO BE LOADED
-  Vector loaded_coords = {};
-  vec_init_with_capacity(&loaded_coords, sizeof(vec3), MAX_CHUNK_VISIBILITY * MAX_CHUNK_VISIBILITY, NULL);
-  DEFER_VEC(&loaded_coords);
 
   for (u32 z = axis_loaded[2][0]; z < axis_loaded[2][1]; z++) {
     for (u32 y = axis_loaded[1][0]; y < axis_loaded[1][1]; y++) {
@@ -249,29 +276,34 @@ static void grid_step(Grid *grid, ChunkStore *store, ChunkDelta arrow) {
         glm_ivec3_add(curr_slot, dir_delta, next_slot);
         vec3 world_coord_slot = {};
         grid_get_world_coords(grid, next_slot, world_coord_slot);
-        vec_push(&loaded_coords, &world_coord_slot);
+        vec_push(&result->loaded_chunks, &world_coord_slot);
+
+        i32 curr_index = grid_get_chunk_idx(grid->chunks, curr_slot);
+        vec_push(&result->loaded_chunks, &curr_index);
       }
     }
   }
-  // APPLY CHANGES TO  STORAGE
-  ChunkApplyResult result_entered = chunk_store_apply_entered(store, &loaded_coords);
-  chunk_store_apply_left_idxs(store, unloaded_idx);
+  //TODO HAS TO MOVE THIS OUTSIDE
 
-  DEFER_VEC(&result_entered.chunk_idxs);
+  // // APPLY CHANGES TO  STORAGE
+  // ChunkApplyResult result_entered = chunk_store_apply_entered(store, &loaded_coords);
+  // chunk_store_apply_left_idxs(store, unloaded_idx);
 
-  u32 counter = 0;
-  // LOADED CHUNKS GET UPDATED
-  for (u32 z = axis_loaded[2][0]; z < axis_loaded[2][1]; z++) {
-    for (u32 y = axis_loaded[1][0]; y < axis_loaded[1][1]; y++) {
-      for (u32 x = axis_loaded[0][0]; x < axis_loaded[0][1]; x++) {
-        i32 active_idx = *VEC_AT(&result_entered.chunk_idxs, counter, u32);
-        GridSlot curr_slot = {x, y, z};
-        grid_set_chunk_idx(grid->chunks, curr_slot, active_idx);
-        // TODO, return a result with indices that need to be checked
-        counter += 1;
-      }
-    }
-  }
+  // DEFER_VEC(&result_entered.chunk_idxs);
+
+  // u32 counter = 0;
+  // // LOADED CHUNKS GET UPDATED
+  // for (u32 z = axis_loaded[2][0]; z < axis_loaded[2][1]; z++) {
+  //   for (u32 y = axis_loaded[1][0]; y < axis_loaded[1][1]; y++) {
+  //     for (u32 x = axis_loaded[0][0]; x < axis_loaded[0][1]; x++) {
+  //       i32 active_idx = *VEC_AT(&result_entered.chunk_idxs, counter, u32);
+  //       GridSlot curr_slot = {x, y, z};
+  //       grid_set_chunk_idx(grid->chunks, curr_slot, active_idx);
+  //       // TODO, return a result with indices that need to be checked
+  //       counter += 1;
+  //     }
+  //   }
+  // }
 }
 
 static i32 grid_get_chunk_idx(i32 *chunk_idxs, GridSlot grid_slot) {

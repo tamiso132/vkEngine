@@ -58,11 +58,20 @@ typedef struct {
   float scale;             // optional
 } RGImageInfo;
 
+typedef enum BUFFER_QUEUE {
+BUFFER_QUEUE_NONE,
+BUFFER_QUEUE_COUNT = 2,
+BUFFER_QUEUE_GRAPHIC,
+BUFFER_QUEUE_TRANSFER,
+BUFFER_QUEUE_ALL,
+}BufferQueue;
+
 typedef struct {
   const char *name;
   u32 capacity;
   VkBufferUsageFlags2 usage;
   VkMemoryPropertyFlags mem;
+  BufferQueue queue_type;
 } RGBufferInfo;
 
 typedef struct {
@@ -106,6 +115,9 @@ typedef struct {
   res_b binding;
   VkDescriptorType type;
   SyncDef sync;
+  u32  queue_fam[BUFFER_QUEUE_ALL];
+  u32 queue_count;
+  VkSharingMode sharing_mode;
 } RBuffer;
 
 typedef struct {

@@ -25,17 +25,19 @@ void main()
         vec3 hit_color = vec3(0);
         vec3 n_smooth = vec3(0);
         float ao = 0;
-
-        int grid_slot = grid_world_to_chunk_index(ray.origin, pc.grid_min_corner);
-        g_grid_indices[pc.grid_id].data[grid_slot];
-
-        // bool hit = traverse_one_chunk(
-        //                 ray, vec3(0.0),
-        //                 hit_pos, hit_level, hit_slot, iter_count, err_code, hit_color, n_smooth, ao);
-        //
-        // vec4 color = debug_view_color(
-        //                 pc.debug_mode, hit, iter_count, MAX_ITER_COUNT,
-        //                 hit_level, hit_slot, err_code, hit_color, n_smooth, ao);
-        //
-        // imageStore(G_OUTIMG(pc), ivec2(pixel), color);
+        
+        int grid_slot = grid_world_to_chunk_index(ray.origin, pc.grid_min_corner, 64, 4);
+        GPUGridSlot slot_indices = G_GRID(pc,grid_slot);
+        float t_dist = 0;
+         bool hit = traverse_one_chunk(
+                       slot_indices,
+                         ray, vec3(0.0), //   TODO, update later to chunk corner
+                        t_dist,
+                         hit_pos, hit_level, hit_slot, iter_count, err_code, hit_color, n_smooth, ao);
+        
+         vec4 color = debug_view_color(
+                         pc.debug_mode, hit, iter_count, MAX_ITER_COUNT,
+                         hit_level, hit_slot, err_code, hit_color, n_smooth, ao);
+        
+         imageStore(G_OUTIMG(pc), ivec2(pixel), color);
 }

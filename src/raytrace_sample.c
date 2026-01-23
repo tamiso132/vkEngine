@@ -34,7 +34,8 @@ Sample create_raytrace_sample() { return (Sample){.init = _init, .render = _rend
 static void _init(Sample *self, SampleContext *ctx) {
   RaytraceData *data = calloc(sizeof(RaytraceData), 1);
   WorldConfig w_config = {.chunk_size = CHUNK_SIZE, .visibility = 4};
-  world_create(&w_config, ctx->cam.pos);
+  data->world =  world_create(&w_config, ctx->cam.pos);
+  world_init_gpu(data->world, ctx->rm, ctx->rm);
 
   CpConfig config = cp_init("Raytrace Pipeline");
   cp_set_shader_path(&config, "shaders/rt/rt.comp");

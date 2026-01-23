@@ -38,7 +38,7 @@ typedef struct ChunkGpuBuffer {
 // GPU resource container (double-buffered per resource kind)
 // ===========================
 typedef struct ChunkGpu {
-  ChunkGpuBuffer *buffers[CHUNK_RES__COUNT];
+  ChunkGpuBuffer buffers[CHUNK_RES__COUNT];
 
   uint32_t pending_mask; // what kinds are being uploaded
   Ticket pending_ticket;

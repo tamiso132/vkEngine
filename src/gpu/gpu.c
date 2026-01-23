@@ -2,15 +2,86 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <vulkan/vulkan_core.h>
 
 #include "system_manager.h"
 
+#include "util.h"
 #include "vector.h"
 #include "vk_mem_alloc.h"
 
+typedef struct QueueFamilyIndices {
+  int graphics;
+  int present;
+  int transfer;
+} QueueFamilyIndices;
+
+static QueueFamilyIndices _find_queue_families(VkPhysicalDevice phys, VkSurfaceKHR surface) {
+  QueueFamilyIndices out = {.graphics = -1, .present = -1, .transfer = -1};
+
+  uint32_t count = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(phys, &count, NULL);
+
+  VkQueueFamilyProperties *props = malloc(sizeof(VkQueueFamilyProperties) * count);
+  vkGetPhysicalDeviceQueueFamilyProperties(phys, &count, props);
+
+  // 1) Graphics family
+  for (uint32_t i = 0; i < count; i++) {
+    if (props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+      out.graphics = (int)i;
+      break;
+    }
+  }
+
+  // 2) Present family (requires surface)
+  if (surface != VK_NULL_HANDLE) {
+    for (uint32_t i = 0; i < count; i++) {
+      VkBool32 supportsPresent = VK_FALSE;
+      vkGetPhysicalDeviceSurfaceSupportKHR(phys, i, surface, &supportsPresent);
+      if (supportsPresent) {
+        out.present = (int)i;
+        break;
+      }
+    }
+  } else {
+    out.present = out.graphics;
+  }
+
+  // 3) Transfer family: prefer transfer-only (no graphics + no compute)
+  for (uint32_t i = 0; i < count; i++) {
+    VkQueueFlags f = props[i].queueFlags;
+    bool hasTransfer = (f & VK_QUEUE_TRANSFER_BIT) != 0;
+    bool hasGraphics = (f & VK_QUEUE_GRAPHICS_BIT) != 0;
+    bool hasCompute = (f & VK_QUEUE_COMPUTE_BIT) != 0;
+
+    if (hasTransfer && !hasGraphics && !hasCompute) {
+      out.transfer = (int)i;
+      break;
+    }
+  }
+
+  // fallback: any queue supporting transfer
+  if (out.transfer < 0) {
+    for (uint32_t i = 0; i < count; i++) {
+      if (props[i].queueFlags & VK_QUEUE_TRANSFER_BIT) {
+        out.transfer = (int)i;
+        break;
+      }
+    }
+  }
+
+  // final fallback
+  if (out.transfer < 0)
+    out.transfer = out.graphics;
+  if (out.present < 0)
+    out.present = out.graphics;
+
+  free(props);
+  return out;
+}
+
 // --- Private Prototypes ---
 static bool on_system_init(void *config, u32 *memory_req);
+
 static void on_system_destroy();
 static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info);
 static void gpu_destroy(M_GPU *dev);
@@ -21,7 +92,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverity
                                                      const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
                                                      void *pUserData) {
   // Filter out "VERBOSE" if you want less noise
-  if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
+  if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
     fprintf(stderr, "[VALIDATION]: %s\n", pCallbackData->pMessage);
   }
 
@@ -57,6 +128,7 @@ static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info) {
   uint32_t glfwCount;
   const char **glfwExts = glfwGetRequiredInstanceExtensions(&glfwCount);
   const char **enabledExts = malloc(sizeof(char *) * (glfwCount + 1));
+  DEFER_FREE_PTR(enabledExts);
 
   memcpy(enabledExts, glfwExts, sizeof(char *) * glfwCount);
   uint32_t extCount = glfwCount;
@@ -78,12 +150,13 @@ static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info) {
 
   VkInstanceCreateInfo instInfo = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
                                    .pNext = info->enable_validation ? &debugInfo : NULL,
-                                   .enabledExtensionCount = glfwCount + 1,
+                                   .enabledExtensionCount = extCount,
                                    .ppEnabledExtensionNames = enabledExts,
                                    .enabledLayerCount = info->enable_validation ? 1 : 0,
                                    .ppEnabledLayerNames = layers,
                                    .pApplicationInfo = &(VkApplicationInfo){.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                                                                             .apiVersion = VK_API_VERSION_1_3}};
+
   if (vkCreateInstance(&instInfo, NULL, &dev->instance) != VK_SUCCESS)
     return false;
   volkLoadInstance(dev->instance);
@@ -113,10 +186,41 @@ static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info) {
 
   // 4. Logical Device (Simplified: 1 Queue for everything)
   float prio = 1.0f;
-  VkDeviceQueueCreateInfo qInfo = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                                   .queueFamilyIndex = 0, // In robust code, find family with Graphics | Present
-                                   .queueCount = 1,
-                                   .pQueuePriorities = &prio};
+  // 4. Logical Device (Graphics + Present + Transfer)
+  QueueFamilyIndices q = _find_queue_families(dev->physical_device, dev->surface);
+
+  dev->graphics_family = (uint32_t)q.graphics;
+  dev->present_family = (uint32_t)q.present;
+  dev->transfer_family = (uint32_t)q.transfer;
+
+  // One VkDeviceQueueCreateInfo per UNIQUE family
+  VkDeviceQueueCreateInfo qInfos[3];
+  uint32_t qInfoCount = 0;
+
+#define ADD_QFI(familyIndex)                                                                                           \
+  do {                                                                                                                 \
+    bool exists = false;                                                                                               \
+    for (uint32_t k = 0; k < qInfoCount; k++) {                                                                        \
+      if (qInfos[k].queueFamilyIndex == (uint32_t)(familyIndex)) {                                                     \
+        exists = true;                                                                                                 \
+        break;                                                                                                         \
+      }                                                                                                                \
+    }                                                                                                                  \
+    if (!exists) {                                                                                                     \
+      qInfos[qInfoCount++] = (VkDeviceQueueCreateInfo){.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,            \
+                                                       .queueFamilyIndex = (uint32_t)(familyIndex),                    \
+                                                       .queueCount = 1,                                                \
+                                                       .pQueuePriorities = &prio};                                     \
+    }                                                                                                                  \
+  } while (0)
+
+  ADD_QFI(dev->graphics_family);
+  ADD_QFI(dev->present_family);
+  ADD_QFI(dev->transfer_family);
+#undef ADD_QFI
+
+  printf("[GPU] queue families: graphics=%u present=%u transfer=%u\n", dev->graphics_family, dev->present_family,
+         dev->transfer_family);
 
   VkPhysicalDeviceDescriptorIndexingFeatures indexing_features = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
@@ -156,8 +260,8 @@ static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info) {
   const char *devExts[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
   VkDeviceCreateInfo dInfo = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                               .pNext = &feats2,
-                              .queueCreateInfoCount = 1,
-                              .pQueueCreateInfos = &qInfo,
+                              .queueCreateInfoCount = qInfoCount,
+                              .pQueueCreateInfos = qInfos,
                               .enabledExtensionCount = 1,
                               .ppEnabledExtensionNames = devExts};
 
@@ -165,7 +269,9 @@ static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info) {
     return false;
   volkLoadDevice(dev->device);
 
-  vkGetDeviceQueue(dev->device, 0, 0, &dev->graphics_queue);
+ vkGetDeviceQueue(dev->device, dev->graphics_family, 0, &dev->graphics_queue);
+vkGetDeviceQueue(dev->device, dev->transfer_family, 0, &dev->transfer_queue);
+
 
   // 5. VMA Init
   VmaVulkanFunctions vmaFuncs = {0};

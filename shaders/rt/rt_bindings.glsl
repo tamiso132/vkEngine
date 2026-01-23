@@ -37,12 +37,15 @@ layout(push_constant) uniform constants {
         PushRay pc;
 };
 
-// Accessors (avoid repeating nonuniformEXT everywhere)
 #define G_CAM(pc)          (g_cam[nonuniformEXT((pc).cam_id)].data)
-#define G_NODE_MASK(pc,i)  (g_nodes[nonuniformEXT((pc).node_id)].data[(i)])
-#define G_CHILD_PACK(pc,i) (g_child_indices[nonuniformEXT((pc).child_id)].data[(i)])
-#define G_PAL(pc,i)        (g_palette[nonuniformEXT((pc).palette_id)].data[(i)])
-#define G_LEAFMAT(pc,i)    (g_leaf_mats[nonuniformEXT((pc).leaf_mats_id)].data[(i)])
+#define G_GRID(pc, i)          (g_grid_indices[nonuniformEXT((pc).grid_id)].data[i])
+#define G_NODE_MASK(gs, i)  (g_nodes[nonuniformEXT((gs).nodes_id)].data[(i)])
+#define G_CHILD_PACK(gs, i) (g_child_indices[nonuniformEXT((gs).child_index_id)].data[(i)])
+#define G_PAL(gs, i)        (g_palette[nonuniformEXT((gs).palette_id)].data[(i)])
+#define G_LEAFMAT(gs, i)    (g_leaf_mats[nonuniformEXT((gs).leaf_mat_id)].data[(i)])
 #define G_OUTIMG(pc)       (g_images[nonuniformEXT((pc).img_output_id)])
+
+#define GET_LEAF_MATERIAL(gs, idx) ((G_LEAFMAT(gs, (idx) >> 1u) >> (((idx) & 1u) << 4u)) & 0xFFFFu)
+
 
 #endif

@@ -9,6 +9,7 @@
 #include "cglm/vec3.h"
 #include "common.h"
 #include "resource/resmanager.h"
+#include "rt/rt_shared.glsl"
 #include "transfer_queue.h"
 #include "vector.h"
 #include "world/chunk.h"
@@ -110,7 +111,7 @@ World *world_create(const WorldConfig *cfg, vec3 player_pos) {
 
   // clear grid
   memset(w->grid.chunks, 0xFF, sizeof(w->grid.chunks)); // -1
-  memset(w->grid.gpu_indices, 0, sizeof(w->grid.gpu_indices));
+  memset(w->grid.gpu_indices, UNDEFINED_VALUE, sizeof(w->grid.gpu_indices));
 
   // fill load list for initial grid and load CPU chunks
   grid_init(&w->grid, w->prev_player_chunk, &w->grid_result);

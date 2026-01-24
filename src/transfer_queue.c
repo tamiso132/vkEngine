@@ -22,6 +22,7 @@ typedef struct TransferQueue {
   u32 max_frames_in_flight;
   u32 frame_index;
   bool in_flight;
+  bool is_frame_started;
   Frame frames[];
 } TransferQueue;
 
@@ -40,6 +41,7 @@ TransferQueue *transfer_init(VkDevice device, VkQueue transfer, u32 queue_fam, V
   tq->transfer = transfer;
   tq->allocator = allocator;
   tq->max_frames_in_flight = max_frame_in_flight;
+  tq->is_frame_started = false;
 
   for (u32 i = 0; i < max_frame_in_flight; i++) {
     tq->frames[i].cmd = cmd_init(device, queue_fam);
@@ -51,6 +53,7 @@ TransferQueue *transfer_init(VkDevice device, VkQueue transfer, u32 queue_fam, V
 // LATER ON; SHOULD PROBABLY COPY OVER
 Ticket transfer_push_upload(TransferQueue *transfer, M_Resource *rm, ResHandle handle, u32 size, void *data,
                             u32 aligment) {
+  assert(transfer->is_frame_started);
   StagingSlice slice = sgr_alloc(transfer->staging_ring, size, aligment);
 
   if (!transfer->is_cmd_on) {
@@ -72,6 +75,7 @@ void transfer_on_new_frame(TransferQueue *transfer) {
     sgr_on_new_frame(transfer->staging_ring, transfer->frame_index);
     sm_begin_frame(transfer->submit);
     transfer->in_flight = false;
+    transfer->is_frame_started = true;
     return;
   }
 }
@@ -94,6 +98,7 @@ void transfer_submit_on_frame_end(TransferQueue *transfer) {
       sm_work_headless(transfer->submit, _get_frame(transfer).cmd.buffer, true, true);
 
   transfer->in_flight = true;
+  transfer->is_frame_started = false;
 }
 
 // --- Private Functions ---

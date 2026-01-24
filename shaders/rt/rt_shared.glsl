@@ -17,7 +17,7 @@ SHARED_CONST_U32(DEBUG_MODE_OCCULUSION, 6);
 #define BITS_PER_LEVEL (BITS_PER_AXIS_PER_LEVEL * AXIS_COUNT) /* 6 */
 #define BITS_PER_AXIS (BITS_PER_AXIS_PER_LEVEL * TREE_LEVELS) /* 2L */
 #define CHUNK_SIZE (1 << BITS_PER_AXIS)                       /* 4^L */
-
+#define UNDEFINED_VALUE 0xFFFFFFFFu
 //Optimizations
 #define OPTIMIZATION_RT_JUMP_EMPTY_SPACE 1
 
@@ -39,7 +39,7 @@ vec4 w;
 vec2 half_w_h;
 } ;
 
-SHARED_STRUCT(GPUGridSlot, 8){
+SHARED_STRUCT(GPUGridSlot, 16){
 u32 nodes_id;
 u32 child_index_id;
 u32 palette_id;

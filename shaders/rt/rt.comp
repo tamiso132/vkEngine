@@ -28,6 +28,11 @@ void main()
         
         int grid_slot = grid_world_to_chunk_index(ray.origin, pc.grid_min_corner, 64, 4);
         GPUGridSlot slot_indices = G_GRID(pc,grid_slot);
+        if(slot_indices.nodes_id == UNDEFINED_VALUE)
+        {
+          vec4 color = vec4(1.0, 1.0, 1.0, 1.0);
+          imageStore(G_OUTIMG(pc), ivec2(pixel), color);
+        }
         float t_dist = 0;
          bool hit = traverse_one_chunk(
                        slot_indices,

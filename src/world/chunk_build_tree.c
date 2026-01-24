@@ -89,16 +89,16 @@ static void _print_vram_usage(ChunkBuildOutput *out) {
   u32 voxel_count = out->leaf_mats ? (u32)vec_len(out->leaf_mats) : 0u;
 
   // 2. Log with explicit "Voxels" label
-  LOG_INFO("\n=== Chunk VRAM Usage ===\n"
-           "  Nodes (u64):       %zu bytes (%u items)\n"
-           "  Child Index (u32): %zu bytes (%u items)\n"
-           "  Leaf Mats (u16):   %zu bytes (%u items)\n"
-           "  Total Voxels:      %u\n"
-           "  --------------------------\n"
-           "  TOTAL:             %zu bytes (%.2f MB)\n"
-           "========================",
-           size_nodes, (u32)vec_len(out->nodes), size_indices, (u32)vec_len(out->child_indices), size_mats, voxel_count,
-           voxel_count, total_bytes, (double)total_bytes / (1024.0 * 1024.0));
+  //   LOG_INFO("\n=== Chunk VRAM Usage ===\n"
+  //            "  Nodes (u64):       %zu bytes (%u items)\n"
+  //            "  Child Index (u32): %zu bytes (%u items)\n"
+  //            "  Leaf Mats (u16):   %zu bytes (%u items)\n"
+  //            "  Total Voxels:      %u\n"
+  //            "  --------------------------\n"
+  //            "  TOTAL:             %zu bytes (%.2f MB)\n"
+  //            "========================",
+  //            size_nodes, (u32)vec_len(out->nodes), size_indices, (u32)vec_len(out->child_indices), size_mats,
+  //            voxel_count, voxel_count, total_bytes, (double)total_bytes / (1024.0 * 1024.0));
 }
 
 // Stage A: leaf masks

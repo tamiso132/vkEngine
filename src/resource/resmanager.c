@@ -180,7 +180,7 @@ void rm_bindless_batch_buffer_update(M_Resource *rm, DescriptorInfo *infos, u32 
     writes->descriptorCount = 1;
     writes->dstArrayElement = infos[i].new_index;
   }
-  vkUpdateDescriptorSets(gpu->device, info_count, &writes, 0, NULL);
+  vkUpdateDescriptorSets(gpu->device, info_count, writes, 0, NULL);
 }
 
 u32 rm_get_buffer_descriptor_index(M_Resource *rm, ResHandle buffer) {

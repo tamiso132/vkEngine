@@ -34,12 +34,14 @@ void run_sample(Sample *sample, GLFWwindow *window) {
                           1),
   };
   cmd_begin(device->device, cmd);
+  transfer_on_new_frame(ctx.tq);
   if (sample->init) {
 
     sample->init(sample, &ctx);
   }
   cmd_end(device->device, cmd);
   sm_work(sm, swapchain, cmd.buffer, false, false);
+  transfer_submit_on_frame_end(ctx.tq);
   vkDeviceWaitIdle(device->device);
 
   double last_time = glfwGetTime();

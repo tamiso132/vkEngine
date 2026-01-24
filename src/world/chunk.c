@@ -19,9 +19,11 @@ ChunkTree *chunk_create(void) {
 
   // PUSH EMPTY ROOT
   vec_push(&chunk->p_res_data[CHUNK_RES_NODES], &(Node){.mask = 0});
+  chunk->is_dirty = true;
 
-  chunk->is_dirty = false;
   chunk->build_version = 0;
+
+  chunk_build_if_needed(chunk);
   return chunk;
 }
 

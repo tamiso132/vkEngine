@@ -28,27 +28,42 @@ ChunkGpu *chunk_gpu_init(M_Resource *rm, ChunkUploadView view) {
                             .capacity = vec_len(&view.p_res_data[CHUNK_RES_NODES]),
                             .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                             .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                          .queue_type = BUFFER_QUEUE_ALL};
+                            .queue_type = BUFFER_QUEUE_ALL};
 
   RGBufferInfo child_info = {.name = "childIndexBuffer",
                              .capacity = vec_len(&view.p_res_data[CHUNK_RES_CHILDREN]),
                              .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                             .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .queue_type = BUFFER_QUEUE_ALL};
+                             .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                             .queue_type = BUFFER_QUEUE_ALL};
 
   RGBufferInfo pal_info = {.name = "Palette",
                            .capacity = vec_len(&view.p_res_data[CHUNK_RES_PALETTE]),
                            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                           .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .queue_type = BUFFER_QUEUE_ALL};
+                           .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                           .queue_type = BUFFER_QUEUE_ALL};
 
   RGBufferInfo leaf_info = {.name = "LeafMatBuffer",
                             .capacity = vec_len(&view.p_res_data[CHUNK_RES_LEAF_MATS]),
                             .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                            .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .queue_type = BUFFER_QUEUE_ALL};
+                            .mem = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                            .queue_type = BUFFER_QUEUE_ALL};
 
   async_init(rm, &node_info, &cg->buffers[CHUNK_RES_NODES].async);
   async_init(rm, &child_info, &cg->buffers[CHUNK_RES_CHILDREN].async);
   async_init(rm, &node_info, &cg->buffers[CHUNK_RES_PALETTE].async);
   async_init(rm, &node_info, &cg->buffers[CHUNK_RES_LEAF_MATS].async);
+
+  cg->stable_slots.nodes_id =
+      rm_get_buffer_descriptor_index(rm, async_get_active_buffer(&cg->buffers[CHUNK_RES_NODES].async));
+
+  cg->stable_slots.child_index_id =
+      rm_get_buffer_descriptor_index(rm, async_get_active_buffer(&cg->buffers[CHUNK_RES_CHILDREN].async));
+
+  cg->stable_slots.palette_id =
+      rm_get_buffer_descriptor_index(rm, async_get_active_buffer(&cg->buffers[CHUNK_RES_PALETTE].async));
+
+  cg->stable_slots.leaf_mat_id =
+      rm_get_buffer_descriptor_index(rm, async_get_active_buffer(&cg->buffers[CHUNK_RES_LEAF_MATS].async));
 
   return cg;
 }
@@ -65,28 +80,12 @@ void chunk_gpu_deinit(ChunkGpu *cg, ResourceManager *rm) {
 ChunkGpuUploadState chunk_gpu_state(const ChunkGpu *cg, ChunkResType res_type) { return cg->pending_mask; }
 
 ChunkGpuUploadState chunk_gpu_state_all(const ChunkGpu *cg) { return _get_chunk_state_all(cg->pending_mask); }
-GPUGridSlot chunk_gpu_get_descriptor_indices(ChunkGpu *cg, M_Resource *rm) {
-  GPUGridSlot out = {0};
-  if (!cg)
-    return out;
-
-ResHandle node_res =async_get_active_buffer(&cg->buffers[CHUNK_RES_NODES].async);
-ResHandle child_res =async_get_active_buffer(&cg->buffers[CHUNK_RES_CHILDREN].async);
-ResHandle palette_res =async_get_active_buffer(&cg->buffers[CHUNK_RES_PALETTE].async);
-ResHandle leaf_res =async_get_active_buffer(&cg->buffers[CHUNK_RES_LEAF_MATS].async);
-
-  out.nodes_id = rm_get_buffer_index(rm, node_res);
-  out.child_index_id = rm_get_buffer_index(rm, child_res);
-  out.palette_id = rm_get_buffer_index(rm, palette_res);
-  out.leaf_mat_id = rm_get_buffer_index(rm, leaf_res);
-
-  return out;
-}
+GPUGridSlot chunk_gpu_get_descriptor_indices(ChunkGpu *cg, M_Resource *rm) { return cg->stable_slots; }
 
 // ============================================================
 // enqueue upload
 // ============================================================
-bool chunk_gpu_enqueue_upload(ChunkGpu *cg, ResourceManager *rm, TransferQueue *transfer,
+bool chunk_gpu_enqueue_upload(ChunkGpu *cg, M_Resource *rm, TransferQueue *transfer,
                               const ChunkUploadView *upload_data) {
 
   const ChunkUploadView *ud = (const ChunkUploadView *)upload_data;
@@ -116,28 +115,53 @@ bool chunk_gpu_enqueue_upload(ChunkGpu *cg, ResourceManager *rm, TransferQueue *
 // ============================================================
 // poll + swap
 // ============================================================
-bool chunk_gpu_tick(ChunkGpu *cg, M_Resource *rm, TransferQueue *queue) {
+bool chunk_gpu_tick(ChunkGpu *cg, M_Resource *rm, TransferQueue *queue, Vector *out_desc_updates) {
   u32 idle_mask = _get_pending_idle_mask();
   if ((cg->pending_mask & idle_mask) == idle_mask)
     return true;
 
   u64 current_ticket = transfer_get_current_ticket_completed(queue);
-  if (current_ticket >= cg->pending_ticket) {
-    // TODO, ITERATE OVER ALL BUFFERS AND SWAP IF NOT IDLE
-    // TODO, return some type of result, telling what descriptors are dirty
-    for (u32 i = 0; i < CHUNK_RES__COUNT; i++) {
-      u32 pending_state = _get_chunk_state(cg->pending_mask, i);
-      if (pending_state != 1 << CHUNK_GPU_UPLOAD_IN_FLIGHT)
-        continue;
+  if (current_ticket < cg->pending_ticket)
+    return true;
 
-      async_swap(rm, &cg->buffers[i].async);
-      _set_chunk_state(&cg->pending_mask, i, CHUNK_GPU_UPLOAD_IDLE);
+  for (u32 i = 0; i < CHUNK_RES__COUNT; i++) {
+    u32 pending_state = _get_chunk_state(cg->pending_mask, i);
+    if (pending_state != (1u << CHUNK_GPU_UPLOAD_IN_FLIGHT))
+      continue;
 
-      if (cg->buffers[i].queued_copy.length != 0) {
-        // TODO, Enqueue stuff here and set it to PENDING AGAIN
-      }
+    // swap back -> active
+    async_swap(rm, &cg->buffers[i].async);
+    _set_chunk_state(&cg->pending_mask, i, CHUNK_GPU_UPLOAD_IDLE);
+
+    // new active handle after swap
+    ResHandle new_active = async_get_active_buffer(&cg->buffers[i].async);
+
+    // stable destination slot for this resource
+    u32 stable_slot = 0;
+    switch (i) {
+    case CHUNK_RES_NODES:
+      stable_slot = cg->stable_slots.nodes_id;
+      break;
+    case CHUNK_RES_CHILDREN:
+      stable_slot = cg->stable_slots.child_index_id;
+      break;
+    case CHUNK_RES_PALETTE:
+      stable_slot = cg->stable_slots.palette_id;
+      break;
+    case CHUNK_RES_LEAF_MATS:
+      stable_slot = cg->stable_slots.leaf_mat_id;
+      break;
+    default:
+      break;
     }
+
+    DescriptorInfo info = {
+        .handle = new_active,
+        .new_index = stable_slot,
+    };
+    vec_push(out_desc_updates, &info);
   }
+
   return true;
 }
 

@@ -21,11 +21,14 @@ typedef struct TransferQueue {
   bool is_cmd_on;
   u32 max_frames_in_flight;
   u32 frame_index;
+  bool in_flight;
   Frame frames[];
 } TransferQueue;
 
 // --- Private Prototypes ---
 static Frame _get_frame(TransferQueue *transfer);
+
+bool transfer_in_flight(TransferQueue *transfer) { return transfer->in_flight; }
 
 TransferQueue *transfer_init(VkDevice device, VkQueue transfer, u32 queue_fam, VmaAllocator allocator, u64 capacity,
                              u32 max_frame_in_flight) {
@@ -68,9 +71,9 @@ void transfer_on_new_frame(TransferQueue *transfer) {
 
     sgr_on_new_frame(transfer->staging_ring, transfer->frame_index);
     sm_begin_frame(transfer->submit);
+    transfer->in_flight = false;
+    return;
   }
-  LOG_ERROR("UGH, MUST IMPLEMENT NOW");
-  abort();
 }
 
 Ticket transfer_get_current_ticket_completed(TransferQueue *transfer) {
@@ -79,13 +82,18 @@ Ticket transfer_get_current_ticket_completed(TransferQueue *transfer) {
 
 void transfer_submit_on_frame_end(TransferQueue *transfer) {
 
+  if (!transfer->is_cmd_on)
+    return;
+
   cmd_end(transfer->device, _get_frame(transfer).cmd);
   transfer->is_cmd_on = false;
 
   sgr_flush(transfer->staging_ring, transfer->frame_index);
 
   transfer->frames[transfer->frame_index].submit_signal =
-      sm_work(transfer->submit, NULL, _get_frame(transfer).cmd.buffer, true, true);
+      sm_work_headless(transfer->submit, _get_frame(transfer).cmd.buffer, true, true);
+
+  transfer->in_flight = true;
 }
 
 // --- Private Functions ---

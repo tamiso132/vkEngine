@@ -12,28 +12,8 @@
 #define INVALID_BINDING_INDEX UINT32_MAX
 
 // PUBLIC FUNCTIONS
-
-RBuffer *rm_get_buffer(M_Resource *rm, ResHandle handle);
-RImage *rm_get_image(M_Resource *rm, ResHandle handle);
-ResHandle rm_create_buffer(M_Resource *rm, RGBufferInfo *info);
-ResHandle rm_create_image(M_Resource *rm, RGImageInfo info);
-ResHandle rm_import_image(M_Resource *rm, RGImageInfo *info, VkImage img, VkImageView view);
-RmStageSlice rm_get_stage_buffer(M_Resource *rm, const void *data, VkDeviceSize size, VkDeviceSize alignment);
-SystemFunc rm_system_get_func();
-VkDescriptorSet rm_get_bindless_set(M_Resource *rm);
-VkDescriptorSetLayout rm_get_bindless_layout(M_Resource *rm);
-VkPipelineLayout rm_get_pipeline_layout(M_Resource *rm);
-u32 rm_get_buffer_descriptor_index(M_Resource *rm, ResHandle buffer);
-u32 rm_get_buffer_index(M_Resource *rm, ResHandle buffer);
-u32 rm_get_image_index(M_Resource *rm, ResHandle image);
-void rm_destroy(M_Resource *rm);
-void rm_import_existing_image(M_Resource *rm, ResHandle handle, VkImage raw_img, VkImageView view, VkExtent2D new_extent, bool delete_img);
-void rm_on_new_frame(M_Resource *rm);
-void rm_resize_image(M_Resource *rm, ResHandle handle, uint32_t width, uint32_t height);
 // END PUBLIC FUNCTIONS
 // -------------------- Internal resource structs --------------------
-
-
 
 // -------------------- Retirement / GC --------------------
 

@@ -23,7 +23,7 @@ typedef uint64_t u64;
 
 #define RGBA(r, g, b, a) ((u32)(r) | ((u32)(g) << 8) | ((u32)(b) << 16) | ((u32)(a) << 24))
 
-typedef enum { RES_TYPE_BUFFER, RES_TYPE_IMAGE, RES_TYPE_COUNT } ResType;
+typedef enum { RES_TYPE_BUFFER, RES_TYPE_IMAGE, RES_TYPE_COUNT, RES_TYPE_NONE } ResType;
 
 typedef enum SystemType {
   SYSTEM_TYPE_GPU,
@@ -51,7 +51,7 @@ typedef enum SystemType {
 
 typedef struct {
   u32 id : 31;
-  ResType res_type : 1;
+  ResType res_type : 2;
 } ResHandle;
 
 typedef uint32_t PipelineHandle;

@@ -11,6 +11,7 @@
 #include "rt/rt_shared.glsl"
 #include "sample_interface.h"
 #include "shaders/rt/rt_shared.glsl"
+#include "transfer_queue.h"
 #include "world/world.h"
 
 #include <math.h>
@@ -34,8 +35,8 @@ Sample create_raytrace_sample() { return (Sample){.init = _init, .render = _rend
 static void _init(Sample *self, SampleContext *ctx) {
   RaytraceData *data = calloc(sizeof(RaytraceData), 1);
   WorldConfig w_config = {.chunk_size = CHUNK_SIZE, .visibility = 4};
-  data->world =  world_create(&w_config, ctx->cam.pos);
-  world_init_gpu(data->world, ctx->rm, ctx->rm);
+  data->world = world_create(&w_config, ctx->cam.pos);
+  world_init_gpu(data->world, ctx->rm, ctx->tq);
 
   CpConfig config = cp_init("Raytrace Pipeline");
   cp_set_shader_path(&config, "shaders/rt/rt.comp");
@@ -51,6 +52,7 @@ static void _init(Sample *self, SampleContext *ctx) {
       .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
       .capacity = sizeof(ShaderRayCam),
       .mem = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+      .queue_type = BUFFER_QUEUE_GRAPHIC,
   };
 
   data->cam_buffer = rm_create_buffer(ctx->rm, &cam_info);
@@ -66,6 +68,9 @@ static void _render(Sample *self, SampleContext *ctx) {
   uint32_t groupsX = (ctx->extent.width + 7) / 8;
   uint32_t groupsY = (ctx->extent.height + 7) / 8;
   ResHandle swap_img = ctx->swap_img;
+
+  world_cpu_tick(data->world, ctx->cam.pos);
+  world_gpu_tick(data->world, ctx->rm, ctx->tq);
 
   float half_h = tanf((M_PI / 180) * ctx->cam.vfov_deg * 0.5f);
   float half_w = ctx->cam.aspect * half_h;

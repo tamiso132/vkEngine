@@ -1,6 +1,6 @@
-//! rm_internal.h
 #include "common.h"
 #include "rm_internal.h"
+#include "vector.h"
 
 // System lifecycle glue
 
@@ -94,6 +94,12 @@ void rm_import_existing_image(M_Resource *rm, ResHandle handle, VkImage raw_img,
   //   rm_bindless_update(rm, handle, &imageInfo, NULL);
 }
 
+void rm_descriptor_update(Vector res) {
+
+  for (u32 i = 0; i < res.length; i++) {
+  }
+}
+
 ResHandle rm_import_image(M_Resource *rm, RGImageInfo *info, VkImage img, VkImageView view) {
   return rm_image_import(rm, info, img, view);
 }
@@ -153,6 +159,28 @@ void rm_destroy(M_Resource *rm) {
   rm_bindless_shutdown(rm, gpu);
 
   memset(rm, 0, sizeof(*rm));
+}
+void rm_bindless_batch_buffer_update(M_Resource *rm, DescriptorInfo *infos, u32 info_count) {
+  M_GPU *gpu = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+  VkWriteDescriptorSet writes[info_count];
+  VkDescriptorBufferInfo b_infos[info_count];
+  memset(writes, 0, sizeof(VkWriteDescriptorSet) * info_count);
+  memset(b_infos, 0, sizeof(VkDescriptorBufferInfo) * info_count);
+
+  for (u32 i = 0; i < info_count; i++) {
+    RBuffer *buffer = rm_get_buffer(rm, infos[i].handle);
+    b_infos->range = VK_WHOLE_SIZE;
+    b_infos->buffer = buffer->handle;
+
+    writes->pBufferInfo = &b_infos;
+    writes->descriptorType = buffer->type;
+    writes->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes->dstBinding = buffer->binding;
+    writes->dstSet = rm->bindless_set;
+    writes->descriptorCount = 1;
+    writes->dstArrayElement = infos[i].new_index;
+  }
+  vkUpdateDescriptorSets(gpu->device, info_count, &writes, 0, NULL);
 }
 
 u32 rm_get_buffer_descriptor_index(M_Resource *rm, ResHandle buffer) {

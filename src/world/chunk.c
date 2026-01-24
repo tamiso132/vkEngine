@@ -17,6 +17,9 @@ ChunkTree *chunk_create(void) {
   vec_init(&chunk->p_res_data[CHUNK_RES_CHILDREN], sizeof(u32), NULL);
   vec_init(&chunk->p_res_data[CHUNK_RES_LEAF_MATS], sizeof(u16), NULL);
 
+  // PUSH EMPTY ROOT
+  vec_push(&chunk->p_res_data[CHUNK_RES_NODES], &(Node){.mask = 0});
+
   chunk->is_dirty = false;
   chunk->build_version = 0;
   return chunk;

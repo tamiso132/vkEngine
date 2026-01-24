@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <vulkan/vulkan_core.h>
 
 typedef struct FramePresent {
   VkSemaphore binary_acquire;
@@ -68,6 +69,76 @@ void sm_acquire_swapchain(M_Submit *mgr, M_Swapchain *swapchain) {
 
   vkAcquireNextImage2KHR(mgr->device, &info, &swapchain->current_img_idx);
 }
+
+u64 sm_work_headless(M_Submit *mgr, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit) {
+  // PRETTY CURSED, might do something more normal later
+
+  VkCommandBufferSubmitInfo cmd_info = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = cmd};
+
+  VkSemaphoreSubmitInfo wait_info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                                     .semaphore = mgr->binary_acquire,
+                                     .stageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT};
+
+  VkSemaphoreSubmitInfo signal_info[1] = {
+      {
+          .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+          .semaphore = mgr->timeline,
+          .value = mgr->curr_signal_count,
+          .stageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+      },
+
+  };
+
+  u32 wait_count = is_first_submit && mgr->is_present_enabled;
+  u32 signal_count = (mgr->is_present_enabled && is_last_in_frame) ? 2 : 1;
+
+  VkSubmitInfo2 submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+                          .commandBufferInfoCount = 1,
+                          .pCommandBufferInfos = &cmd_info,
+
+                          // wait on aquire first submit
+                          // TODO: optimize so only waits if it uses swapchain image
+                          .waitSemaphoreInfoCount = wait_count,
+                          .pWaitSemaphoreInfos = &wait_info,
+
+                          .signalSemaphoreInfoCount = signal_count,
+                          .pSignalSemaphoreInfos = signal_info};
+
+  vkQueueSubmit2(mgr->queue, 1, &submit, VK_NULL_HANDLE);
+
+  if (is_last_in_frame) {
+    mgr->frames[mgr->frame_index].signal_submit = mgr->curr_signal_count;
+    mgr->frame_index = (mgr->frame_index + 1) % mgr->frames_in_flight;
+  }
+
+  mgr->curr_signal_count += 1;
+
+  return mgr->curr_signal_count - 1;
+}
+
+u64 sm_get_cpu_signal_count(M_Submit *mgr) { return mgr->curr_signal_count; }
+
+u64 sm_get_gpu_signal_count(M_Submit *mgr) {
+  u64 gpu_counter = 0;
+  vkGetSemaphoreCounterValue(mgr->device, mgr->timeline, &gpu_counter);
+  return gpu_counter;
+}
+
+void sm_present(M_Submit *mgr, M_Swapchain *swapchain) {
+
+  VkSemaphore *sem_rend_done = &VEC_AT(&swapchain->imgs, swapchain->current_img_idx, PresentFrame)->sem_rend_done;
+
+  VkPresentInfoKHR present_info = {
+      .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+      .waitSemaphoreCount = 1,
+      .pWaitSemaphores = sem_rend_done,
+      .swapchainCount = 1,
+      .pSwapchains = &swapchain->swapchain,
+      .pImageIndices = &swapchain->current_img_idx,
+  };
+
+  vkQueuePresentKHR(mgr->queue, &present_info);
+}
 // TODO, might have to later, do that submits, rely on each other
 u64 sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit) {
 
@@ -119,30 +190,6 @@ u64 sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is_
   mgr->curr_signal_count += 1;
 
   return mgr->curr_signal_count - 1;
-}
-
-u64 sm_get_cpu_signal_count(M_Submit *mgr) { return mgr->curr_signal_count; }
-
-u64 sm_get_gpu_signal_count(M_Submit *mgr) {
-  u64 gpu_counter = 0;
-  vkGetSemaphoreCounterValue(mgr->device, mgr->timeline, &gpu_counter);
-  return gpu_counter;
-}
-
-void sm_present(M_Submit *mgr, M_Swapchain *swapchain) {
-
-  VkSemaphore *sem_rend_done = &VEC_AT(&swapchain->imgs, swapchain->current_img_idx, PresentFrame)->sem_rend_done;
-
-  VkPresentInfoKHR present_info = {
-      .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-      .waitSemaphoreCount = 1,
-      .pWaitSemaphores = sem_rend_done,
-      .swapchainCount = 1,
-      .pSwapchains = &swapchain->swapchain,
-      .pImageIndices = &swapchain->current_img_idx,
-  };
-
-  vkQueuePresentKHR(mgr->queue, &present_info);
 }
 
 M_Submit *init_submit(VkDevice device, VkQueue queue, bool is_present, uint32_t frames_in_flight) {

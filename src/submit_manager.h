@@ -26,6 +26,7 @@ SystemFunc sm_system_get_func();
 u64 sm_get_cpu_signal_count(M_Submit *mgr);
 u64 sm_get_gpu_signal_count(M_Submit *mgr);
 //
+u64 sm_work_headless(M_Submit *mgr, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit);
 u64 sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit);
 //
 void sm_acquire_swapchain(M_Submit *mgr, M_Swapchain *swapchain);

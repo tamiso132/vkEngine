@@ -19,20 +19,19 @@ void run_sample(Sample *sample, GLFWwindow *window) {
   auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
   auto *pr = SYSTEM_GET(SYSTEM_TYPE_HOTRELOAD, M_HotReload);
 
-
   CmdBuffer cmd = cmd_init(device->device, device->graphics_family);
   int width = 0, height = 0;
 
-  
   SampleContext ctx = {
-    .cmd = cmd,
-    .gpu = device,
-    .extent = swapchain->extent,
-    .pm = pm,
-    .pr = pr,
-    .rm = rm,
-    .cam = camera_init(swapchain->extent, 70),
-    .tq = transfer_init(device->device, device->transfer_queue, device->transfer_family, device->allocator,  MIB(100), 1),
+      .cmd = cmd,
+      .gpu = device,
+      .extent = swapchain->extent,
+      .pm = pm,
+      .pr = pr,
+      .rm = rm,
+      .cam = camera_init(swapchain->extent, 70),
+      .tq = transfer_init(device->device, device->transfer_queue, device->transfer_family, device->allocator, MIB(100),
+                          1),
   };
   cmd_begin(device->device, cmd);
   if (sample->init) {
@@ -77,6 +76,7 @@ void run_sample(Sample *sample, GLFWwindow *window) {
     camera_update(&ctx.cam, window, dt);
     m_system_update();
     sm_begin_frame(sm);
+    transfer_on_new_frame(ctx.tq);
 
     rm_on_new_frame(rm);
 
@@ -115,6 +115,7 @@ void run_sample(Sample *sample, GLFWwindow *window) {
     cmd_end(device->device, cmd);
 
     // Submit & Present
+    transfer_submit_on_frame_end(ctx.tq);
     sm_work(sm, swapchain, cmd.buffer, true, true);
     sm_present(sm, swapchain);
   }

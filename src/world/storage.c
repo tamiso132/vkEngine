@@ -11,7 +11,7 @@
 // --- Private Prototypes ---
 static u32 _alloc_index(ChunkStore *cs);
 
-static ChunkStoreEntryItem *_ensure_loaded(ChunkStore *cs, ivec3 coord);
+static ChunkStoreEntryItem *_ensure_loaded_cpu(ChunkStore *cs, ivec3 coord);
 
 static void _evict_until_budget(ChunkStore *cs);
 
@@ -27,9 +27,8 @@ static void _make_cached(ChunkStore *cs, ChunkStoreEntryItem *it);
 static inline u32 _u32_at(const Vector *v, u32 i);
 static inline void _u32_set(Vector *v, u32 i, u32 x);
 
-ChunkStoreResult chunk_store_init(ChunkStore *cs, u32 max_cached) {
-  if (!cs)
-    return CHUNK_STORE_ERR_BAD_ARG;
+void chunk_store_init(ChunkStore *cs, u32 max_cached, ChunkStoreResult *result) {
+  assert(cs);
   memset(cs, 0, sizeof(*cs));
 
   cs->max_cached = max_cached;
@@ -40,10 +39,9 @@ ChunkStoreResult chunk_store_init(ChunkStore *cs, u32 max_cached) {
   vec_init(&cs->cached_chunk_indices, sizeof(u32), NULL);
 
   cs->coord_to_ent = hm_chunk_store_entry_new(256);
-  if (!cs->coord_to_ent)
-    return CHUNK_STORE_ERR_OOM;
+  assert(cs->coord_to_ent);
 
-  return CHUNK_STORE_OK;
+  result->err_code = CHUNK_STORE_OK;
 }
 
 GPUGridSlot chunk_store_get_descriptors(ChunkStore *cs, M_Resource *rm, u32 active_idx) {
@@ -75,9 +73,12 @@ void chunk_store_destroy(ChunkStore *cs) {
   vec_free(&cs->cached_chunk_indices);
 }
 
-ChunkStoreResult chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector left_coords) {
+void chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector left_coords, ChunkStoreResult *result) {
+
+  result->err_code = CHUNK_STORE_ERR_BAD_ARG;
+
   if (!cs || !left_coords.data)
-    return CHUNK_STORE_ERR_BAD_ARG;
+    return;
 
   for (u32 i = 0; i < (u32)vec_len(&left_coords); ++i) {
     ivec3 c;
@@ -90,10 +91,10 @@ ChunkStoreResult chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector le
   }
 
   _evict_until_budget(cs);
-  return CHUNK_STORE_OK;
+  result->err_code = CHUNK_STORE_OK;
 }
 
-ChunkStoreResult chunk_store_apply_left_idxs(ChunkStore *cs, const Vector left_idxs) {
+void chunk_store_apply_left_idxs(ChunkStore *cs, const Vector left_idxs, ChunkStoreResult *result) {
 
   for (u32 i = 0; i < vec_len(&left_idxs); ++i) {
     ChunkItem *item = VEC_AT(&cs->chunk_items, *VEC_AT(&cs->active_chunk_indices, i, u32), ChunkItem);
@@ -105,44 +106,42 @@ ChunkStoreResult chunk_store_apply_left_idxs(ChunkStore *cs, const Vector left_i
       _make_cached(cs, it);
   }
   _evict_until_budget(cs);
-  return CHUNK_STORE_OK;
+  result->err_code = CHUNK_STORE_OK;
 }
 
-void chunk_store_gpu_tick(ChunkStore *cs, M_Resource *rm, TransferQueue *transfer) {
+void chunk_store_gpu_tick(ChunkStore *cs, M_Resource *rm, TransferQueue *transfer, Vector *out_desc_updates) {
   for (u32 i = 0; i < cs->active_chunk_indices.length; i++) {
     u32 active_idx = *VEC_AT(&cs->active_chunk_indices, i, u32);
-    ChunkItem item = *VEC_AT(&cs->chunk_items, active_idx, ChunkItem);
-    if (!item.chunk_gpu) {
+    ChunkItem *item = VEC_AT(&cs->chunk_items, active_idx, ChunkItem);
+    if (!item->chunk_gpu) {
       ChunkUploadView out_view = {};
-      chunk_get_upload_view(item.tree, &out_view);
-      item.chunk_gpu = chunk_gpu_init(rm, out_view);
+      chunk_get_upload_view(item->tree, &out_view);
+      item->chunk_gpu = chunk_gpu_init(rm, out_view);
     }
 
-    chunk_gpu_tick(item.chunk_gpu, rm, transfer);
+    chunk_gpu_tick(item->chunk_gpu, rm, transfer, out_desc_updates);
   }
 }
-ChunkApplyResult chunk_store_apply_entered(ChunkStore *cs, const Vector *entered_coords) {
+void chunk_store_load(ChunkStore *cs, const Vector entered_coords, M_Resource *rm, ChunkStoreResult *result) {
 
-  ChunkApplyResult result = {.err_code = CHUNK_STORE_ERR_BAD_ARG};
-  if (!cs || !entered_coords)
-    return result;
+  assert(cs || entered_coords.length);
+  vec_clear(&result->chunk_idxs);
 
-  vec_init(&result.chunk_idxs, sizeof(u32), NULL);
-
-  for (u32 i = 0; i < (u32)vec_len((Vector *)entered_coords); ++i) {
+  for (u32 i = 0; i < (u32)vec_len(&entered_coords); ++i) {
     ivec3 c;
-    glm_ivec3_copy(((ivec3 *)entered_coords->data)[i], c);
+    glm_ivec3_copy(*VEC_AT(&entered_coords, i, ivec3), c);
 
-    ChunkStoreEntryItem *it = _ensure_loaded(cs, c);
+    ChunkStoreEntryItem *it = _ensure_loaded_cpu(cs, c);
+
     u32 active_idx = it->ent.active_pos;
     if (it)
       active_idx = _make_active(cs, it);
 
-    vec_push(&result.chunk_idxs, &active_idx);
+    vec_push(&result->chunk_idxs, &active_idx);
   }
 
   _evict_until_budget(cs);
-  return result;
+  result->err_code = CHUNK_STORE_OK;
 }
 
 ChunkTree *chunk_store_chunk_at(ChunkStore *cs, u32 chunk_index) {
@@ -171,7 +170,7 @@ static u32 _alloc_index(ChunkStore *cs) {
   return (u32)vec_len(&cs->chunk_items) - 1u;
 }
 
-static ChunkStoreEntryItem *_ensure_loaded(ChunkStore *cs, ivec3 coord) {
+static ChunkStoreEntryItem *_ensure_loaded_cpu(ChunkStore *cs, ivec3 coord) {
   u64 key = _key_from_coord(coord);
   ChunkStoreEntryItem *found = _get_item(cs, key);
   if (found)
@@ -271,17 +270,20 @@ static void _make_cached(ChunkStore *cs, ChunkStoreEntryItem *it) {
   u32 last_pos = (u32)vec_len(&cs->active_chunk_indices) - 1u;
 
   if (removed_pos != last_pos) {
-    u32 moved_idx = *VEC_AT(&cs->cached_chunk_indices, removed_pos, u32);
+    // this is the element that will move into removed_pos
+    u32 moved_chunk_index = *VEC_AT(&cs->active_chunk_indices, last_pos, u32);
+
     vec_remove_swap(&cs->active_chunk_indices, removed_pos);
 
     // update moved entry active_pos
-    ChunkItem *moved_item = _item_at(cs, moved_idx);
+    ChunkItem *moved_item = _item_at(cs, moved_chunk_index);
     u64 moved_key = _key_from_coord(moved_item->coord);
     ChunkStoreEntryItem *moved_ent = _get_item(cs, moved_key);
     if (moved_ent)
       moved_ent->ent.active_pos = removed_pos;
   } else {
-    cs->active_chunk_indices.length = last_pos;
+    // removed last element
+    cs->active_chunk_indices.length = last_pos; // (len - 1)
   }
 
   // append to cache

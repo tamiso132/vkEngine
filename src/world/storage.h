@@ -60,26 +60,25 @@ typedef struct ChunkStore {
   u32 max_cached;               // 0 means no cache limit
 } ChunkStore;
 
-typedef enum ChunkStoreResult {
+typedef enum ChunkStoreErr {
   CHUNK_STORE_OK = 0,
   CHUNK_STORE_ERR_OOM,
   CHUNK_STORE_ERR_BAD_ARG,
-} ChunkStoreResult;
+} ChunkStoreErr;
 
-typedef struct ChunkApplyResult {
-  ChunkStoreResult err_code;
+typedef struct ChunkStoreResult {
+  ChunkStoreErr err_code;
   Vector chunk_idxs; // u32[]
-} ChunkApplyResult;
+} ChunkStoreResult;
 
 // PUBLIC FUNCTIONS
 void chunk_storage_get_active(ChunkStore *cs);
-ChunkApplyResult chunk_store_apply_entered(ChunkStore *cs, const Vector *entered_coords);
-ChunkStoreResult chunk_store_apply_left_idxs(ChunkStore *cs, const Vector left_idxs);
-ChunkStoreResult chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector left_coords);
+void chunk_store_apply_left_idxs(ChunkStore *cs, const Vector left_idxs, ChunkStoreResult *result);
+void chunk_store_apply_left_to_cache(ChunkStore *cs, const Vector left_coords, ChunkStoreResult *result);
 ChunkTree *chunk_store_chunk_at(ChunkStore *cs, u32 chunk_index);
 void chunk_store_destroy(ChunkStore *cs);
 GPUGridSlot chunk_store_get_descriptors(ChunkStore *cs, M_Resource *rm, u32 active_idx);
-void chunk_store_gpu_tick(ChunkStore *cs, M_Resource *rm, TransferQueue *transfer);
-ChunkStoreResult chunk_store_init(ChunkStore *cs, u32 max_cached);
-void chunk_store_gpu_init(ChunkStore *cs, M_Resource *rm, CmdBuffer *cmd);
+void chunk_store_gpu_tick(ChunkStore *cs, M_Resource *rm, TransferQueue *transfer, Vector *out_desc_updates);
+void chunk_store_init(ChunkStore *cs, u32 max_cached, ChunkStoreResult *result);
+void chunk_store_load(ChunkStore *cs, const Vector entered_coords, M_Resource *rm, ChunkStoreResult *result);
 // END PUBLIC FUNCTIONS

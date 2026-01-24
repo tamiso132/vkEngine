@@ -67,7 +67,7 @@ void vec_realloc_capacity(Vector *vec, size_t new_cap) {
                                       vec->allocator->ctx);
 }
 
-void *vec_at(Vector *vec, size_t index) {
+void *vec_at(const Vector *vec, size_t index) {
   if (index >= vec->length)
     return NULL;
   return (char *)vec->data + (index * vec->element_size);

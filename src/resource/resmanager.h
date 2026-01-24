@@ -59,12 +59,12 @@ typedef struct {
 } RGImageInfo;
 
 typedef enum BUFFER_QUEUE {
-BUFFER_QUEUE_NONE,
-BUFFER_QUEUE_COUNT = 2,
-BUFFER_QUEUE_GRAPHIC,
-BUFFER_QUEUE_TRANSFER,
-BUFFER_QUEUE_ALL,
-}BufferQueue;
+  BUFFER_QUEUE_NONE,
+  BUFFER_QUEUE_COUNT = 2,
+  BUFFER_QUEUE_GRAPHIC,
+  BUFFER_QUEUE_TRANSFER,
+  BUFFER_QUEUE_ALL,
+} BufferQueue;
 
 typedef struct {
   const char *name;
@@ -115,7 +115,7 @@ typedef struct {
   res_b binding;
   VkDescriptorType type;
   SyncDef sync;
-  u32  queue_fam[BUFFER_QUEUE_ALL];
+  u32 queue_fam[BUFFER_QUEUE_ALL];
   u32 queue_count;
   VkSharingMode sharing_mode;
 } RBuffer;
@@ -137,34 +137,32 @@ typedef struct {
   SyncDef sync;
 } RImage;
 
+typedef struct DescriptorInfo {
+  ResHandle handle;
+  u32 new_index;
+} DescriptorInfo;
+
 // -------------------- Public API --------------------
 
-// System
-SystemFunc rm_system_get_func();
-void rm_on_new_frame(M_Resource *rm);
-void rm_destroy(M_Resource *rm);
-
-// Resource creation
+// PUBLIC FUNCTIONS
+void rm_bindless_batch_buffer_update(M_Resource *rm, DescriptorInfo *infos, u32 info_count);
 ResHandle rm_create_buffer(M_Resource *rm, RGBufferInfo *info);
 ResHandle rm_create_image(M_Resource *rm, RGImageInfo info);
-
-RBuffer *rm_get_buffer(M_Resource *rm, ResHandle handle);
-RImage *rm_get_image(M_Resource *rm, ResHandle handle);
-
-// Image special cases
-void rm_import_existing_image(M_Resource *rm, ResHandle handle, VkImage raw_img, VkImageView view,
-                              VkExtent2D new_extent, bool delete_img);
-void rm_resize_image(M_Resource *rm, ResHandle handle, uint32_t width, uint32_t height);
-ResHandle rm_import_image(M_Resource *rm, RGImageInfo *info, VkImage img, VkImageView view);
-
-// Staging
-RmStageSlice rm_get_stage_buffer(M_Resource *rm, const void *data, VkDeviceSize size, VkDeviceSize alignment);
-
-// Bindless indices / objects
-u32 rm_get_buffer_descriptor_index(M_Resource *rm, ResHandle buffer);
-u32 rm_get_buffer_index(M_Resource *rm, ResHandle buffer);
-u32 rm_get_image_index(M_Resource *rm, ResHandle image);
-
+void rm_descriptor_update(Vector res);
+void rm_destroy(M_Resource *rm);
 VkDescriptorSetLayout rm_get_bindless_layout(M_Resource *rm);
 VkDescriptorSet rm_get_bindless_set(M_Resource *rm);
+RBuffer *rm_get_buffer(M_Resource *rm, ResHandle handle);
+u32 rm_get_buffer_descriptor_index(M_Resource *rm, ResHandle buffer);
+u32 rm_get_buffer_index(M_Resource *rm, ResHandle buffer);
+RImage *rm_get_image(M_Resource *rm, ResHandle handle);
+u32 rm_get_image_index(M_Resource *rm, ResHandle image);
 VkPipelineLayout rm_get_pipeline_layout(M_Resource *rm);
+RmStageSlice rm_get_stage_buffer(M_Resource *rm, const void *data, VkDeviceSize size, VkDeviceSize alignment);
+void rm_import_existing_image(M_Resource *rm, ResHandle handle, VkImage raw_img, VkImageView view,
+                              VkExtent2D new_extent, bool delete_img);
+ResHandle rm_import_image(M_Resource *rm, RGImageInfo *info, VkImage img, VkImageView view);
+void rm_on_new_frame(M_Resource *rm);
+void rm_resize_image(M_Resource *rm, ResHandle handle, uint32_t width, uint32_t height);
+SystemFunc rm_system_get_func();
+// END PUBLIC FUNCTIONS

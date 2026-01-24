@@ -269,9 +269,8 @@ static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info) {
     return false;
   volkLoadDevice(dev->device);
 
- vkGetDeviceQueue(dev->device, dev->graphics_family, 0, &dev->graphics_queue);
-vkGetDeviceQueue(dev->device, dev->transfer_family, 0, &dev->transfer_queue);
-
+  vkGetDeviceQueue(dev->device, dev->graphics_family, 0, &dev->graphics_queue);
+  vkGetDeviceQueue(dev->device, dev->transfer_family, 0, &dev->transfer_queue);
 
   // 5. VMA Init
   VmaVulkanFunctions vmaFuncs = {0};

@@ -17,4 +17,6 @@ void transfer_on_new_frame(TransferQueue *transfer);
 Ticket transfer_push_upload(TransferQueue *transfer, M_Resource *rm, ResHandle handle, u32 size, void *data,
                             u32 aligment);
 void transfer_submit_on_frame_end(TransferQueue *transfer);
+
+bool transfer_in_flight(TransferQueue *transfer);
 // END PUBLIC FUNCTIONS

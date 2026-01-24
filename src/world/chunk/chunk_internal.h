@@ -2,7 +2,7 @@
 // chunk_internal.h (CPU-only internals)
 #pragma once
 
-#include "chunk.h"
+#include "chunk_api.h"
 #include "common.h"
 #include "res_async.h"
 #include "shaders/rt/rt_shared.glsl"
@@ -30,21 +30,6 @@ typedef struct Node {
 typedef struct ChildIndex {
   u32 first_child_index;
 } ChildIndex;
-
-struct ChunkTree {
-  u64 bits[(CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE + 63) / 64];
-  u16 vox_mat[CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE];
-
-  // Node[]
-  // ChildIndex[]
-  // u32 RGBA[]
-  // u16 materials[]
-  Vector p_res_data[CHUNK_RES__COUNT];
-
-  ChunkResTypeBits pending_bits;
-  bool is_dirty;
-  u64 build_version;
-};
 
 // --- Build interface (Input -> Output) ---
 typedef struct {
@@ -75,7 +60,7 @@ typedef enum {
 
 // PUBLIC FUNCTIONS
 
-ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scratch, ChunkBuildOutput *out);
+ChunkBuildResult _build_chunks(const ChunkBuildInput *in, ChunkBuildScratch *scratch, ChunkBuildOutput *out, u32 count);
 
 u32 _edit_add_color(ChunkTree *chunk, u32 rgba);
 bool _edit_get_voxel(const ChunkTree *chunk, int x, int y, int z);

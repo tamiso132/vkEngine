@@ -242,6 +242,12 @@ void cmd_buffer_copy(CmdBuffer cmd, M_Resource *rm, VmaAllocator allocator, ResH
   RBuffer *buffer = rm_get_buffer(rm, dst_handle);
   cmd_sync_buffer(cmd, rm, dst_handle, STATE_TRANSFER, ACCESS_WRITE);
 
+  if (buffer->capacity < slice.size) {
+    // resize buffer
+    M_GPU *dev = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+    rm_resize_buffer(rm, dev, slice.size, dst_handle);
+  }
+
   VkBufferCopy2 copy = {.sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2, .srcOffset = slice.offset, .size = slice.size};
 
   VkCopyBufferInfo2 copy_info = {.sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,

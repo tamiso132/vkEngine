@@ -8,11 +8,13 @@ typedef struct AsyncBuffer {
 } AsyncBuffer;
 
 // PUBLIC FUNCTIONS
+void async_destroy(M_Resource *rm, AsyncBuffer *ab);
 
 ResHandle async_get_active_buffer(AsyncBuffer *ab);
 u32 async_get_active_desc_index(AsyncBuffer *ab, M_Resource *rm);
 ResHandle async_get_backbuffer(AsyncBuffer *async);
 void async_init(M_Resource *rm, RGBufferInfo *info, AsyncBuffer *ab);
+void async_swap(M_Resource *rm, AsyncBuffer *ab);
 void async_swap(M_Resource *rm, AsyncBuffer *ab);
 
 // END PUBLIC FUNCTIONS

@@ -19,7 +19,8 @@ void rm_retire_buffer(M_Resource *rm, ResHandle handle) {
 
 void rm_retire_image(M_Resource *rm, ResHandle handle) {
   RImage *image = rm_get_image_internal(rm, handle);
-  if (image->is_imported) return; // imported images should not be retired/destroyed here
+  if (image->is_imported)
+    return; // imported images should not be retired/destroyed here
 
   RetiredRes rb = {0};
   rb.frame_retired = rm->frame_count;
@@ -46,7 +47,8 @@ void rm_retire_on_new_frame(M_Resource *rm, M_GPU *gpu, u32 frames_in_flight) {
       if (r->type == RES_TYPE_BUFFER) {
         vmaDestroyBuffer(gpu->allocator, r->buffer.handle, r->alloc);
       } else if (r->type == RES_TYPE_IMAGE) {
-        if (r->image.view) vkDestroyImageView(gpu->device, r->image.view, NULL);
+        if (r->image.view)
+          vkDestroyImageView(gpu->device, r->image.view, NULL);
         vmaDestroyImage(gpu->allocator, r->image.handle, r->alloc);
       }
       vec_remove_at(&rm->retired_res, i);

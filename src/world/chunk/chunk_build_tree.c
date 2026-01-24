@@ -39,13 +39,21 @@ static float rand01(u32 *state);
 
 static inline u32 u32_pow3(u32 a);
 
+static ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scratch, ChunkBuildOutput *out);
+
 // ----------------------------
 // Public API
 // ----------------------------
 
-ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scratch, ChunkBuildOutput *out) {
+ChunkBuildResult _build_chunks(const ChunkBuildInput *in, ChunkBuildScratch *scratch, ChunkBuildOutput *out, u32 count) {
 
-  if (!in || !out || !in->bits || !in->vox_mat)
+  for(u32 i = 0; i < count; i++){
+    _build_chunk(&in[i], NULL, &out[i]);
+  }
+  return CHUNK_BUILD_OK;
+}
+static ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scratch, ChunkBuildOutput *out){
+   if (!in || !out || !in->bits || !in->vox_mat)
     return CHUNK_BUILD_ERR_BAD_CONFIG;
   if (in->chunk_size == 0 || (in->chunk_size % 4u) != 0u)
     return CHUNK_BUILD_ERR_BAD_CONFIG;
@@ -69,10 +77,10 @@ ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scra
   flatten_tree_bfs(in, &p, out);
   pyramid_free(&p);
 
-  _print_vram_usage(out);
 
   return CHUNK_BUILD_OK;
 }
+
 
 // --- Private Functions ---
 

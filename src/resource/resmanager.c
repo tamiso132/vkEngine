@@ -1,6 +1,8 @@
+#include "resource/resmanager.h"
 #include "common.h"
 #include "rm_internal.h"
 #include "vector.h"
+#include <vulkan/vulkan_core.h>
 
 // System lifecycle glue
 
@@ -172,7 +174,7 @@ void rm_bindless_batch_buffer_update(M_Resource *rm, DescriptorInfo *infos, u32 
     b_infos->range = VK_WHOLE_SIZE;
     b_infos->buffer = buffer->handle;
 
-    writes->pBufferInfo = &b_infos;
+    writes->pBufferInfo = (VkDescriptorBufferInfo *)&b_infos;
     writes->descriptorType = buffer->type;
     writes->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes->dstBinding = buffer->binding;
@@ -185,6 +187,25 @@ void rm_bindless_batch_buffer_update(M_Resource *rm, DescriptorInfo *infos, u32 
 
 u32 rm_get_buffer_descriptor_index(M_Resource *rm, ResHandle buffer) {
   return rm_get_buffer_internal(rm, buffer)->bindlessIndex;
+}
+
+void rm_resize_buffer(M_Resource *rm, M_GPU *gpu, u32 new_capacity, ResHandle handle) {
+  rm_retire_buffer(rm, handle);
+  RBuffer *buffer = rm_get_buffer(rm, handle);
+  VkBufferCreateInfo b_info = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      .usage = buffer->usage,
+      .pQueueFamilyIndices = buffer->queue_fam,
+      .queueFamilyIndexCount = buffer->queue_count,
+      .size = new_capacity,
+      .sharingMode = buffer->sharing_mode,
+
+  };
+  VmaAllocationCreateInfo ai = {0};
+  ai.requiredFlags = buffer->mem;
+
+  vmaCreateBuffer(gpu->allocator, &b_info, &ai, &buffer->handle, &buffer->alloc, NULL);
+  buffer->capacity = new_capacity;
 }
 
 u32 rm_get_buffer_index(M_Resource *rm, ResHandle buffer) { return rm_get_buffer_internal(rm, buffer)->bindlessIndex; }

@@ -59,9 +59,12 @@ typedef struct Vector {
 #define VECTOR_TYPES(...) _GET_MACRO(__VA_ARGS__, _VT_5, _VT_4, _VT_3, _VT_2, _VT_1)(__VA_ARGS__);
 
 // PUBLIC FUNCTIONS
+void vec_append(Vector *src, Vector *dst);
+u32 vec_append_zero(Vector *vec, u32 len);
 void *vec_at(const Vector *vec, size_t index);
 u32 vec_bytes_len(const Vector *vec);
 void vec_clear(Vector *vec);
+void vec_copy(Vector *dst, Vector *src);
 void vec_destroy(Vector *vec);
 void vec_free(Vector *vec);
 void vec_init(Vector *vec, size_t elem_size, Allocator *allocator);

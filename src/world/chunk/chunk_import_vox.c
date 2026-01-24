@@ -1,6 +1,8 @@
 
 #include "chunk_internal.h"
 #include "vox_loader.h" // only here, not in chunk.h
+
+// TODO, put it togeter with edit.c  and make an API for world instead of chunk
 // --- Private Prototypes ---
 static void import_vox_models(ChunkTree *chunk, u32 palette_base, const VoxFile *vf, i32 base_x, i32 base_y, i32 base_z,
                               bool center_in_chunk);
@@ -18,7 +20,6 @@ bool chunk_import_vox_file(ChunkTree *chunk, const char *path, int vox_flags, bo
   for (u32 i = 0; i < added_colors_len; ++i) {
     u32 rgba = *VEC_AT(&vf.used_rgba, i, u32);
     vec_push(&chunk->p_res_data[CHUNK_RES_PALETTE], &rgba);
-    chunk->pending_bits |= CHUNK_RES_PALETTE;
   }
 
   import_vox_models(chunk, palette_base, &vf, 0, 0, 0, center_in_chunk);

@@ -2,6 +2,7 @@
 // chunk_edit.c (CPU-only)
 #include "chunk_internal.h"
 
+// TODO, change system so that actually world uses it and not chunk
 // --- Private Prototypes ---
 bool chunk_in_bounds(int v) { return (v >= 0) && (v < (int)CHUNK_SIZE); }
 
@@ -28,14 +29,10 @@ void _edit_set_voxel(ChunkTree *chunk, int x, int y, int z, bool set_active) {
     chunk->bits[w] = after;
     if (!set_active)
       chunk->vox_mat[idx] = 0;
-
-    chunk->pending_bits |= CHUNK_RES_BITMASK_NODES | CHUNK_RES_BITMASK_LEAF_MATS | CHUNK_RES_BITMASK_CHILDREN;
-    chunk->is_dirty = true;
   }
 }
 
 u32 _edit_add_color(ChunkTree *chunk, u32 rgba) {
-  chunk->pending_bits |= CHUNK_RES_BITMASK_PALETTE;
   return vec_push(&chunk->p_res_data[CHUNK_RES_PALETTE], &rgba);
 }
 
@@ -53,8 +50,6 @@ void _edit_set_voxel_color(ChunkTree *chunk, int x, int y, int z, bool on, u16 m
 
   if (before != after) {
     chunk->bits[w] = after;
-    chunk->pending_bits |= CHUNK_RES_BITMASK_LEAF_MATS;
-    chunk->is_dirty = true;
   }
   chunk->vox_mat[vidx] = on ? mat : 0;
 }

@@ -1,5 +1,6 @@
 //! rm_internal.h
 #include "common.h"
+#include "gpu/gpu.h"
 #include "resource/resmanager.h"
 #include "rm_internal.h"
 #include "util.h"

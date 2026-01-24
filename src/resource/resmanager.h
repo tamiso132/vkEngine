@@ -163,6 +163,7 @@ void rm_import_existing_image(M_Resource *rm, ResHandle handle, VkImage raw_img,
                               VkExtent2D new_extent, bool delete_img);
 ResHandle rm_import_image(M_Resource *rm, RGImageInfo *info, VkImage img, VkImageView view);
 void rm_on_new_frame(M_Resource *rm);
+void rm_resize_buffer(M_Resource *rm, M_GPU *gpu, u32 new_capacity, ResHandle handle);
 void rm_resize_image(M_Resource *rm, ResHandle handle, uint32_t width, uint32_t height);
 SystemFunc rm_system_get_func();
 // END PUBLIC FUNCTIONS

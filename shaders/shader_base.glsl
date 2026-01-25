@@ -22,9 +22,9 @@
 #include <stdint.h>
 
 #if defined(__GNUC__) || defined(__clang__)
-  #define ALIGN(number) __attribute__((aligned(number)))
+#define ALIGN(number) __attribute__((aligned(number)))
 #else
-  #define ALIGN(number)
+#define ALIGN(number)
 #endif
 
 #define SHARED_STRUCT(name, align) \

@@ -2,6 +2,8 @@
 #ifndef RAYTRACE_TRAVERSAL_GLSL
 #define RAYTRACE_TRAVERSAL_GLSL
 
+#define SHADER_DEBUG
+
 #include "rt_bindings.glsl"
 #include "rt_shared.glsl"
 #include "rt_occulsion.glsl"

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "common.h"
 #include "shaders/rt/rt_shared.glsl"
 #include "vector.h"
 
@@ -18,10 +19,16 @@ void chunk_init(ChunkInput input, Vector global_coords) {
     memcpy(chunk->min_corner, chunk_coord, sizeof(ivec3));
     vec_init(&chunk->view->p_res_data[CHUNK_RES_NODES], sizeof(Node), NULL);
     vec_init(&chunk->view->p_res_data[CHUNK_RES_CHILDREN], sizeof(ChildIndex), NULL);
-    vec_init(&chunk->view->p_res_data[CHUNK_RES_CHILDREN], sizeof(u32), NULL);
+    vec_init(&chunk->view->p_res_data[CHUNK_RES_PALETTE], sizeof(u32), NULL);
     vec_init(&chunk->view->p_res_data[CHUNK_RES_LEAF_MATS], sizeof(u16), NULL);
+
+
     // PUSH EMPTY ROOT
     vec_push(&chunk->view->p_res_data[CHUNK_RES_NODES], &(Node){.mask = 0});
+    _edit_add_color(chunk, RGBA(255, 0, 0, 255));
+    _edit_set_voxel(chunk, 5, 5, 5, true);
+    _edit_set_voxel(chunk, 4, 5, 5, true);
+    _edit_set_voxel(chunk, 3, 5, 5, true);
   }
   chunk_rebuild_cpu(input);
 }

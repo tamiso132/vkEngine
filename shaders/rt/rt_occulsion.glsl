@@ -64,7 +64,7 @@ float occ_soft_oob_empty(GPUGridSlot slot_data, vec3 p_local)
 
         // 8 corners; if OOB => 0
         float c000 = in_bounds_i(b + ivec3(0, 0, 0)) ? (occ_leaf_voxel(slot_data, uvec3(b + ivec3(0, 0, 0))) ? 1.0 : 0.0) : 0.0;
-        float c100 = in_bounds_i(b + ivec3(1, 0, 0)) ? (occ_leaf_voxel(slot_data,  uvec3(b + ivec3(1, 0, 0))) ? 1.0 : 0.0) : 0.0;
+        float c100 = in_bounds_i(b + ivec3(1, 0, 0)) ? (occ_leaf_voxel(slot_data, uvec3(b + ivec3(1, 0, 0))) ? 1.0 : 0.0) : 0.0;
         float c010 = in_bounds_i(b + ivec3(0, 1, 0)) ? (occ_leaf_voxel(slot_data, uvec3(b + ivec3(0, 1, 0))) ? 1.0 : 0.0) : 0.0;
         float c110 = in_bounds_i(b + ivec3(1, 1, 0)) ? (occ_leaf_voxel(slot_data, uvec3(b + ivec3(1, 1, 0))) ? 1.0 : 0.0) : 0.0;
         float c001 = in_bounds_i(b + ivec3(0, 0, 1)) ? (occ_leaf_voxel(slot_data, uvec3(b + ivec3(0, 0, 1))) ? 1.0 : 0.0) : 0.0;
@@ -208,7 +208,7 @@ float neighborhood_ao(GPUGridSlot slot_data, uvec3 v, vec3 n)
 
                 //    occ += (occ_leaf_voxel(slot_data, uvec3(vi)) ? 1.0 : 0.0) * w;
 
-                float filled = occ_soft(slot_data,v + o);
+                float filled = occ_soft(slot_data, v + o);
                 occ += filled * w;
 
                 wsum += w;

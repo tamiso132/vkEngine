@@ -1,4 +1,5 @@
 #pragma once
+#include <vulkan/vulkan_core.h>
 #define VK_NO_PROTOTYPES
 
 #include "vector.h"
@@ -17,6 +18,7 @@ typedef struct {
   const char *app_name;
   bool enable_validation;
 } GPUInstanceInfo;
+
 
 // --- The Main Device Context ---
 struct M_GPU {

@@ -111,7 +111,6 @@ void rm_bindless_add(M_Resource *rm, ResHandle handle, VkDescriptorImageInfo *im
   rm_bindless_update(rm, handle, imageInfo, bufferInfo);
 }
 
-
 void rm_bindless_update(M_Resource *rm, ResHandle handle, VkDescriptorImageInfo *imageInfo,
                         VkDescriptorBufferInfo *bufferInfo) {
   M_GPU *gpu = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);

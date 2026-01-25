@@ -1,5 +1,7 @@
 //! rm_internal.h
 #include "rm_internal.h"
+#include "util.h"
+#include "vector.h"
 
 void rm_retire_buffer(M_Resource *rm, ResHandle handle) {
   RBuffer *buffer = rm_get_buffer_internal(rm, handle);
@@ -39,7 +41,8 @@ void rm_retire_image(M_Resource *rm, ResHandle handle) {
 void rm_retire_on_new_frame(M_Resource *rm, M_GPU *gpu, u32 frames_in_flight) {
   // anything retired <= (frame_count - frames_in_flight) is safe
   u32 safe_frame = (rm->frame_count > frames_in_flight) ? (rm->frame_count - frames_in_flight) : 0;
-
+  if (rm->retired_res.length > 0)
+    LOG_INFO("Retire Buffers: {%ld}", rm->retired_res.length);
   for (int i = 0; i < vec_len(&rm->retired_res); i++) {
     RetiredRes *r = VEC_AT(&rm->retired_res, i, RetiredRes);
 
@@ -51,7 +54,7 @@ void rm_retire_on_new_frame(M_Resource *rm, M_GPU *gpu, u32 frames_in_flight) {
           vkDestroyImageView(gpu->device, r->image.view, NULL);
         vmaDestroyImage(gpu->allocator, r->image.handle, r->alloc);
       }
-      vec_remove_at(&rm->retired_res, i);
+      vec_remove_swap(&rm->retired_res, i);
       i--;
     }
   }

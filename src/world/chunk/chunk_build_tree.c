@@ -45,15 +45,16 @@ static ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratc
 // Public API
 // ----------------------------
 
-ChunkBuildResult _build_chunks(const ChunkBuildInput *in, ChunkBuildScratch *scratch, ChunkBuildOutput *out, u32 count) {
+ChunkBuildResult _build_chunks(const ChunkBuildInput *in, ChunkBuildScratch *scratch, ChunkBuildOutput *out,
+                               u32 count) {
 
-  for(u32 i = 0; i < count; i++){
+  for (u32 i = 0; i < count; i++) {
     _build_chunk(&in[i], NULL, &out[i]);
   }
   return CHUNK_BUILD_OK;
 }
-static ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scratch, ChunkBuildOutput *out){
-   if (!in || !out || !in->bits || !in->vox_mat)
+static ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratch *scratch, ChunkBuildOutput *out) {
+  if (!in || !out || !in->bits || !in->vox_mat)
     return CHUNK_BUILD_ERR_BAD_CONFIG;
   if (in->chunk_size == 0 || (in->chunk_size % 4u) != 0u)
     return CHUNK_BUILD_ERR_BAD_CONFIG;
@@ -77,10 +78,8 @@ static ChunkBuildResult _build_chunk(const ChunkBuildInput *in, ChunkBuildScratc
   flatten_tree_bfs(in, &p, out);
   pyramid_free(&p);
 
-
   return CHUNK_BUILD_OK;
 }
-
 
 // --- Private Functions ---
 

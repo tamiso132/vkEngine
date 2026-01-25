@@ -70,7 +70,7 @@ static void _render(Sample *self, SampleContext *ctx) {
   ResHandle swap_img = ctx->swap_img;
 
   world_cpu_tick(data->world, ctx->cam.pos);
-  world_gpu_tick(data->world, ctx->rm, ctx->tq);
+  world_gpu_tick(data->world, ctx->cmd, ctx->rm, ctx->tq);
 
   float half_h = tanf((M_PI / 180) * ctx->cam.vfov_deg * 0.5f);
   float half_w = ctx->cam.aspect * half_h;

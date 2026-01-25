@@ -15,11 +15,11 @@ bool chunk_import_vox_file(ChunkTree *chunk, const char *path, int vox_flags, bo
   if (!vox_load(path, (VoxAxisPreset)vox_flags, &vf, NULL))
     return false;
 
-  u32 palette_base = (u32)vec_len(&chunk->p_res_data[CHUNK_RES_PALETTE]);
+  u32 palette_base = (u32)vec_len(&chunk->view[0].p_res_data[CHUNK_RES_PALETTE]);
   u32 added_colors_len = vec_len(&vf.used_rgba);
   for (u32 i = 0; i < added_colors_len; ++i) {
     u32 rgba = *VEC_AT(&vf.used_rgba, i, u32);
-    vec_push(&chunk->p_res_data[CHUNK_RES_PALETTE], &rgba);
+    vec_push(&chunk->view->p_res_data[CHUNK_RES_PALETTE], &rgba);
   }
 
   import_vox_models(chunk, palette_base, &vf, 0, 0, 0, center_in_chunk);

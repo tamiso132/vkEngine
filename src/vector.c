@@ -45,10 +45,12 @@ u32 vec_append_zero(Vector *vec, u32 len) {
   }
 
   memset(&vec->data[old_len], 0, vec->element_size * len);
+  vec->length = new_len;
   return old_len;
 }
 void vec_remove_swap(Vector *vec, u32 index) {
-  if (vec->length > 1 && index != (vec->length - 1)) {
+  bool is_last = index == vec->length - 1;
+  if (is_last) {
     vec->length--;
     return;
   }
@@ -57,13 +59,15 @@ void vec_remove_swap(Vector *vec, u32 index) {
   void *dst = &vec->data[index * vec->element_size];
 
   memcpy(dst, src, vec->element_size);
+  vec->length--;
 }
+// TODO, probably not working correctly
 void vec_remove_at(Vector *vec, u32 index) {
   memmove(&vec->data[index], &vec[index + 1], vec->element_size * (vec->length - index));
   vec->length--;
 }
 
-void vec_copy(Vector *dst, Vector *src) {
+void vec_copy(Vector *src, Vector *dst) {
   assert(dst->element_size == src->element_size);
   bool resize = dst->capacity <= src->length;
   if (resize) {

@@ -64,7 +64,7 @@ u32 vec_append_zero(Vector *vec, u32 len);
 void *vec_at(const Vector *vec, size_t index);
 u32 vec_bytes_len(const Vector *vec);
 void vec_clear(Vector *vec);
-void vec_copy(Vector *dst, Vector *src);
+void vec_copy(Vector *src, Vector *dst);
 void vec_destroy(Vector *vec);
 void vec_free(Vector *vec);
 void vec_init(Vector *vec, size_t elem_size, Allocator *allocator);

@@ -10,10 +10,7 @@ static void _chunk_coord_to_world_pos(const GridInput *cfg, const ivec3 chunk_co
 
 static int _slot_index(GridSlot slot);
 
-static void _world_coord_to_chunk_pos(const GridInput *input, vec3 player_pos, ivec3 out_chunk);
-
-static inline i32 grid_get_chunk_index(const GridInput *grid, GridSlot slot);
-static inline void grid_set_chunk_index(const GridInput *grid, GridSlot slot, i32 chunk_index);
+static inline void grid_set_chunk_index(GridInput grid, GridSlot slot, i32 chunk_index);
 
 void grid_init(GridInput *grid, const ivec3 player_chunk, GridResult *result) {
   // center-ish window: origin = player - N/2
@@ -43,7 +40,7 @@ void grid_init(GridInput *grid, const ivec3 player_chunk, GridResult *result) {
   }
 }
 
-void grid_step(GridInput *input, ivec3 dir, GridResult *result) {
+void grid_step(GridInput input, ivec3 dir, GridResult *result) {
   // delta.dir should be +/-1 on a single axis
   ivec3 d = {};
   glm_ivec3_copy(dir, d);
@@ -98,7 +95,7 @@ void grid_step(GridInput *input, ivec3 dir, GridResult *result) {
   for (int z = axis_unloaded[2][0]; z < axis_unloaded[2][1]; z++) {
     for (int y = axis_unloaded[1][0]; y < axis_unloaded[1][1]; y++) {
       for (int x = axis_unloaded[0][0]; x < axis_unloaded[0][1]; x++) {
-        ivec3 c = {input->min_corner[0] + x, input->min_corner[1] + y, input->min_corner[2] + z};
+        ivec3 c = {input.min_corner[0] + x, input.min_corner[1] + y, input.min_corner[2] + z};
         vec_push(&result->unload_coords, &c);
       }
     }
@@ -127,7 +124,7 @@ void grid_step(GridInput *input, ivec3 dir, GridResult *result) {
         ivec3 loaded_coords = {};
         glm_ivec3_add(slot, dir, loaded_coords);
         glm_ivec3_scale(loaded_coords, CHUNK_SIZE, loaded_coords);
-        glm_ivec3_add(loaded_coords, input->min_corner, loaded_coords);
+        glm_ivec3_add(loaded_coords, input.min_corner, loaded_coords);
 
         grid_set_chunk_index(input, slot, -1);
         vec_push(&result->load_coords, &loaded_coords);
@@ -135,7 +132,21 @@ void grid_step(GridInput *input, ivec3 dir, GridResult *result) {
       }
     }
   }
+
+  // UPDATE TO NEW MIN CORNER
+  glm_ivec3_add(input.min_corner, dir, input.min_corner);
 }
+
+void grid_world_coord_to_chunk_pos(const ivec3 min_corner, ivec3 player_pos, ivec3 out_chunk) {
+  ivec3 rel = {};
+  glm_ivec3_sub(player_pos, (i32 *)min_corner, rel);
+
+  out_chunk[0] = (int)rel[0] / CHUNK_SIZE;
+  out_chunk[1] = (int)rel[1] / CHUNK_SIZE;
+  out_chunk[2] = (int)rel[2] / CHUNK_SIZE;
+}
+
+i32 grid_get_chunk_index(const GridInput grid, GridSlot slot) { return grid.slots[_slot_index(slot)]; }
 
 // --- Private Functions ---
 
@@ -149,17 +160,6 @@ static int _slot_index(GridSlot slot) {
   return slot[0] + slot[1] * MAX_CHUNK_VISIBILITY + slot[2] * MAX_CHUNK_VISIBILITY * MAX_CHUNK_VISIBILITY;
 }
 
-static void _world_coord_to_chunk_pos(const GridInput *input, vec3 player_pos, ivec3 out_chunk) {
-  vec3 rel = {};
-  glm_vec3_sub(player_pos, (float *)input->min_corner, rel);
-
-  out_chunk[0] = (int)floorf(rel[0] / CHUNK_SIZE);
-  out_chunk[1] = (int)floorf(rel[1] / CHUNK_SIZE);
-  out_chunk[2] = (int)floorf(rel[2] / CHUNK_SIZE);
-}
-
-static inline i32 grid_get_chunk_index(const GridInput *grid, GridSlot slot) { return grid->slots[_slot_index(slot)]; }
-
-static inline void grid_set_chunk_index(const GridInput *grid, GridSlot slot, i32 chunk_index) {
-  grid->slots[_slot_index(slot)] = chunk_index;
+static inline void grid_set_chunk_index(GridInput grid, GridSlot slot, i32 chunk_index) {
+  grid.slots[_slot_index(slot)] = chunk_index;
 }

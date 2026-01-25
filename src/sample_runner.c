@@ -30,7 +30,7 @@ void run_sample(Sample *sample, GLFWwindow *window) {
       .pr = pr,
       .rm = rm,
       .cam = camera_init(swapchain->extent, 70),
-      .tq = transfer_init(device->device, device->transfer_queue, device->transfer_family, device->allocator, MIB(100),
+      .tq = transfer_init(device->device, device->transfer_queue, device->transfer_family, device->allocator, MIB(250),
                           1),
   };
   cmd_begin(device->device, cmd);

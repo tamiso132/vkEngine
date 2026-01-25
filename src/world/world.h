@@ -1,5 +1,6 @@
 #include <cglm/types.h> // vec3
 
+#include "command.h"
 #include "common.h"
 
 typedef struct TransferQueue TransferQueue;
@@ -14,9 +15,9 @@ typedef struct WorldConfig {
 
 // PUBLIC FUNCTIONS
 void world_cpu_tick(World *w, vec3 player_pos);
-void world_gpu_tick(World *w, M_Resource *rm, TransferQueue *transfer);
 World *world_create(const WorldConfig *cfg, vec3 player_pos);
 void world_destroy(World *w);
+void world_gpu_tick(World *w, CmdBuffer main_cmd, M_Resource *rm, TransferQueue *transfer);
 void world_grid_get_min_corner(World *w, vec3 out_min_corner);
 i32 world_grid_get_push_id(World *w, M_Resource *rm);
 void world_init_gpu(World *w, M_Resource *rm, TransferQueue *transfer);

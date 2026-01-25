@@ -1,6 +1,8 @@
 
 #include "staging_arena.h"
+#include "util.h"
 #include <assert.h>
+#include <stdlib.h>
 // -----------------------------
 // Internal buffer bookkeeping
 // -----------------------------
@@ -127,6 +129,7 @@ void sgr_flush(StagingGrowRing *sgr, u32 slot) {
 
 StagingSlice sgr_alloc(StagingGrowRing *sgr, VkDeviceSize size, VkDeviceSize alignment) {
   StagingSlice s = buffer_alloc(sgr->active, size, alignment);
+  LOG_INFO("Staging Allocation: {%ld} at offset {%ld}", s.size, s.offset);
   if (s.cpu_ptr)
     return s;
 
@@ -338,7 +341,7 @@ static VkDeviceSize ring_used(const SgrBuffer *b) {
 
 static bool sgr_grow(StagingGrowRing *sgr, VkDeviceSize need_min) {
   if (!sgr->allow_grow)
-    return false;
+    abort();
 
   VkDeviceSize cur = sgr->active->capacity;
   VkDeviceSize target = next_capacity(cur * 2, need_min);

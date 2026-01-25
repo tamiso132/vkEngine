@@ -33,7 +33,7 @@ void _edit_set_voxel(ChunkTree *chunk, int x, int y, int z, bool set_active) {
 }
 
 u32 _edit_add_color(ChunkTree *chunk, u32 rgba) {
-  return vec_push(&chunk->p_res_data[CHUNK_RES_PALETTE], &rgba);
+  return vec_push(&chunk->view[0].p_res_data[CHUNK_RES_PALETTE], &rgba);
 }
 
 void _edit_set_voxel_color(ChunkTree *chunk, int x, int y, int z, bool on, u16 mat) {

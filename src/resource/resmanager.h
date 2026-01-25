@@ -156,11 +156,11 @@ RBuffer *rm_get_buffer(M_Resource *rm, ResHandle handle);
 u32 rm_get_buffer_descriptor_index(M_Resource *rm, ResHandle buffer);
 u32 rm_get_buffer_index(M_Resource *rm, ResHandle buffer);
 RImage *rm_get_image(M_Resource *rm, ResHandle handle);
+u32 rm_get_image_descriptor_index(M_Resource *rm, ResHandle buffer);
 u32 rm_get_image_index(M_Resource *rm, ResHandle image);
 VkPipelineLayout rm_get_pipeline_layout(M_Resource *rm);
 RmStageSlice rm_get_stage_buffer(M_Resource *rm, const void *data, VkDeviceSize size, VkDeviceSize alignment);
-void rm_import_existing_image(M_Resource *rm, ResHandle handle, VkImage raw_img, VkImageView view,
-                              VkExtent2D new_extent, bool delete_img);
+void rm_import_existing_image(M_Resource *rm, ResHandle handle, VkImage raw_img, VkImageView view, VkExtent2D new_extent, bool delete_img);
 ResHandle rm_import_image(M_Resource *rm, RGImageInfo *info, VkImage img, VkImageView view);
 void rm_on_new_frame(M_Resource *rm);
 void rm_resize_buffer(M_Resource *rm, M_GPU *gpu, u32 new_capacity, ResHandle handle);

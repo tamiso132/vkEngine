@@ -1,5 +1,4 @@
 #pragma once
-#include <vulkan/vulkan_core.h>
 #define VK_NO_PROTOTYPES
 
 #include "vector.h"
@@ -17,11 +16,12 @@
 typedef struct {
   const char *app_name;
   bool enable_validation;
+  
 } GPUInstanceInfo;
 
 
 // --- The Main Device Context ---
-struct M_GPU {
+typedef struct M_GPU {
   VkInstance instance;
   VkDevice device;
   VkPhysicalDevice physical_device;
@@ -35,16 +35,14 @@ struct M_GPU {
   VkDebugUtilsMessengerEXT debug_messenger;
 
   VmaAllocator allocator;
-  VkSurfaceKHR surface; // Optional, usually tied to window
 
   // Internal command pool for immediate submits
   VkCommandPool imm_cmd_pool;
   VkCommandBuffer imm_cmd_buffer;
   VkFence imm_fence;
-};
+}M_GPU;
 
 typedef struct GPUSystemInfo {
-  GLFWwindow *window;
   GPUInstanceInfo info;
 } GPUSystemInfo;
 

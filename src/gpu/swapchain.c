@@ -1,154 +1,97 @@
-#include "swapchain.h"
-#include "common.h"
+#include "gpu/swapchain.h"
 #include "gpu/gpu.h"
 #include "resource/resmanager.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 // --- Private Prototypes ---
-static void _destroy(M_GPU *dev, M_Swapchain *sc);
-static bool _system_init(void *config, u32 *mem_req);
-static bool _init(M_GPU *dev, M_Resource *rm, M_Swapchain *sc, uint32_t *w, uint32_t *h);
-static bool _create_vulkan_swapchain(M_GPU *dev, M_Swapchain *sc, VkSwapchainKHR old_swapchain);
-
-SystemFunc swapchain_system_get_func() { return (SystemFunc){.on_init = _system_init}; }
-
-void swapchain_resize(M_GPU *dev, M_Resource *rm, M_Swapchain *sc, VkExtent2D *extent) {
-
-  VkSurfaceCapabilitiesKHR caps = {};
-  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev->physical_device, dev->surface, &caps);
-
-  VkSwapchainKHR old_sc = sc->swapchain;
-  sc->extent = caps.currentExtent;
-  *extent = caps.currentExtent;
-
-  // Create new using old as reference
-  if (!_create_vulkan_swapchain(dev, sc, old_sc)) {
-    // Handle error (panic?)
-    return;
-  }
-
-  // Destroy old swapchain wrapper
-  vkDestroySwapchainKHR(dev->device, old_sc, NULL);
-
-  // 4. Update Images
-  uint32_t image_count = 0;
-  vkGetSwapchainImagesKHR(dev->device, sc->swapchain, &image_count, NULL);
-  VkImage swap_images[image_count];
-  vkGetSwapchainImagesKHR(dev->device, sc->swapchain, &image_count, swap_images);
-
-  if (image_count != sc->imgs.length) {
-    LOG_ERROR("[SWAPCHAIN RESIZE]: after resize differnt image count for swapchain");
-    abort();
-  }
-
-  for (uint32_t i = 0; i < image_count; i++) {
-    PresentFrame *frame = VEC_AT(&sc->imgs, i, PresentFrame);
-
-    // A. Recreate View
-    VkImageViewCreateInfo vi = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                                .image = swap_images[i],
-                                .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                                .format = sc->format,
-                                .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
-    VkImageView view = {};
-    vkCreateImageView(dev->device, &vi, NULL, &view);
-
-    // C. UPDATE EXISTING RESOURCE HANDLE
-    RGImageInfo image_info = {.name = "SwapchainImage",
-                              .format = sc->format,
-                              .width = sc->extent.width,
-                              .height = sc->extent.height,
-                              .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT};
-
-    rm_import_existing_image(rm, frame->handle, swap_images[i], view, *extent, false);
-  }
-  sc->current_img_idx = 0;
-}
-
-ResHandle swapchain_get_image(M_Swapchain *sc) { return VEC_AT(&sc->imgs, sc->current_img_idx, PresentFrame)->handle; }
-
-// --- Private Functions ---
-
-static void _destroy(M_GPU *dev, M_Swapchain *sc) {}
-
-static bool _system_init(void *config, u32 *mem_req) {
-  SYSTEM_HELPER_MEM(mem_req, M_Swapchain);
-  auto *dev = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
-  auto *sc = SYSTEM_GET(SYSTEM_TYPE_SWAPCHAIN, M_Swapchain);
+void swapchain_init(M_Swapchain *sc, VkSurfaceKHR surface, const char *name) {
+  M_GPU *dev = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
   M_Resource *rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
-  VkExtent2D extent = {};
-  return _init(dev, rm, sc, &extent.width, &extent.height);
-}
 
-static bool _init(M_GPU *dev, M_Resource *rm, M_Swapchain *sc, uint32_t *w, uint32_t *h) {
-  VkSurfaceCapabilitiesKHR caps = {};
-  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev->physical_device, dev->surface, &caps);
-  *w = caps.currentExtent.width;
-  *h = caps.currentExtent.height;
-  sc->format = VK_FORMAT_B8G8R8A8_SRGB;
-  sc->extent.width = *w;
-  sc->extent.height = *h;
+  // 1. Check Capabilities
+  VkSurfaceCapabilitiesKHR caps;
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev->physical_device, surface, &caps);
 
-  if (!_create_vulkan_swapchain(dev, sc, VK_NULL_HANDLE))
-    return false;
+  VkSurfaceFormatKHR *formats;
+  u32 format_count;
+  vkGetPhysicalDeviceSurfaceFormatsKHR(dev->physical_device, surface, &format_count, NULL);
+  formats = malloc(sizeof(VkSurfaceFormatKHR) * format_count);
+  vkGetPhysicalDeviceSurfaceFormatsKHR(dev->physical_device, surface, &format_count, formats);
 
-  // --- INITIAL SETUP (New Handles) ---
-  uint32_t image_count = 0;
-  vkGetSwapchainImagesKHR(dev->device, sc->swapchain, &image_count, NULL);
-  VkImage swap_images[image_count];
-  vkGetSwapchainImagesKHR(dev->device, sc->swapchain, &image_count, swap_images);
+  // Select Format
+  VkSurfaceFormatKHR surface_format = formats[0];
+  for (u32 i = 0; i < format_count; i++) {
+    if (formats[i].format == VK_FORMAT_B8G8R8A8_UNORM && formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+      surface_format = formats[i];
+      break;
+    }
+  }
+  free(formats);
 
-  vec_init_with_capacity(&sc->imgs, image_count, sizeof(PresentFrame), NULL);
+  sc->format = surface_format.format;
+  sc->extent = caps.currentExtent;
 
-  for (uint32_t i = 0; i < image_count; i++) {
-    PresentFrame present = {};
-
-    // Create View
-    VkImageViewCreateInfo vi = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                                .image = swap_images[i],
-                                .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                                .format = sc->format,
-                                .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
-
-    VkImageView view = {};
-    vkCreateImageView(dev->device, &vi, NULL, &view);
-
-    // Create Semaphore
-    VkSemaphoreCreateInfo info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-    vkCreateSemaphore(dev->device, &info, NULL, &present.sem_rend_done);
-
-    // Import NEW Resource
-    RGImageInfo image_info = {.name = "SwapchainImage",
-                              .format = sc->format,
-                              .width = sc->extent.width,
-                              .height = sc->extent.height,
-                              .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT};
-
-    present.handle = rm_import_image(rm, &image_info, swap_images[i], view);
-
-    vec_push(&sc->imgs, &present);
+  // 2. Create Swapchain
+  u32 image_count = caps.minImageCount + 1;
+  if (caps.maxImageCount > 0 && image_count > caps.maxImageCount) {
+    image_count = caps.maxImageCount;
   }
 
-  sc->current_img_idx = 0;
-  return true;
+  VkSwapchainCreateInfoKHR create_info = {.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+                                          .surface = surface,
+                                          .minImageCount = image_count,
+                                          .imageFormat = surface_format.format,
+                                          .imageColorSpace = surface_format.colorSpace,
+                                          .imageExtent = sc->extent,
+                                          .imageArrayLayers = 1,
+                                          .imageUsage =
+                                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                          .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                                          .preTransform = caps.currentTransform,
+                                          .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+                                          .presentMode = VK_PRESENT_MODE_FIFO_KHR,
+                                          .clipped = VK_TRUE,
+                                          .oldSwapchain = VK_NULL_HANDLE};
+
+  vkCreateSwapchainKHR(dev->device, &create_info, NULL, &sc->swapchain);
+
+  // 3. Get Images
+  vkGetSwapchainImagesKHR(dev->device, sc->swapchain, &image_count, NULL);
+  VkImage *vk_images = malloc(sizeof(VkImage) * image_count);
+  vkGetSwapchainImagesKHR(dev->device, sc->swapchain, &image_count, vk_images);
+
+  sc->image_count = image_count;
+  sc->images = malloc(sizeof(ResHandle) * image_count);
+
+  for (u32 i = 0; i < image_count; i++) {
+    char img_name[64];
+    snprintf(img_name, 64, "%s_Image_%d", name, i);
+    sc->images[i] = rm_import_image(rm, vk_images[i], sc->format, sc->extent, img_name);
+  }
+  free(vk_images);
+
+  // 4. Create Synchronization (Per-Image Semaphores)
+  // These semaphores track when the GPU is done rendering to a specific image.
+  sc->sem_render_finished = malloc(sizeof(VkSemaphore) * sc->image_count);
+
+  VkSemaphoreCreateInfo sem_info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+  for (u32 i = 0; i < sc->image_count; i++) {
+    vkCreateSemaphore(dev->device, &sem_info, NULL, &sc->sem_render_finished[i]);
+  }
 }
 
-// Helper to create the actual VkSwapchainKHR object (avoids code duplication)
-static bool _create_vulkan_swapchain(M_GPU *dev, M_Swapchain *sc, VkSwapchainKHR old_swapchain) {
-  VkSwapchainCreateInfoKHR ci = {
-      .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-      .surface = dev->surface,
-      .minImageCount = 3,
-      .imageFormat = sc->format,
-      .imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
-      .imageExtent = sc->extent,
-      .imageArrayLayers = 1,
-      .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-      .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
-      .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-      .presentMode = VK_PRESENT_MODE_FIFO_KHR,
-      .clipped = VK_TRUE,
-      .oldSwapchain = old_swapchain // Handle the old one if provided
-  };
+ResHandle swapchain_get_image(M_Swapchain *sc) { return sc->images[sc->current_img_idx]; }
 
-  return vkCreateSwapchainKHR(dev->device, &ci, NULL, &sc->swapchain) == VK_SUCCESS;
+void swapchain_destroy(M_Swapchain *sc) {
+  M_GPU *dev = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+
+  for (u32 i = 0; i < sc->image_count; i++) {
+    vkDestroySemaphore(dev->device, sc->sem_render_finished[i], NULL);
+  }
+  free(sc->sem_render_finished);
+
+  vkDestroySwapchainKHR(dev->device, sc->swapchain, NULL);
+  free(sc->images);
 }
+// --- Private Functions ---

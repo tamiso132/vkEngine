@@ -3,8 +3,10 @@
 #include "gpu/gpu.h"
 #include "gpu/pipeline.h"
 #include "resource/resmanager.h"
+#include "resource/rm_internal.h"
 #include "resource/staging_arena.h"
 #include "vector.h"
+#include <vulkan/vulkan_core.h>
 
 typedef struct {
   VkPipelineStageFlags2 stage;
@@ -139,6 +141,28 @@ void cmd_bind_pipeline(CmdBuffer cmd, M_Pipeline *pm, M_Resource *rm, BindPipeli
 
 void cmd_end_rendering(CmdBuffer cmd) { vkCmdEndRendering(cmd.buffer); }
 
+void cmd_image_copy_host(CmdBuffer cmd, M_GPU *dev, M_Resource *rm, ResHandle dst_handle, void *data,
+                         VkExtent2D extent) {
+
+  // TODO FIX ACTUALLY SIZEOF
+  RmStageSlice slice = rm_stage_push(rm, dev, data, extent.height * extent.width * sizeof(u32), 1);
+  RImage *img = rm_get_image(rm, dst_handle);
+  VkBufferImageCopy2 region_info = {.sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
+                                    .bufferImageHeight = extent.height,
+                                    .bufferRowLength = extent.width,
+                                    .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1}};
+
+  VkCopyBufferToImageInfo2 copy_info = {
+      .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2,
+      .dstImage = img->handle,
+      .dstImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+      .srcBuffer = slice.buffer,
+      .pRegions = &region_info,
+      .regionCount = 1,
+  };
+
+  vkCmdCopyBufferToImage2(cmd.buffer, &copy_info);
+}
 void cmd_image_copy_to_image(CmdBuffer cmd, M_Resource *rm, ResHandle src_handle, ResHandle dst_handle) {
   RImage *src_img = rm_get_image(rm, src_handle);
   RImage *dst_img = rm_get_image(rm, dst_handle);

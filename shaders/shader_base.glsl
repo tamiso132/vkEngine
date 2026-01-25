@@ -20,6 +20,8 @@
 #else
 // -------- C side --------
 #include <stdint.h>
+#include "common.h"
+#include "cglm/cglm.h"
 
 #if defined(__GNUC__) || defined(__clang__)
 #define ALIGN(number) __attribute__((aligned(number)))

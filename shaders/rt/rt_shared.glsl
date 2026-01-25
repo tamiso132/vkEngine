@@ -66,4 +66,44 @@ struct Ray {
 #define LEAF_BIT  0x80000000u
 #define INDEX_MASK 0x7FFFFFFFu
 
+
+// ---------------------------
+// ReadBackBufferStuff
+// ---------------------------
+#define DBG_MAX_RECORDS 16
+#define DBG_T_U32    1
+#define DBG_T_I32    2
+#define DBG_T_F32    3
+#define DBG_T_VEC2   4
+#define DBG_T_VEC3   5
+#define DBG_T_VEC4   6
+#define DBG_T_IVEC2  7
+#define DBG_T_IVEC3  8
+#define DBG_T_UVEC2  9
+#define DBG_T_UVEC3  10
+
+// 1 Metadata uvec4 + N Record uvec4s
+// Each uvec4 is 16 bytes.
+#define DBG_PIXEL_STRIDE_BYTES (16 * (1 + DBG_MAX_RECORDS))
+
+SHARED_STRUCT(DbgRecord, 16){
+    u32 header; // [Event:8][Key:8][Type:8][Part:8]
+    u32 y;
+    u32 z;
+    u32 w;
+};
+
+SHARED_STRUCT(DbgPixelBlock, 16){
+    u32 count;
+    u32 _pad[3];
+    DbgRecord records[DBG_MAX_RECORDS];
+};
+
+// Helpers to unpack header
+#define DBG_GET_EVENT(h) ((h >> 24) & 0xFF)
+#define DBG_GET_KEY(h)   ((h >> 16) & 0xFF)
+#define DBG_GET_TYPE(h)  ((h >> 8) & 0xFF)
+#define DBG_GET_PART(h)  ((h) & 0xFF)
+
+
 #endif

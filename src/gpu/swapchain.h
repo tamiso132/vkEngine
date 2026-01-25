@@ -1,6 +1,8 @@
 #pragma once
+#include "../vector.h"
 #include "gpu.h"
-#include "vector.h"
+
+// Remove SYSTEM_DECLARE_ID calls. Swapchain is no longer a singleton system.
 
 typedef struct SwapPresent {
   ResHandle handle;
@@ -12,17 +14,18 @@ typedef struct M_Swapchain {
   VkFormat format;
   VkExtent2D extent;
 
-  VECTOR_TYPES(PresentFrame)
-  Vector imgs;
+  u32 image_count;
+  u32 current_img_idx; // Index returned by vkAcquireNextImage
 
-  uint32_t current_img_idx;
+  ResHandle *images; // Array of RImage handles (Size: image_count)
+
+  VkSemaphore *sem_render_finished;
 } M_Swapchain;
 
-typedef struct SwapchainConfig {
-} SwapchainConfig;
 
 // PUBLIC FUNCTIONS
-
-SystemFunc swapchain_system_get_func();
-void swapchain_resize(M_GPU *dev, M_Resource *rm, M_Swapchain *sc, VkExtent2D *extent);
+void swapchain_destroy(M_Swapchain *sc);
 ResHandle swapchain_get_image(M_Swapchain *sc);
+void swapchain_init(M_Swapchain *sc, VkSurfaceKHR surface, const char *name);
+// END PUBLIC FUNCTIONS
+

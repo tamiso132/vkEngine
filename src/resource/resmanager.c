@@ -188,6 +188,9 @@ void rm_bindless_batch_buffer_update(M_Resource *rm, DescriptorInfo *infos, u32 
 u32 rm_get_buffer_descriptor_index(M_Resource *rm, ResHandle buffer) {
   return rm_get_buffer_internal(rm, buffer)->bindlessIndex;
 }
+u32 rm_get_image_descriptor_index(M_Resource *rm, ResHandle buffer) {
+  return rm_get_image_internal(rm, buffer)->bindlessIndex;
+}
 
 void rm_resize_buffer(M_Resource *rm, M_GPU *gpu, u32 new_capacity, ResHandle handle) {
   rm_retire_buffer(rm, handle);

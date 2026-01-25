@@ -24,6 +24,9 @@ add_sources(
     vox_loader.c
     transfer_queue.c
     hashmaputil.c
+
+    readback.c
+    input.c
 )
 
 include_this()

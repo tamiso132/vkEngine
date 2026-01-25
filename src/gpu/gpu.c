@@ -15,7 +15,7 @@ typedef struct QueueFamilyIndices {
   int transfer;
 } QueueFamilyIndices;
 
-static QueueFamilyIndices _find_queue_families(VkPhysicalDevice phys, VkSurfaceKHR surface) {
+static QueueFamilyIndices _find_queue_families(VkPhysicalDevice phys) { // Removed 'surface' arg
   QueueFamilyIndices out = {.graphics = -1, .present = -1, .transfer = -1};
 
   uint32_t count = 0;
@@ -32,19 +32,10 @@ static QueueFamilyIndices _find_queue_families(VkPhysicalDevice phys, VkSurfaceK
     }
   }
 
-  // 2) Present family (requires surface)
-  if (surface != VK_NULL_HANDLE) {
-    for (uint32_t i = 0; i < count; i++) {
-      VkBool32 supportsPresent = VK_FALSE;
-      vkGetPhysicalDeviceSurfaceSupportKHR(phys, i, surface, &supportsPresent);
-      if (supportsPresent) {
-        out.present = (int)i;
-        break;
-      }
-    }
-  } else {
-    out.present = out.graphics;
-  }
+  // 2) Present family
+  // Since we don't have a surface yet, we ASSUME the graphics queue supports presentation.
+  // This is true for 99% of desktop hardware.
+  out.present = out.graphics;
 
   // 3) Transfer family: prefer transfer-only (no graphics + no compute)
   for (uint32_t i = 0; i < count; i++) {
@@ -59,7 +50,7 @@ static QueueFamilyIndices _find_queue_families(VkPhysicalDevice phys, VkSurfaceK
     }
   }
 
-  // fallback: any queue supporting transfer
+  // Fallback: any queue supporting transfer
   if (out.transfer < 0) {
     for (uint32_t i = 0; i < count; i++) {
       if (props[i].queueFlags & VK_QUEUE_TRANSFER_BIT) {
@@ -69,11 +60,11 @@ static QueueFamilyIndices _find_queue_families(VkPhysicalDevice phys, VkSurfaceK
     }
   }
 
-  // final fallback
+  // Final fallback
   if (out.transfer < 0)
     out.transfer = out.graphics;
-  if (out.present < 0)
-    out.present = out.graphics;
+  
+  // Note: out.present is already set to out.graphics above
 
   free(props);
   return out;
@@ -83,7 +74,7 @@ static QueueFamilyIndices _find_queue_families(VkPhysicalDevice phys, VkSurfaceK
 static bool on_system_init(void *config, u32 *memory_req);
 
 static void on_system_destroy();
-static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info);
+static bool gpu_init(M_GPU *dev, GPUInstanceInfo *info);
 static void gpu_destroy(M_GPU *dev);
 static int _rate_device(VkPhysicalDevice dev);
 
@@ -110,7 +101,7 @@ static bool on_system_init(void *config, u32 *mem_req) {
   GPUSystemInfo *c = config;
   M_GPU *device = m_system_get(SYSTEM_TYPE_GPU);
 
-  return gpu_init(device, c->window, &c->info);
+  return gpu_init(device, &c->info);
 }
 
 static void on_system_destroy() {
@@ -118,7 +109,7 @@ static void on_system_destroy() {
   gpu_destroy(device);
 }
 
-static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info) {
+static bool gpu_init(M_GPU *dev, GPUInstanceInfo *info) {
   memset(dev, 0, sizeof(M_GPU));
 
   // 1. Volk & Instance
@@ -165,8 +156,6 @@ static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info) {
     vkCreateDebugUtilsMessengerEXT(dev->instance, &debugInfo, NULL, &dev->debug_messenger);
   }
   // 2. Surface
-  if (window)
-    glfwCreateWindowSurface(dev->instance, window, NULL, &dev->surface);
 
   // 3. Pick Physical Device
   uint32_t count = 0;
@@ -187,7 +176,7 @@ static bool gpu_init(M_GPU *dev, GLFWwindow *window, GPUInstanceInfo *info) {
   // 4. Logical Device (Simplified: 1 Queue for everything)
   float prio = 1.0f;
   // 4. Logical Device (Graphics + Present + Transfer)
-  QueueFamilyIndices q = _find_queue_families(dev->physical_device, dev->surface);
+  QueueFamilyIndices q = _find_queue_families(dev->physical_device);
 
   dev->graphics_family = (uint32_t)q.graphics;
   dev->present_family = (uint32_t)q.present;
@@ -309,7 +298,6 @@ static void gpu_destroy(M_GPU *dev) {
   vkDestroyCommandPool(dev->device, dev->imm_cmd_pool, NULL);
   vkDestroyFence(dev->device, dev->imm_fence, NULL);
   vkDestroyDevice(dev->device, NULL);
-  vkDestroySurfaceKHR(dev->instance, dev->surface, NULL);
   vkDestroyInstance(dev->instance, NULL);
 }
 

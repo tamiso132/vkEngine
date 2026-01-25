@@ -119,11 +119,11 @@ ResHandle rm_image_import(M_Resource *rm, RGImageInfo *info, VkImage img, VkImag
   ResHandle h = {.id = id, .res_type = RES_TYPE_IMAGE};
 
   // Update bindless for imported too (so shaders can use it)
-//   VkDescriptorImageInfo imageInfo = {
-//       .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-//       .imageView = image.view,
-//       .sampler = (image.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) ? rm->default_sampler : VK_NULL_HANDLE};
-//   rm_bindless_add(rm, h, &imageInfo, NULL);
+  //   VkDescriptorImageInfo imageInfo = {
+  //       .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+  //       .imageView = image.view,
+  //       .sampler = (image.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) ? rm->default_sampler : VK_NULL_HANDLE};
+  //   rm_bindless_add(rm, h, &imageInfo, NULL);
 
   return h;
 }

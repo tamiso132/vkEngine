@@ -35,7 +35,7 @@ TransferQueue *transfer_init(VkDevice device, VkQueue transfer, u32 queue_fam, V
                              u32 max_frame_in_flight) {
 
   TransferQueue *tq = calloc(1, sizeof(TransferQueue) + sizeof(Frame) * max_frame_in_flight);
-  tq->submit = init_submit(device, transfer, false, max_frame_in_flight);
+  tq->submit = sm_init(device, transfer);
   tq->staging_ring = sgr_init(allocator, capacity, max_frame_in_flight, true);
   tq->device = device;
   tq->transfer = transfer;
@@ -61,14 +61,13 @@ Ticket transfer_push_upload(TransferQueue *transfer, M_Resource *rm, ResHandle h
     transfer->is_cmd_on = true;
   }
   cmd_buffer_copy(_get_frame(transfer).cmd, rm, transfer->allocator, handle, slice);
-
-  return sm_get_cpu_signal_count(transfer->submit);
+  return sm_get_cpu_ticket(transfer->submit);
 }
 
 void transfer_on_new_frame(TransferQueue *transfer) {
   u32 old_frame_index = transfer->frame_index;
   transfer->frame_index = (old_frame_index + 1) % transfer->max_frames_in_flight;
-  if (sm_get_gpu_signal_count(transfer->submit) >= _get_frame(transfer).submit_signal) {
+  if (sm_get_gpu_ticket(transfer->submit) >= _get_frame(transfer).submit_signal) {
     cmd_begin(transfer->device, _get_frame(transfer).cmd);
     transfer->is_cmd_on = true;
 
@@ -81,7 +80,7 @@ void transfer_on_new_frame(TransferQueue *transfer) {
 }
 
 Ticket transfer_get_current_ticket_completed(TransferQueue *transfer) {
-  return sm_get_gpu_signal_count(transfer->submit);
+  return sm_get_gpu_ticket(transfer->submit);
 }
 
 void transfer_submit_on_frame_end(TransferQueue *transfer) {
@@ -95,7 +94,7 @@ void transfer_submit_on_frame_end(TransferQueue *transfer) {
   sgr_flush(transfer->staging_ring, transfer->frame_index);
 
   transfer->frames[transfer->frame_index].submit_signal =
-      sm_work_headless(transfer->submit, _get_frame(transfer).cmd.buffer, true, true);
+      sm_work(transfer->submit, NULL, _get_frame(transfer).cmd.buffer, true, true);
 
   transfer->in_flight = true;
   transfer->is_frame_started = false;

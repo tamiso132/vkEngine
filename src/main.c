@@ -1,5 +1,8 @@
 #define GLFW_INCLUDE_VULKAN
 #define VK_NO_PROTOTYPES
+#define CLAY_IMPLEMENTATION
+
+#include <clay.h>
 
 #include "common.h"
 #include "filewatch.h"
@@ -58,7 +61,6 @@ static void _register_systems(GPUSystemInfo info) {
   m_system_register(fm_system_get_func(), SYSTEM_TYPE_FILE, NULL);
   m_system_register(pm_system_get_func(), SYSTEM_TYPE_PIPELINE, NULL);
   m_system_register(pr_system_get_func(), SYSTEM_TYPE_HOTRELOAD, NULL);
-  m_system_register(sm_system_get_func(), SYSTEM_TYPE_SUBMIT, NULL);
 
   m_system_init();
 }

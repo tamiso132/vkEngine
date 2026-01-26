@@ -32,25 +32,18 @@ FetchContent_Declare(vma GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndS
 # 4. cglm
 FetchContent_Declare(cglm GIT_REPOSITORY https://github.com/recp/cglm.git GIT_TAG master)
 
-# 4. cglm
-FetchContent_Declare(
-  clay
-  GIT_REPOSITORY https://github.com/nicbarker/clay.git
-  GIT_TAG v0.14
-)
 
 
 
-add_library(clay INTERFACE)
-target_include_directories(clay INTERFACE "${clay_SOURCE_DIR}")
-
-FetchContent_MakeAvailable(glfw volk vma cglm clay)
+FetchContent_MakeAvailable(glfw volk vma cglm)
 
 include(cmake/engine.cmake)
 
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
+
+
 
 
 
@@ -72,7 +65,9 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 shaders
 ${INCLUDE_DIRECTORIES_ENGINE}
 ${CMAKE_CURRENT_SOURCE_DIR}
-thirdparty/hashmap.c)
+thirdparty/hashmap.c
+thirdparty/clay
+)
 
 
 
@@ -81,7 +76,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glfw 
     volk 
     cglm
-    clay
     glslang::glslang 
     glslang::SPIRV 
     glslang::glslang-default-resource-limits

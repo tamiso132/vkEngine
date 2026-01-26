@@ -17,34 +17,41 @@
 #include "ui/debug_inspector.h"
 
 #include "window.h"
-// --- Private Prototypes ---
 // Add this helper at the top of src/sample_runner.c
+
+// --- Private Prototypes ---
 
 void run_sample(Sample *sample) {
   // 1. Initiera samplet
   auto *device = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
-  auto *sm = SYSTEM_GET(SYSTEM_TYPE_SUBMIT, M_Submit);
   auto *rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
   auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
   auto *pr = SYSTEM_GET(SYSTEM_TYPE_HOTRELOAD, M_HotReload);
-
+  
+  // WINDOW CREATION
   TWindow main_win = {0};
   window_init(&main_win, device, rm, 800, 600, "Main View", "MainSC");
 
   TWindow debug_win = {0};
   window_init(&debug_win, device, rm, 800, 600, "Debug View (Click me)", "DebugSC");
 
+  // WINDOW INPUT CREATION, TODO, put it inside of TWindow
   Input input = {0};
   input_init(&input, main_win.raw_window);
 
   Input debug_input = {0};
   input_init(&debug_input, debug_win.raw_window);
 
-  CmdBuffer cmd = cmd_init(device->device, device->graphics_family);
+  CmdBuffer cmd_main = cmd_init(device->device, device->graphics_family);
+  CmdBuffer cmd_dbg = cmd_init(device->device, device->graphics_family);
+
+  auto *sm = sm_init(device->device, device->graphics_queue);
+
+
   int width = 0, height = 0;
 
   SampleContext ctx = {
-      .cmd = cmd,
+      .cmd = cmd_main,
       .gpu = device,
       .extent = main_win.swapchain.extent,
       .pm = pm,
@@ -54,7 +61,7 @@ void run_sample(Sample *sample) {
       .tq = transfer_init(device->device, device->transfer_queue, device->transfer_family, device->allocator, MIB(250),
                           1),
   };
-  cmd_begin(device->device, cmd);
+  cmd_begin(device->device, cmd_main);
   transfer_on_new_frame(ctx.tq);
   if (sample->init) {
 
@@ -65,8 +72,8 @@ void run_sample(Sample *sample) {
   ClayContext clay_ctx;
   clay_backend_init(&clay_ctx, device, rm, pr, ctx.cmd, main_win.swapchain.format, 800, 600);
 
-  cmd_end(device->device, cmd);
-  sm_work(sm, &main_win.swapchain, cmd.buffer, false, false);
+  cmd_end(device->device, cmd_main);
+  sm_work(sm, &main_win.swapchain, cmd_main.buffer, false, false);
   transfer_submit_on_frame_end(ctx.tq);
   vkDeviceWaitIdle(device->device);
 
@@ -95,6 +102,7 @@ void run_sample(Sample *sample) {
       continue;
     }
 
+    // CLICKING A PIXEL IN DEBUG WINDOW
     if (input_button_pressed(&debug_input, GLFW_MOUSE_BUTTON_LEFT)) {
       double x, y;
       glfwGetCursorPos(debug_win.raw_window, &x, &y);
@@ -103,19 +111,20 @@ void run_sample(Sample *sample) {
     }
 
     glfwGetFramebufferSize(main_win.raw_window, &width, &height);
-    // Hantera minimering
+
+    // MINIMIZED WINDOW, MAIN WINDOW
     while (width == 0 || height == 0) {
       glfwWaitEvents();
       glfwGetFramebufferSize(main_win.raw_window, &width, &height);
     }
 
-    // Hantera Resize
+    // RESIZE HANDLING
     if (main_win.swapchain.extent.height != height || main_win.swapchain.extent.width != width) {
       vkDeviceWaitIdle(device->device);
 
       VkExtent2D new_extent = {.width = width, .height = height};
-      swapchain_resize(device, rm, &main_win.swapchain, &new_extent);
-      // RESIZE DEBUG TOO
+      // swapchain_resize(device, rm, &main_win.swapchain, &new_extent);
+      //  RESIZE DEBUG TOO
 
       // Låt samplet veta att vi har ändrat storlek (fixa depth/render targets)
       if (sample->on_resize) {
@@ -124,29 +133,32 @@ void run_sample(Sample *sample) {
       continue;
     }
 
-    // Börja ramen
+    // CPU UPDATE
     camera_update(&ctx.cam, main_win.raw_window, dt);
     m_system_update();
+
+    // START GPU FRAME
     sm_begin_frame(sm);
+    rm_on_new_frame(rm);
     transfer_on_new_frame(ctx.tq);
 
-    rm_on_new_frame(rm);
-
+    // AQUIRE SWAPCHAIN IMAGE
     sm_acquire_swapchain(sm, &main_win.swapchain);
+    sm_acquire_swapchain(sm, &debug_win.swapchain);
 
     ctx.swap_img = swapchain_get_image(&main_win.swapchain);
 
-    cmd_begin(device->device, cmd);
-    cmd_bind_bindless(cmd, rm, main_win.swapchain.extent);
+    cmd_begin(device->device, cmd_main);
+    cmd_bind_bindless(cmd_main, rm, main_win.swapchain.extent);
 
     Clay_SetLayoutDimensions((Clay_Dimensions){(float)width, (float)height});
     Clay_BeginLayout();
     debug_ui_layout(&inspector);
     Clay_RenderCommandArray ui_cmds = Clay_EndLayout();
 
-    // ... Render ...
+    // RENDER DEBUG WINDOW
     if (inspector.active) {
-      clay_backend_render(&clay_ctx, &cmd, &ui_cmds, width, height);
+      clay_backend_render(&clay_ctx, &cmd_main, &ui_cmds, width, height);
     }
     // Transition: Swapchain -> Render Target
     // ImageBarrierInfo color_barrier = {.img_handle = swap_img,
@@ -157,7 +169,7 @@ void run_sample(Sample *sample) {
     //                                   .dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
     // rm_image_sync(rm, cmd.buffer, &color_barrier);
 
-    cmd_sync_image(cmd, rm, ctx.swap_img, STATE_COLOR, ACCESS_READ);
+    cmd_sync_image(cmd_main, rm, ctx.swap_img, STATE_COLOR, ACCESS_READ);
 
     if (sample->render) {
       sample->render(sample, &ctx);
@@ -172,13 +184,15 @@ void run_sample(Sample *sample) {
     //                                     .dst_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
     //                                     .dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
     // rm_image_sync(rm, cmd.buffer, &present_barrier);
-    cmd_sync_image(cmd, rm, ctx.swap_img, STATE_PRESENT, ACCESS_READ);
-    cmd_end(device->device, cmd);
+    cmd_sync_image(cmd_main, rm, ctx.swap_img, STATE_PRESENT, ACCESS_READ);
+    cmd_end(device->device, cmd_main);
 
     // Submit & Present
     transfer_submit_on_frame_end(ctx.tq);
-    sm_work(sm, &main_win.swapchain, cmd.buffer, true, true);
-    sm_present(sm, &main_win.swapchain);
+    sm_work(sm, &main_win.swapchain, cmd_main.buffer, true, true);
+
+    sm_present(sm, &debug_win.swapchain, false);
+    sm_present(sm, &main_win.swapchain, true);
   }
 
   vkDeviceWaitIdle(device->device);

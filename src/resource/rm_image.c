@@ -1,14 +1,13 @@
 //! rm_internal.h
+#include "common.h"
+#include "resource/resmanager.h"
 #include "rm_internal.h"
+#include <vulkan/vulkan_core.h>
 
-static VkComponentMapping _vk_component_mapping(void) {
-  return (VkComponentMapping){
-      .r = VK_COMPONENT_SWIZZLE_R,
-      .g = VK_COMPONENT_SWIZZLE_G,
-      .b = VK_COMPONENT_SWIZZLE_B,
-      .a = VK_COMPONENT_SWIZZLE_A,
-  };
-}
+// --- Private Prototypes ---
+static void _create_view(M_GPU *gpu, RImage *image);
+
+static VkComponentMapping _vk_component_mapping(void);
 
 void rm_reset_image_sync(RImage *image) {
   image->sync = (SyncDef){
@@ -35,22 +34,7 @@ void rm_create_image_full(M_Resource *rm, M_GPU *gpu, RImage *image) {
 
   vk_check(vmaCreateImage(gpu->allocator, &ci, &ai, &image->handle, &image->alloc, NULL));
 
-  VkImageViewCreateInfo viewInfo = {
-      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-      .image = image->handle,
-      .viewType = VK_IMAGE_VIEW_TYPE_2D,
-      .components = _vk_component_mapping(),
-      .format = image->format,
-      .subresourceRange =
-          {
-              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-              .baseMipLevel = 0,
-              .levelCount = 1,
-              .baseArrayLayer = 0,
-              .layerCount = 1,
-          },
-  };
-  vk_check(vkCreateImageView(gpu->device, &viewInfo, NULL, &image->view));
+  _create_view(gpu, image);
 }
 
 ResHandle rm_image_create(M_Resource *rm, M_GPU *gpu, RGImageInfo info) {
@@ -94,6 +78,7 @@ ResHandle rm_image_create(M_Resource *rm, M_GPU *gpu, RGImageInfo info) {
 
 ResHandle rm_image_import(M_Resource *rm, RGImageInfo *info, VkImage img, VkImageView view) {
   RImage image = {0};
+  M_GPU *dev = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
   rm_reset_image_sync(&image);
 
   image.name = strdup(info->name);
@@ -103,6 +88,10 @@ ResHandle rm_image_import(M_Resource *rm, RGImageInfo *info, VkImage img, VkImag
   image.usage = info->usage;
   image.format = info->format;
   image.is_imported = true;
+
+  if (view == NULL) {
+    _create_view(dev, &image);
+  }
 
   // Decide binding/type based on usage
   bool is_sampled = (info->usage & VK_IMAGE_USAGE_SAMPLED_BIT) != 0;
@@ -143,4 +132,33 @@ void rm_image_destroy_owned(M_Resource *rm, M_GPU *gpu, RImage *img) {
     vmaDestroyImage(gpu->allocator, img->handle, img->alloc);
   img->handle = VK_NULL_HANDLE;
   img->alloc = NULL;
+}
+// --- Private Functions ---
+
+static void _create_view(M_GPU *gpu, RImage *image) {
+  VkImageViewCreateInfo viewInfo = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .image = image->handle,
+      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .components = _vk_component_mapping(),
+      .format = image->format,
+      .subresourceRange =
+          {
+              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+              .baseMipLevel = 0,
+              .levelCount = 1,
+              .baseArrayLayer = 0,
+              .layerCount = 1,
+          },
+  };
+  vk_check(vkCreateImageView(gpu->device, &viewInfo, NULL, &image->view));
+}
+
+static VkComponentMapping _vk_component_mapping(void) {
+  return (VkComponentMapping){
+      .r = VK_COMPONENT_SWIZZLE_R,
+      .g = VK_COMPONENT_SWIZZLE_G,
+      .b = VK_COMPONENT_SWIZZLE_B,
+      .a = VK_COMPONENT_SWIZZLE_A,
+  };
 }

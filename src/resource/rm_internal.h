@@ -12,6 +12,11 @@
 #define INVALID_BINDING_INDEX UINT32_MAX
 
 // PUBLIC FUNCTIONS
+void rm_create_image_full(M_Resource *rm, M_GPU *gpu, RImage *image);
+ResHandle rm_image_create(M_Resource *rm, M_GPU *gpu, RGImageInfo info);
+void rm_image_destroy_owned(M_Resource *rm, M_GPU *gpu, RImage *img);
+ResHandle rm_image_import(M_Resource *rm, RGImageInfo *info, VkImage img, VkImageView view);
+void rm_reset_image_sync(RImage *image);
 // END PUBLIC FUNCTIONS
 // -------------------- Internal resource structs --------------------
 

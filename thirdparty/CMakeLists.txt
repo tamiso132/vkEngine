@@ -21,3 +21,5 @@ target_sources(proxy_vk_mem PUBLIC ${vma_SOURCE_DIR}/include)
 
 # Add thirdparty source
 add_sources(hashmap.c/hashmap.c)
+
+

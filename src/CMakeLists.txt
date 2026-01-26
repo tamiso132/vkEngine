@@ -2,6 +2,7 @@
 add_subdirectory(gpu)
 add_subdirectory(world)
 add_subdirectory(resource)
+add_subdirectory(ui)
 
 
 

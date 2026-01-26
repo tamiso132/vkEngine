@@ -260,3 +260,29 @@ static float u2f(uint32_t u) {
     union { uint32_t u; float f; } c = {u};
     return c.f;
 }
+
+// 2. dbgr_cpu_tick
+
+// Goal: Read the data written by the GPU in the previous frame. This must be called at the start of your frame loop, strictly after sm_begin_frame (which waits for the previous frame's fences).
+
+//     Check Validity: Verify that your valid flag is true. If false (first frame), return immediately to avoid reading garbage.
+
+//     Access Data: Cast the stored pMappedData pointer to your data type (e.g., DbgPixelBlock*).
+
+//     Copy Data: Perform a memcpy from this pointer into your UI state struct (DebugInspectorState).
+
+//     No Unmap: Do not unmap or flush. The persistent mapping handles this.
+
+// dbgr_gpu_tick
+
+// Goal: Record commands into the main command buffer to copy the specific pixel data into the readback buffer.
+
+//     Validate Inputs: Check if mouse coordinates are within the source buffer/image bounds.
+
+//     Sync Source Resource: Call the engine's cmd_sync_buffer on the source resource handle.
+
+//         Target State: STATE_TRANSFER
+
+//         Target Access: ACCESS_READ
+
+//         Reason: This updates the M_Resource tracking and ensures previous shaders are done writing to the source.

@@ -1,3 +1,6 @@
 [submodule "thirdparty/hashmap.c"]
 	path = thirdparty/hashmap.c
 	url = https://github.com/tidwall/hashmap.c.git
+[submodule "thirdparty/clay"]
+	path = thirdparty/clay
+	url = https://github.com/nicbarker/clay.git

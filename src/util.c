@@ -2,9 +2,10 @@
 #include "common.h"
 #include "gpu/pipeline.h"
 #include "gpu/swapchain.h"
+#include <vulkan/vulkan_core.h>
 
 // --- Private Prototypes ---
-static const char *vk_result_to_string(VkResult err);
+static const char *vk_result_to_string(VkResult r);
 
 void vk_check(VkResult err) {
   if (err != VK_SUCCESS) {
@@ -12,6 +13,43 @@ void vk_check(VkResult err) {
 
     abort();
   }
+}
+VkSemaphore vk_create_semp_timeline(VkDevice device, const char *name) {
+  VkSemaphoreTypeCreateInfo timelineCreateInfo = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+                                                  .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+                                                  .initialValue = 0};
+
+  VkSemaphoreCreateInfo createInfo = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = &timelineCreateInfo};
+  VkSemaphore timeline = {};
+  vkCreateSemaphore(device, &createInfo, NULL, &timeline);
+  vk_set_object_name(device, VK_OBJECT_TYPE_SEMAPHORE, (u64)timeline, name);
+  return timeline;
+}
+
+void vk_set_image_name(VkDevice device, VkImage image, const char* name){
+  vk_set_object_name(device, VK_OBJECT_TYPE_IMAGE, (u64)image, name);
+}
+
+VkSemaphore vk_create_semp_binary(VkDevice device, const char *name) {
+
+  VkSemaphoreCreateInfo createInfo = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+  VkSemaphore timeline = {};
+  vkCreateSemaphore(device, &createInfo, NULL, &timeline);
+  vk_set_object_name(device, VK_OBJECT_TYPE_SEMAPHORE, (u64)timeline, name);
+  return timeline;
+}
+
+void vk_set_object_name(VkDevice device, VkObjectType objectType, uint64_t objectHandle, const char *name) {
+  if (!name || !name[0])
+    return;
+
+  VkDebugUtilsObjectNameInfoEXT info = {0};
+  info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+  info.objectType = objectType;
+  info.objectHandle = objectHandle;
+  info.pObjectName = name;
+
+  vkSetDebugUtilsObjectNameEXT(device, &info);
 }
 /**
  * Returns a new heap-allocated substring.
@@ -49,6 +87,9 @@ char *str_get_dir(const char *path) {
   int len = (int)(last_slash - path) + 1;
   return str_sub(path, 0, len);
 }
+
+// --- Private Functions ---
+
 static const char *vk_result_to_string(VkResult r) {
   switch (r) {
   case VK_SUCCESS:
@@ -122,5 +163,3 @@ static const char *vk_result_to_string(VkResult r) {
     return "VK_RESULT_UNKNOWN";
   }
 }
-
-// --- Private Functions ---

@@ -67,15 +67,18 @@ PipelineHandle pr_build_reg(M_HotReload *pr, GpConfig *b, const char *vs_path, c
   CompileResult vs_result = {.shader_path = vs_path, .include_dir = str_get_dir(vs_path), .fg = fg};
   CompileResult fs_result = {.shader_path = fs_path, .include_dir = str_get_dir(fs_path), .fg = fg};
 
-  if (shader_compile_glsl(dev->device, &vs_result, SHADER_STAGE_VERTEX) != SHADER_SUCCESS) {
-    LOG_ERROR("[SHADER_COMPILATION] Failed to compile: [%s,]", vs_path);
-    abort();
-  }
 
   if (shader_compile_glsl(dev->device, &fs_result, SHADER_STAGE_FRAGMENT) != SHADER_SUCCESS) {
     LOG_ERROR("[SHADER_COMPILATION] Failed to compile: [%s]", fs_path);
     abort();
   }
+  
+  if (shader_compile_glsl(dev->device, &vs_result, SHADER_STAGE_VERTEX) != SHADER_SUCCESS) {
+    LOG_ERROR("[SHADER_COMPILATION] Failed to compile: [%s,]", vs_path);
+    abort();
+  }
+
+
 
   gp_set_shaders(b, vs_result.module, fs_result.module);
 

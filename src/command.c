@@ -67,7 +67,7 @@ CmdBuffer cmd_init(VkDevice device, u32 queue_fam) {
 // Helper to start a one-time command buffer
 void cmd_begin(VkDevice device, CmdBuffer cmd) {
 
-  _cmd_reset(device, cmd);
+  vkResetCommandPool(device, cmd.pool, 0); 
   VkCommandBufferBeginInfo beginInfo = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                                         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 

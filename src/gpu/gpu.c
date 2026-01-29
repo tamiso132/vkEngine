@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vulkan/vulkan_core.h>
 
 #include "system_manager.h"
 
@@ -260,6 +261,9 @@ static bool gpu_init(M_GPU *dev, GPUInstanceInfo *info) {
 
   vkGetDeviceQueue(dev->device, dev->graphics_family, 0, &dev->graphics_queue);
   vkGetDeviceQueue(dev->device, dev->transfer_family, 0, &dev->transfer_queue);
+
+  vk_set_object_name(dev->device, VK_OBJECT_TYPE_QUEUE, (u64)dev->graphics_queue, "Queue-Graphic");
+  vk_set_object_name(dev->device, VK_OBJECT_TYPE_QUEUE, (u64)dev->transfer_queue, "Queue-Transfer");
 
   // 5. VMA Init
   VmaVulkanFunctions vmaFuncs = {0};

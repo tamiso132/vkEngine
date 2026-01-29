@@ -1,6 +1,7 @@
 #include "gpu/swapchain.h"
 #include "gpu/gpu.h"
 #include "resource/resmanager.h"
+#include "util.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <vulkan/vulkan_core.h>
@@ -81,13 +82,13 @@ void swapchain_init(M_Swapchain *sc, VkSurfaceKHR surface, const char *name) {
 
   // A. Acquire Semaphores (Per Frame)
   for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    vkCreateSemaphore(dev->device, &sem_info, NULL, &sc->sem_acquire[i]);
+    sc->sem_acquire[i] = vk_create_semp_binary(dev->device, "Semaphore-Aquire");
   }
 
   // B. Render Finished Semaphores (Per Image)
   sc->sem_render_finished = malloc(sizeof(VkSemaphore) * sc->image_count);
   for (u32 i = 0; i < sc->image_count; i++) {
-    vkCreateSemaphore(dev->device, &sem_info, NULL, &sc->sem_render_finished[i]);
+    sc->sem_render_finished[i] = vk_create_semp_binary(dev->device, "Semaphore-RenderFinished");
   }
 }
 

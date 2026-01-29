@@ -130,6 +130,7 @@ static glsl_include_result_t *on_local_func_include(void *ctx, const char *heade
   FileHandle handle = fg_load_file(result->fg, include_path);
   const char *source = fg_get_file(result->fg, &handle);
 
+
   glsl_include_result_t include_result = {
       .header_data = source, .header_length = strlen(source), .header_name = header_name};
   vec_push(&(result->_temp), &include_result);

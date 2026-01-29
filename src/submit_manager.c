@@ -1,5 +1,6 @@
 #include "submit_manager.h"
 #include "gpu/gpu.h"
+#include "util.h"
 #include <stdlib.h>
 #include <vulkan/vulkan_core.h>
 
@@ -12,20 +13,17 @@ typedef struct M_Submit {
 
   // Synchronization
   VkSemaphore timeline_sem;
-  u64 timeline_value; // The counter we are currently building (e.g., 101)
 
   // THE LIST: Maps "Frame Slot" -> "Timeline Value to wait for"
   // frame_fences[0] might store 100
   // frame_fences[1] might store 101
-  u64 *frame_done_signal;
-
+  
   bool is_present_enabled;
+  u64 frame_done_signal[MAX_FRAMES_IN_FLIGHT];
 } M_Submit;
 
 // --- Private Prototypes ---
 static void _destroy(void *s);
-
-
 
 // --- API ---
 
@@ -33,22 +31,24 @@ void sm_begin_frame(M_Submit *mgr) {
   // Look up what Index this frame slot is waiting for
   u64 wait_val = mgr->frame_done_signal[mgr->current_frame];
 
+  u64 gpu_val = sm_get_gpu_ticket(mgr);
   // If we haven't reached that value yet, wait!
-  if (wait_val > 0) {
+  if (wait_val > gpu_val) {
     VkSemaphoreWaitInfo waitInfo = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
                                     .semaphoreCount = 1,
                                     .pSemaphores = &mgr->timeline_sem,
                                     .pValues = &wait_val};
     // 10 second timeout usually indicates a deadlock/crash
     vkWaitSemaphores(mgr->device, &waitInfo, 10000000000);
+
   }
+  LOG_INFO("Waiting on %ld", wait_val);
 
-  // Increment global counter for the NEW frame we are about to start
-  mgr->timeline_value++;
+  mgr->frame_done_signal[mgr->current_frame] =   mgr->frame_done_signal[mgr->current_frame] + 1;
 
-  // Update the list: "This slot is now busy until 'timeline_value' is reached"
-  mgr->frame_done_signal[mgr->current_frame] = mgr->timeline_value;
+
 }
+
 
 void sm_acquire_swapchain(M_Submit *mgr, M_Swapchain *swapchain) {
   if (!swapchain)
@@ -62,61 +62,59 @@ void sm_acquire_swapchain(M_Submit *mgr, M_Swapchain *swapchain) {
   };
   vkAcquireNextImage2KHR(mgr->device, &info, &swapchain->current_img_idx);
 }
-u64 sm_work(M_Submit *mgr, M_Swapchain *swapchain, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit) {
-  VkCommandBufferSubmitInfo cmd_info = {
-      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = cmd
-  };
-  VkSubmitInfo2 submit = {
-      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2, 
-      .commandBufferInfoCount = 1, 
-      .pCommandBufferInfos = &cmd_info
-  };
 
-  VkSemaphoreSubmitInfo wait_infos[1];   // Reduced array size
-  VkSemaphoreSubmitInfo signal_infos[2];
+u64 sm_work(M_Submit *mgr, M_Swapchain *swapchains, u32 swapchain_count, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit) {
+  VkCommandBufferSubmitInfo cmd_info = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = cmd};
+  VkSubmitInfo2 submit = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2, .commandBufferInfoCount = 1, .pCommandBufferInfos = &cmd_info};
+
+  VkSemaphoreSubmitInfo wait_infos[2]; // Reduced array size
+  VkSemaphoreSubmitInfo signal_infos[3];
   submit.pWaitSemaphoreInfos = wait_infos;
   submit.pSignalSemaphoreInfos = signal_infos;
 
+  for(u32 i = 0; i < swapchain_count; i++)
+  {
   // Wait on Swapchain Acquire (Binary)
-  if (swapchain && is_first_submit) {
-    wait_infos[submit.waitSemaphoreInfoCount++] = (VkSemaphoreSubmitInfo){
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-        .semaphore = swapchain->sem_acquire[mgr->current_frame],
-        .stageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
-    };
+  if (swapchains && is_first_submit) {
+    wait_infos[submit.waitSemaphoreInfoCount++] =
+        (VkSemaphoreSubmitInfo){.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                                .semaphore = swapchains[i].sem_acquire[mgr->current_frame],
+                                .stageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
   }
 
   // Signal Render Finished (Binary for Present)
-  if (swapchain && is_last_in_frame) {
-    signal_infos[submit.signalSemaphoreInfoCount++] = (VkSemaphoreSubmitInfo){
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-        .semaphore = swapchain->sem_render_finished[swapchain->current_img_idx],
-        .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
-    };
+  if (swapchains && is_last_in_frame) {
+    signal_infos[submit.signalSemaphoreInfoCount++] =
+        (VkSemaphoreSubmitInfo){.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                                .semaphore = swapchains[i].sem_render_finished[swapchains[i].current_img_idx],
+                                .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
   }
+}
 
-  // 3. Signal Timeline (Host Synchronization)
-  // This tells the CPU "Frame N is done".
-  if (is_last_in_frame) {
-    signal_infos[submit.signalSemaphoreInfoCount++] = (VkSemaphoreSubmitInfo){
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-        .semaphore = mgr->timeline_sem,
-        .value = mgr->timeline_value,
-        .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
-    };
-  }
+  mgr->frame_done_signal[mgr->current_frame] += 1;
+  
+  signal_infos[submit.signalSemaphoreInfoCount++] = (VkSemaphoreSubmitInfo){
+    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+    .semaphore = mgr->timeline_sem,
+    .value =  mgr->frame_done_signal[mgr->current_frame],
+    .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+  };
 
   vkQueueSubmit2(mgr->queue, 1, &submit, VK_NULL_HANDLE);
 
-  return mgr->timeline_value;
+  return   mgr->frame_done_signal[mgr->current_frame];
 }
+void sm_on_frame_end(M_Submit *mgr){
+  
+  u32 old_frame_idx = mgr->current_frame;
+  mgr->current_frame = (mgr->current_frame + 1) % mgr->frames_in_flight;
 
-void sm_present(M_Submit *mgr, M_Swapchain *swapchain, bool advance_frame) {
-  if (!mgr->is_present_enabled || !swapchain) {
-    if (advance_frame)
-      mgr->current_frame = (mgr->current_frame + 1) % mgr->frames_in_flight;
+  LOG_INFO("Signal Count %ld",   mgr->frame_done_signal[mgr->current_frame]);
+
     return;
-  }
+}
+void sm_present(M_Submit *mgr, M_Swapchain *swapchain) {
   VkSemaphore wait_sem = swapchain->sem_render_finished[swapchain->current_img_idx];
   VkPresentInfoKHR present_info = {
       .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -127,18 +125,12 @@ void sm_present(M_Submit *mgr, M_Swapchain *swapchain, bool advance_frame) {
       .pImageIndices = &swapchain->current_img_idx,
   };
   vkQueuePresentKHR(mgr->queue, &present_info);
-
-  if (advance_frame) {
-    mgr->current_frame = (mgr->current_frame + 1) % mgr->frames_in_flight;
-  }
 }
 
 // --- Helpers ---
-u64 sm_get_cpu_ticket(M_Submit *mgr){
-  return mgr->timeline_value;
-}
+u64 sm_get_cpu_ticket(M_Submit *mgr) { return   mgr->frame_done_signal[mgr->current_frame]; }
 
-u64 sm_get_gpu_ticket(M_Submit *mgr){
+u64 sm_get_gpu_ticket(M_Submit *mgr) {
   u64 gpu_ticket = 0;
   vkGetSemaphoreCounterValue(mgr->device, mgr->timeline_sem, &gpu_ticket);
   return gpu_ticket;
@@ -165,25 +157,14 @@ static void _destroy(void *s) {
   free(mgr->frame_done_signal);
 }
 
- M_Submit* sm_init(VkDevice dev, VkQueue queue) {
+M_Submit *sm_init(VkDevice dev, VkQueue queue) {
   M_Submit *mgr = calloc(sizeof(M_Submit), 1);
 
   mgr->device = dev;
   mgr->queue = queue;
   mgr->frames_in_flight = MAX_FRAMES_IN_FLIGHT;
-  mgr->current_frame = 0;
-  mgr->timeline_value = 0; // Start at 0
   mgr->is_present_enabled = true;
-
-  // Allocate the list
-  mgr->frame_done_signal = calloc(mgr->frames_in_flight, sizeof(u64));
-
-  // Timeline Semaphore
-  VkSemaphoreTypeCreateInfo timelineCreateInfo = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
-                                                  .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
-                                                  .initialValue = 0};
-  VkSemaphoreCreateInfo createInfo = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = &timelineCreateInfo};
-  vkCreateSemaphore(mgr->device, &createInfo, NULL, &mgr->timeline_sem);
+  mgr->timeline_sem =  vk_create_semp_timeline(mgr->device, "Semaphore-Timeline");
 
   return mgr;
 }

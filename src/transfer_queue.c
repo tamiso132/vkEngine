@@ -94,8 +94,10 @@ void transfer_submit_on_frame_end(TransferQueue *transfer) {
   sgr_flush(transfer->staging_ring, transfer->frame_index);
 
   transfer->frames[transfer->frame_index].submit_signal =
-      sm_work(transfer->submit, NULL, _get_frame(transfer).cmd.buffer, true, true);
+      sm_work(transfer->submit, NULL, 0, _get_frame(transfer).cmd.buffer, true, true);
 
+
+  sm_on_frame_end(transfer->submit);
   transfer->in_flight = true;
   transfer->is_frame_started = false;
 }

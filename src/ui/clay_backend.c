@@ -5,13 +5,19 @@
 #include "gpu/pipeline.h"
 #include "gpu/pipeline_hotreload.h"
 #include "gpu/shader_compiler.h"
+#include "gpu/swapchain.h"
+#include "resource/resmanager.h"
 #include "shaders/ui_shared.glsl" //
 #include <string.h>               // memcpy
+#include <vulkan/vulkan_core.h>
 
 // --- Private Prototypes ---
 static void ClayErrorCallback(Clay_ErrorData errorData);
 
 static void upload_white_pixel(CmdBuffer cmd, M_GPU *gpu, M_Resource *rm, ResHandle texture);
+static Clay_Dimensions ClayMeasureTextFallback(Clay_StringSlice text,
+                                              Clay_TextElementConfig* config,
+                                              void* userData);
 
 // --- Public Functions ---
 
@@ -36,6 +42,8 @@ void clay_backend_init(ClayContext *ctx, M_GPU *gpu, M_Resource *rm, M_HotReload
   Clay_Arena arena = Clay_CreateArenaWithCapacityAndMemory(claySize, ctx->internal_memory);
   Clay_Initialize(arena, (Clay_Dimensions){(float)width, (float)height},
                   (Clay_ErrorHandler){.errorHandlerFunction = ClayErrorCallback});
+
+  Clay_SetMeasureTextFunction(ClayMeasureTextFallback, ctx);
 
   // --- 2. Initialize Vulkan Resources ---
 
@@ -88,8 +96,22 @@ void clay_backend_shutdown(ClayContext *ctx) {
     ctx->internal_memory = NULL;
   }
 }
-void clay_backend_render(ClayContext *ctx, CmdBuffer *cmd, Clay_RenderCommandArray *commands, uint32_t width,
+void clay_backend_render(ClayContext *ctx, CmdBuffer cmd, M_Resource* rm, M_Swapchain * swap, uint32_t width,
                          uint32_t height) {
+
+  
+  ResHandle main_img = swapchain_get_image(swap);
+
+  cmd_sync_image(cmd, rm, main_img, STATE_COLOR, ACCESS_WRITE);
+      
+  RenderingBeginInfo debug_begin = {.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = VK_ATTACHMENT_STORE_OP_STORE, .h =height, 
+  .w = width, .colors = &main_img, .colors_count = 1};
+
+  cmd_begin_rendering(cmd, rm, &debug_begin);
+
+  Clay_RenderCommandArray command = Clay_EndLayout();
+  Clay_RenderCommandArray* commands  = &command;
+  
   if (commands->length == 0)
     return;
 
@@ -146,32 +168,38 @@ void clay_backend_render(ClayContext *ctx, CmdBuffer *cmd, Clay_RenderCommandArr
 
   // --- 3. Record Commands ---
   // Bind Pipeline
+  GPUPushUI push_ui = {.screen_size = {width, height}, .tex_id = rm_get_image_index(ctx->rm,ctx->font_texture), .vert_id = rm_get_buffer_index(ctx->rm, ctx->vtx_buffer)};
+ 
   M_Pipeline *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
   BindPipelineInfo pipe_info = {.handle = ctx->pipeline,
                                 // We set Push Constants manually below
-                                .p_push = NULL,
-                                .push_size = 0};
-  cmd_bind_pipeline(*cmd, pm, ctx->rm, &pipe_info);
+                                .p_push = &push_ui,
+                                .push_size = sizeof(GPUPushUI)};
+  cmd_bind_pipeline(cmd, pm, ctx->rm, &pipe_info);
 
   // Bind Index Buffer ONLY
-  vkCmdBindIndexBuffer(cmd->buffer, r_idx->handle, 0, VK_INDEX_TYPE_UINT16);
+  vkCmdBindIndexBuffer(cmd.buffer, r_idx->handle, 0, VK_INDEX_TYPE_UINT16);
 
   // Bind Global Resources (Bindless)
-  cmd_bind_bindless(*cmd, ctx->rm, (VkExtent2D){width, height});
+  cmd_bind_bindless(cmd, ctx->rm, (VkExtent2D){width, height});
 
   // Prepare Push Constants for Vertex Pulling
   uint32_t white_tex_id = rm_get_image_descriptor_index(ctx->rm, ctx->font_texture);
   uint32_t vtx_buf_id = rm_get_buffer_descriptor_index(ctx->rm, ctx->vtx_buffer);
 
   VkPipelineLayout layout = rm_get_pipeline_layout(ctx->rm);
-  VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  VkShaderStageFlags stages =  VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
   // Draw
   if (i_offset > 0) {
     GPUPushUI pc = {.screen_size = {(float)width, (float)height}, .tex_id = white_tex_id, .vert_id = vtx_buf_id};
-    vkCmdPushConstants(cmd->buffer, layout, stages, 0, sizeof(GPUPushUI), &pc);
-    vkCmdDrawIndexed(cmd->buffer, i_offset, 1, 0, 0, 0);
+    vkCmdPushConstants(cmd.buffer, layout, stages, 0, sizeof(GPUPushUI), &pc);
+    vkCmdDrawIndexed(cmd.buffer, i_offset, 1, 0, 0, 0);
   }
+
+  cmd_end_rendering(cmd);
+
+    cmd_sync_image(cmd, rm, main_img, STATE_PRESENT, ACCESS_READ);
 }
 
 // --- Private Functions ---
@@ -193,4 +221,37 @@ static void upload_white_pixel(CmdBuffer cmd, M_GPU *gpu, M_Resource *rm, ResHan
   vkCmdCopyBufferToImage(cmd.buffer, slice.buffer, ri->handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
   cmd_sync_image(cmd, rm, texture, STATE_SHADER, ACCESS_READ);
+}
+
+
+static uint32_t utf8_count_codepoints(const char* s, uint32_t len) {
+  uint32_t count = 0;
+  for (uint32_t i = 0; i < len; i++) {
+    unsigned char c = (unsigned char)s[i];
+    if ((c & 0xC0) != 0x80) count++; // not a continuation byte
+  }
+  return count;
+}
+
+static Clay_Dimensions ClayMeasureTextFallback(Clay_StringSlice text,
+                                              Clay_TextElementConfig* config,
+                                              void* userData)
+{
+  (void)userData;
+
+  float fontSize = (float)config->fontSize;
+  float lineH    = (config->lineHeight != 0) ? (float)config->lineHeight : fontSize;
+
+  const char* ptr = (const char*)text.chars;
+  uint32_t len    = (uint32_t)text.length;
+  uint32_t glyphs = utf8_count_codepoints(ptr, len);
+
+  // cheap but stable approximation until you wire real font metrics
+  float avgGlyphW = fontSize * 0.60f;
+  float spacing   = (float)config->letterSpacing;
+
+  float width = 0.0f;
+  if (glyphs) width = avgGlyphW * (float)glyphs + spacing * (float)(glyphs - 1);
+
+  return (Clay_Dimensions){ width, lineH };
 }

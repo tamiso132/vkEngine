@@ -4,6 +4,7 @@
 #include "resource/resmanager.h"
 #include "rm_internal.h"
 #include "util.h"
+#include <vulkan/vulkan_core.h>
 
 ResHandle rm_buffer_create(M_Resource *rm, M_GPU *gpu, RGBufferInfo *info) {
   if (info->capacity == 0)
@@ -64,6 +65,9 @@ ResHandle rm_buffer_create(M_Resource *rm, M_GPU *gpu, RGBufferInfo *info) {
   VkDescriptorBufferInfo descriptorInfo = {0};
   descriptorInfo.buffer = buffer.handle;
   descriptorInfo.range = VK_WHOLE_SIZE;
+
+  if((info->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) ==VK_BUFFER_USAGE_INDEX_BUFFER_BIT)
+    return h;
 
   rm_bindless_add(rm, h, NULL, &descriptorInfo);
 

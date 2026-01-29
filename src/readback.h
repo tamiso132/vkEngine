@@ -1,12 +1,16 @@
-#pragma once
+#include "common.h"
 #include "resource/resmanager.h"
+#include <cglm/cglm.h>
 
+#include "shaders/rt/rt_shared.glsl"
 
+typedef struct ReadBackBuffer {
+  ResHandle buffer; // used by gpu
+  void *p_cpu;
+} ReadBackBuffer;
 
-// --- Public API ---
-
-// Create the GPU-side storage buffer for debug logging
-ResHandle dbgr_create_buffer(M_Resource* rm, uint32_t width, uint32_t height);
-
-// Read back a specific pixel from the buffer and print the log to stdout
-void dbgr_analyze_pixel(M_GPU* gpu, M_Resource* rm, ResHandle buf_handle, uint32_t buffer_width, int x, int y);
+// PUBLIC FUNCTIONS
+DbgPixelBlock *readback_get_cpu_ptr(ReadBackBuffer *self);
+u32 readback_get_push_id(ReadBackBuffer *self, M_Resource *rm);
+void readback_init(ReadBackBuffer *self, M_Resource *rm, VkExtent2D extent);
+// END PUBLIC FUNCTIONS

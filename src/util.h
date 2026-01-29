@@ -30,17 +30,6 @@
 #define LOG_WARN(fmt, ...) LOG_MESSAGE(CLR_YLW, "WARN", fmt, ##__VA_ARGS__)
 #define LOG_ERROR(fmt, ...) LOG_MESSAGE(CLR_RED, "ERROR", fmt, ##__VA_ARGS__)
 
-// PUBLIC FUNCTIONS
-
-void vk_check(VkResult err);
-
-/** * Returns a new heap-allocated substring. * start: index to begin at * len: number of characters to copy */
-/** * Returns a new heap-allocated substring. * start: index to begin at * len: number of characters to copy */ char *
-str_sub(const char *s, int start, int len);
-
-/** * Extract directory from path (Non-destructive) * Example: "src/main.c" -> returns "src/" */ char *
-str_get_dir(const char *path);
-
 #define defer(end) for (int _i = 0; _i == 0; (_i = 1), end)
 
 // FOR DEFERRING
@@ -65,3 +54,17 @@ static inline void _defer_cleanup(_defer_guard *g) {
 // Convenience: assume free(ptr)
 #define DEFER_FREE_PTR(ptr_expr) DEFER_PTR((ptr_expr), free)
 #define DEFER_VEC(ptr_expr) DEFER_PTR((ptr_expr), vec_free)
+
+// PUBLIC FUNCTIONS
+void vk_check(VkResult err);
+VkSemaphore vk_create_semp_binary(VkDevice device, const char *name);
+VkSemaphore vk_create_semp_timeline(VkDevice device, const char *name);
+void vk_set_image_name(VkDevice device, VkImage image, const char* name);
+void vk_set_object_name(VkDevice device, VkObjectType objectType, uint64_t objectHandle, const char *name);
+char *str_get_dir(const char *path);
+char *str_sub(const char *s, int start, int len);
+
+/** * Extract directory from path (Non-destructive) * Example: "src/main.c" -> returns "src/" */ char *
+str_get_dir(const char *path);
+
+// END PUBLIC FUNCTIONS

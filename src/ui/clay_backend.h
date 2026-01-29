@@ -28,7 +28,7 @@ typedef struct ClayContext {
 // PUBLIC FUNCTIONS
 void clay_backend_init(ClayContext *ctx, M_GPU *gpu, M_Resource *rm, M_HotReload *pr, CmdBuffer cmd, VkFormat format,
                        uint32_t width, uint32_t height);
-void clay_backend_render(ClayContext *ctx, CmdBuffer *cmd, Clay_RenderCommandArray *commands, uint32_t width,
+void clay_backend_render(ClayContext *ctx, CmdBuffer cmd, M_Resource* rm, M_Swapchain * swap, uint32_t width,
                          uint32_t height);
 void clay_backend_set_font_texture(ClayContext *ctx, ResHandle texture_handle);
 void clay_backend_shutdown(ClayContext *ctx);

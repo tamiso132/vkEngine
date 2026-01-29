@@ -52,8 +52,10 @@ typedef struct {
   ResType res_type : 2;
 } ResHandle;
 
+typedef struct M_Swapchain M_Swapchain;
 typedef uint32_t PipelineHandle;
 typedef u32 Color;
+
 // MANAGERS
 SYSTEM_DECLARE_ID(M_GPU, SYSTEM_TYPE_GPU);
 SYSTEM_DECLARE_ID(M_Resource, SYSTEM_TYPE_RESOURCE);

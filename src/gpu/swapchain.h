@@ -3,7 +3,7 @@
 #include "common.h"
 #include "gpu.h"
 
-#define MAX_FRAMES_IN_FLIGHT 2
+#define MAX_FRAMES_IN_FLIGHT 1
 
 typedef struct M_Swapchain {
   VkSwapchainKHR swapchain;

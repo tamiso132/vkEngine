@@ -2,6 +2,7 @@
 #include "common.h"
 #include "resource/resmanager.h"
 #include "rm_internal.h"
+#include "util.h"
 #include <vulkan/vulkan_core.h>
 
 // --- Private Prototypes ---
@@ -17,6 +18,7 @@ void rm_reset_image_sync(RImage *image) {
 void rm_create_image_full(M_Resource *rm, M_GPU *gpu, RImage *image) {
   (void)rm;
   rm_reset_image_sync(image);
+
 
   VkImageCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
                           .imageType = VK_IMAGE_TYPE_2D,
@@ -35,6 +37,8 @@ void rm_create_image_full(M_Resource *rm, M_GPU *gpu, RImage *image) {
   vk_check(vmaCreateImage(gpu->allocator, &ci, &ai, &image->handle, &image->alloc, NULL));
 
   _create_view(gpu, image);
+
+  vk_set_image_name(gpu->device, image->handle, image->name);
 }
 
 ResHandle rm_image_create(M_Resource *rm, M_GPU *gpu, RGImageInfo info) {

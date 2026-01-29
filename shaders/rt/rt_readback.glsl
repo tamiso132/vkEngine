@@ -1,4 +1,4 @@
-
+#include "rt_shared.glsl"
 // rt_debug_pixel_log.glsl
 //
 // Per-pixel multi-entry readback log.
@@ -18,8 +18,6 @@
 
 #ifndef RT_DEBUG_PIXEL_LOG_GLSL
 #define RT_DEBUG_PIXEL_LOG_GLSL
-
-#extension GL_EXT_nonuniform_qualifier : require
 
 // =============================
 // User overrides (optional)
@@ -68,25 +66,6 @@
 #define DBG_T_UVEC3  10u
 
 #if DBG_ENABLE
-
-// =============================
-// SSBO layout
-// =============================
-//
-// One pixel log:
-//   uvec4 meta: meta.x = count, other lanes unused
-//   uvec4 rec[DBG_MAX_RECORDS_PER_PIXEL]
-//
-// Total bytes per pixel = 16 + 16*DBG_MAX_RECORDS_PER_PIXEL
-//
-// Example: MAX=16 => 16 + 256 = 272 bytes/pixel (big but very powerful)
-// Suggest MAX=4..12 for normal debugging.
-//
-layout(set = DBG_SET, binding = DBG_BINDING, std430) buffer __DbgPixelLogBuf {
-        // px[] is a flat array, indexed by linear pixel index.
-        // Each pixel occupies (1 + DBG_MAX_RECORDS_PER_PIXEL) uvec4s.
-        uvec4 data[];
-} __dbg_pixel_logs[];
 
 // active buffer
 #define __DBG_BUF (__dbg_pixel_logs[DBG_STREAM_INDEX])

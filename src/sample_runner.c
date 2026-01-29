@@ -12,7 +12,6 @@
 #include "system_manager.h"
 #include "transfer_queue.h"
 #include <GLFW/glfw3.h>
-#include <vulkan/vulkan_core.h>
 
 #include "ui/clay_backend.h"
 #include "ui/debug_inspector.h"
@@ -92,7 +91,6 @@ void run_sample(Sample *sample) {
   // --- Main Loop ---
   while (!glfwWindowShouldClose(main_win.raw_window)) {
     glfwPollEvents();
-    LOG_INFO("New Frame");
     double time_now = glfwGetTime();
     double dt = time_now - last_time;
     last_time = time_now;

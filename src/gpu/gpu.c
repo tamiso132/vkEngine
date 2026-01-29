@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <vulkan/vulkan_core.h>
 
 #include "system_manager.h"
 

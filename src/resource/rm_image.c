@@ -3,7 +3,6 @@
 #include "resource/resmanager.h"
 #include "rm_internal.h"
 #include "util.h"
-#include <vulkan/vulkan_core.h>
 
 // --- Private Prototypes ---
 static void _create_view(M_GPU *gpu, RImage *image);

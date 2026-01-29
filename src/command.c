@@ -6,7 +6,6 @@
 #include "resource/rm_internal.h"
 #include "resource/staging_arena.h"
 #include "vector.h"
-#include <vulkan/vulkan_core.h>
 
 typedef struct {
   VkPipelineStageFlags2 stage;

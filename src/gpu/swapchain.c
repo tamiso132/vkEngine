@@ -4,7 +4,6 @@
 #include "util.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <vulkan/vulkan_core.h>
 
 // --- Private Prototypes ---
 void swapchain_init(M_Swapchain *sc, VkSurfaceKHR surface, const char *name) {

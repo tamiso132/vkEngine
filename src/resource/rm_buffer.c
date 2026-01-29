@@ -4,7 +4,6 @@
 #include "resource/resmanager.h"
 #include "rm_internal.h"
 #include "util.h"
-#include <vulkan/vulkan_core.h>
 
 ResHandle rm_buffer_create(M_Resource *rm, M_GPU *gpu, RGBufferInfo *info) {
   if (info->capacity == 0)

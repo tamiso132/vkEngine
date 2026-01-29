@@ -2,7 +2,6 @@
 #include "gpu/gpu.h"
 #include "util.h"
 #include <stdlib.h>
-#include <vulkan/vulkan_core.h>
 
 typedef struct M_Submit {
   VkDevice device;
@@ -42,7 +41,6 @@ void sm_begin_frame(M_Submit *mgr) {
     vkWaitSemaphores(mgr->device, &waitInfo, 10000000000);
 
   }
-  LOG_INFO("Waiting on %ld", wait_val);
 
   mgr->frame_done_signal[mgr->current_frame] =   mgr->frame_done_signal[mgr->current_frame] + 1;
 
@@ -110,7 +108,6 @@ void sm_on_frame_end(M_Submit *mgr){
   u32 old_frame_idx = mgr->current_frame;
   mgr->current_frame = (mgr->current_frame + 1) % mgr->frames_in_flight;
 
-  LOG_INFO("Signal Count %ld",   mgr->frame_done_signal[mgr->current_frame]);
 
     return;
 }

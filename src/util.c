@@ -2,7 +2,6 @@
 #include "common.h"
 #include "gpu/pipeline.h"
 #include "gpu/swapchain.h"
-#include <vulkan/vulkan_core.h>
 
 // --- Private Prototypes ---
 static const char *vk_result_to_string(VkResult r);

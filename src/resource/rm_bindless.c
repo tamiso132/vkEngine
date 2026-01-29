@@ -3,7 +3,6 @@
 #include "resource/resmanager.h"
 #include "rm_internal.h"
 #include "vector.h"
-#include <vulkan/vulkan_core.h>
 
 static VkComponentMapping _vk_component_mapping(void) {
   return (VkComponentMapping){

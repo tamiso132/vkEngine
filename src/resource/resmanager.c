@@ -2,7 +2,6 @@
 #include "common.h"
 #include "rm_internal.h"
 #include "vector.h"
-#include <vulkan/vulkan_core.h>
 
 // System lifecycle glue
 

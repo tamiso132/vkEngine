@@ -2,7 +2,16 @@
 #define VK_NO_PROTOTYPES
 #define CLAY_IMPLEMENTATION
 
-#include <clay.h>
+#define NK_INCLUDE_FIXED_TYPES
+#define NK_INCLUDE_STANDARD_IO
+#define NK_INCLUDE_STANDARD_VARARGS
+#define NK_INCLUDE_DEFAULT_ALLOCATOR
+#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
+#define NK_INCLUDE_FONT_BAKING
+#define NK_INCLUDE_DEFAULT_FONT
+#define NK_IMPLEMENTATION
+#define NK_GLFW_VULKAN_IMPLEMENTATION
+#include "thirdparty/nuklear/nuklear_glfw_vulkan.in.h"
 
 #include "common.h"
 #include "filewatch.h"
@@ -35,8 +44,7 @@ int main() {
   if (!glfwInit())
     return -1;
 
-
-  GPUSystemInfo gpu_info = { .info = (GPUInstanceInfo){.app_name = "RenderGraph Demo", .enable_validation = true}};
+  GPUSystemInfo gpu_info = {.info = (GPUInstanceInfo){.app_name = "RenderGraph Demo", .enable_validation = true}};
 
   _register_systems(gpu_info);
 

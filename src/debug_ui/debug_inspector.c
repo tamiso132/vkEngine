@@ -1,481 +1,391 @@
-// debug_inspector.c
-#include "debug_inspector.h"
+/*  pixel_meta_ui.h  (drop-in UI code)
+    ----------------------------------
+    You already have Nuklear rendering/input. This file only contains:
+      - PixelEditor data + metadata store
+      - Append APIs for u32/i32/f32/vec2/vec3
+      - Nuklear UI function that draws:
+          * left: pixel canvas you can click to select a pixel
+          * right: inspector listing all metadata for that pixel
+      - No backend code (no SDL/GL/etc). Pure Nuklear.
 
-#include <stdarg.h>
+    Usage:
+      1) Create/init PixelEditor:
+           PixelEditor pe;
+           pe_init(&pe, W, H);
+           pe.zoom = 12.0f; // optional
+           pe.pan = (struct nk_vec2){0,0};
+
+      2) Each frame in your UI:
+           pe_ui(&pe, ctx);
+
+      3) Append metadata whenever you want:
+           pe_append_u32(&pe, x, y, "id", 123);
+           pe_append_vec3(&pe, x, y, "normal", (vec3){0,1,0});
+
+    Optional:
+      - Provide pe.rgba (w*h) if you want pixels colored by a preview buffer.
+        Format assumed: 0xAARRGGBB (adjust in pe_rgba_to_nk if yours differs).
+
+    Notes:
+      - This draws one filled rect per pixel. Great for 32..256 grids.
+      - If you need sparse metadata, tell me and I’ll swap meta[] to a hashmap.
+*/
+
+#include "debug_inspector.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-// ---------------------
-// Helpers
-// ---------------------
+// --- Private Prototypes ---
+static int editor_in_bounds(const editor_pixel_editor *ed, int x, int y);
+static editor_pixel_meta *editor_meta_at(editor_pixel_editor *ed, int x, int y);
+static int editor_pick_pixel(editor_pixel_editor *ed, struct nk_context *ctx, struct nk_rect bounds, int *out_x,
+                             int *out_y);
+static void editor_pixelmeta_push(editor_pixel_meta *m, editor_pixel_value v);
+static struct nk_color editor_rgba_to_nk(unsigned int c);
 
-static float u2f(uint32_t u) {
-  union { uint32_t u; float f; } c;
-  c.u = u;
-  return c.f;
+static void editor_draw_canvas(editor_pixel_editor *ed, struct nk_context *ctx, float canvas_h);
+static void editor_draw_inspector(editor_pixel_editor *ed, struct nk_context *ctx);
+
+static void editor_handle_pan(editor_pixel_editor *ed, struct nk_context *ctx, struct nk_rect bounds);
+static void editor_handle_zoom(editor_pixel_editor *ed, struct nk_context *ctx, struct nk_rect bounds);
+
+/* ---------------- PUBLIC IMPLEMENTATION ---------------- */
+
+void editor_pixel_meta_main_init(editor_pixel_editor *ed, int w, int h, unsigned int *rgba_or_null) {
+  editor_pixel_editor_init(ed, w, h);
+  ed->rgba = rgba_or_null; /* user-owned */
 }
 
-static void di_grow_items(DebugInspector* di, uint32_t min_cap) {
-  uint32_t new_cap = di->item_cap ? di->item_cap : DBG_INSPECTOR_DEFAULT_CAP;
-  while (new_cap < min_cap) new_cap *= 2;
-
-  DebugItem* n = (DebugItem*)realloc(di->items, sizeof(DebugItem) * (size_t)new_cap);
-  if (!n) return; // out of memory: just keep old buffer, silently drop pushes
-  di->items = n;
-  di->item_cap = new_cap;
+void editor_pixel_meta_main_shutdown(editor_pixel_editor *ed) {
+  editor_pixel_editor_free(ed);
+  /* ed->rgba is user-owned; don't free it here */
+  ed->rgba = NULL;
 }
 
-static void di_push(DebugInspector* di, DebugItem it) {
-  if (di->item_count + 1 > di->item_cap) {
-    di_grow_items(di, di->item_count + 1);
-  }
-  if (di->item_count + 1 > di->item_cap) return; // still no space
-  di->items[di->item_count++] = it;
+void editor_pixel_meta_main_draw(editor_pixel_editor *ed, struct nk_context *ctx) {
+  /* Default window config. Change title/rect/flags if you want. */
+  editor_pixel_editor_window_ui(ed, ctx, "Pixel Meta Editor", nk_rect(20, 20, 900, 520),
+                                NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_TITLE);
 }
 
-static Clay_String di_fmt(DebugInspector* di, const char* fmt, va_list args) {
-  if (!fmt) return (Clay_String){ .length = 0, .chars = "" };
-  if (di->arena_cursor >= sizeof(di->arena)) return (Clay_String){ .length = 0, .chars = "" };
-
-  char* ptr = &di->arena[di->arena_cursor];
-  size_t remaining = sizeof(di->arena) - di->arena_cursor;
-
-  va_list copy;
-  va_copy(copy, args);
-  int len = vsnprintf(ptr, remaining, fmt, copy);
-  va_end(copy);
-
-  if (len < 0) return (Clay_String){ .length = 0, .chars = "" };
-
-  if ((size_t)len >= remaining) {
-    len = (int)remaining - 1;
-    ptr[len] = '\0';
-  }
-
-  di->arena_cursor += (size_t)len + 1;
-  return (Clay_String){ .length = (uint32_t)len, .chars = ptr };
+void editor_pixel_meta_main_append_test_data(editor_pixel_editor *ed) {
+  /* Safe even if called multiple times: it appends repeatedly */
+  editor_pixel_editor_append_u32(ed, 10, 12, "id", 123u);
+  editor_pixel_editor_append_vec2(ed, 10, 12, "uv", (editor_vec2){0.25f, 0.75f});
+  editor_pixel_editor_append_vec3(ed, 10, 12, "normal", (editor_vec3){0.0f, 1.0f, 0.0f});
+  editor_pixel_editor_append_f32(ed, 1, 1, "depth", 0.42f);
 }
 
-static Clay_String di_fmt1(DebugInspector* di, const char* fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
-  Clay_String s = di_fmt(di, fmt, args);
-  va_end(args);
-  return s;
+void editor_pixel_editor_init(editor_pixel_editor *ed, int w, int h) {
+  memset(ed, 0, sizeof(*ed));
+  ed->w = w;
+  ed->h = h;
+  ed->meta = (editor_pixel_meta *)calloc((size_t)w * (size_t)h, sizeof(editor_pixel_meta));
+  ed->sel_x = ed->sel_y = -1;
+  ed->zoom = 12.0f;
+  ed->pan = (editor_vec2){0, 0};
+  ed->show_grid = 1;
 }
 
-static Clay_String di_strdup(DebugInspector* di, const char* s) {
-  if (!s) return (Clay_String){ .length = 0, .chars = "" };
-  size_t len = strlen(s);
-  size_t need = len + 1;
-  if (di->arena_cursor + need > sizeof(di->arena)) return (Clay_String){ .length = 0, .chars = "" };
-
-  char* dst = &di->arena[di->arena_cursor];
-  memcpy(dst, s, len);
-  dst[len] = '\0';
-  di->arena_cursor += need;
-  return (Clay_String){ .length = (uint32_t)len, .chars = dst };
-}
-
-static uint8_t dbg_type_lanes(uint32_t type) {
-  switch (type) {
-    case DBG_T_U32:
-    case DBG_T_I32:
-    case DBG_T_F32:   return 1;
-    case DBG_T_VEC2:
-    case DBG_T_IVEC2:
-    case DBG_T_UVEC2: return 2;
-    case DBG_T_VEC3:
-    case DBG_T_IVEC3:
-    case DBG_T_UVEC3: return 3;
-    case DBG_T_VEC4:  return 4;
-    default:          return 1;
-  }
-}
-
-static Clay_String format_value(DebugInspector* di, const DebugValue* v) {
-  const uint8_t t = v->type;
-  const uint8_t n = v->lanes ? v->lanes : 1;
-
-  // Scalars: a bit more precision; vectors: shorter
-  switch (t) {
-    case DBG_T_U32: return di_fmt1(di, "%u", v->u32[0]);
-    case DBG_T_I32: return di_fmt1(di, "%d", v->i32[0]);
-    case DBG_T_F32: return di_fmt1(di, "%.4f", v->f32[0]);
-
-    case DBG_T_VEC2: return di_fmt1(di, "(%.3f, %.3f)", v->f32[0], v->f32[1]);
-    case DBG_T_VEC3: return di_fmt1(di, "(%.3f, %.3f, %.3f)", v->f32[0], v->f32[1], v->f32[2]);
-    case DBG_T_VEC4: return di_fmt1(di, "(%.3f, %.3f, %.3f, %.3f)", v->f32[0], v->f32[1], v->f32[2], v->f32[3]);
-
-    case DBG_T_IVEC2: return di_fmt1(di, "(%d, %d)", v->i32[0], v->i32[1]);
-    case DBG_T_IVEC3: return di_fmt1(di, "(%d, %d, %d)", v->i32[0], v->i32[1], v->i32[2]);
-
-    case DBG_T_UVEC2: return di_fmt1(di, "(%u, %u)", v->u32[0], v->u32[1]);
-    case DBG_T_UVEC3: return di_fmt1(di, "(%u, %u, %u)", v->u32[0], v->u32[1], v->u32[2]);
-
-    default:
-      // fallback: dump first lanes as u32
-      if (n == 1) return di_fmt1(di, "0x%08X", v->u32[0]);
-      if (n == 2) return di_fmt1(di, "(0x%08X, 0x%08X)", v->u32[0], v->u32[1]);
-      if (n == 3) return di_fmt1(di, "(0x%08X, 0x%08X, 0x%08X)", v->u32[0], v->u32[1], v->u32[2]);
-      return di_fmt1(di, "(0x%08X, 0x%08X, 0x%08X, 0x%08X)", v->u32[0], v->u32[1], v->u32[2], v->u32[3]);
-  }
-}
-
-// Decode GPU u32 words into a DebugValue according to header type.
-// Convention: w0..w3 are raw u32 bits; float types are bitcast.
-static DebugValue value_from_gpu_words(uint32_t header, uint32_t w0, uint32_t w1, uint32_t w2, uint32_t w3) {
-  DebugValue v = {0};
-  uint32_t type = DBG_GET_TYPE(header);
-  v.type = (uint8_t)type;
-  v.lanes = dbg_type_lanes(type);
-
-  uint32_t w[4] = { w0, w1, w2, w3 };
-
-  switch (type) {
-    case DBG_T_U32:
-    case DBG_T_UVEC2:
-    case DBG_T_UVEC3:
-      v.u32[0] = w[0]; v.u32[1] = w[1]; v.u32[2] = w[2]; v.u32[3] = w[3];
-      break;
-
-    case DBG_T_I32:
-    case DBG_T_IVEC2:
-    case DBG_T_IVEC3:
-      v.i32[0] = (int32_t)w[0]; v.i32[1] = (int32_t)w[1]; v.i32[2] = (int32_t)w[2]; v.i32[3] = (int32_t)w[3];
-      break;
-
-    case DBG_T_F32:
-    case DBG_T_VEC2:
-    case DBG_T_VEC3:
-    case DBG_T_VEC4:
-      v.f32[0] = u2f(w[0]); v.f32[1] = u2f(w[1]); v.f32[2] = u2f(w[2]); v.f32[3] = u2f(w[3]);
-      break;
-
-    default:
-      v.u32[0] = w[0]; v.u32[1] = w[1]; v.u32[2] = w[2]; v.u32[3] = w[3];
-      break;
-  }
-
-  return v;
-}
-
-// ---------------------
-// Public API
-// ---------------------
-
-void debug_inspector_init(DebugInspector* di, uint32_t initial_cap) {
-  memset(di, 0, sizeof(*di));
-  di->open = true;
-
-  di->panel_bg = (Clay_Color){ 40, 40, 40, 240 };
-  di->row_bg   = (Clay_Color){ 60, 60, 60, 255 };
-  di->text_col = (Clay_Color){ 255, 255, 255, 255 };
-  di->val_col  = (Clay_Color){ 200, 200, 200, 255 };
-
-  di->item_cap = initial_cap ? initial_cap : DBG_INSPECTOR_DEFAULT_CAP;
-  di->items = (DebugItem*)malloc(sizeof(DebugItem) * (size_t)di->item_cap);
-  if (!di->items) {
-    di->item_cap = 0;
-  }
-}
-
-void debug_inspector_shutdown(DebugInspector* di) {
-  free(di->items);
-  memset(di, 0, sizeof(*di));
-}
-
-void debug_inspector_begin_frame(DebugInspector* di) {
-  di->item_count = 0;
-  di->arena_cursor = 0;
-}
-
-void debug_inspector_section_begin(DebugInspector* di, const char* title) {
-  DebugItem it = {0};
-  it.kind = DBG_ITEM_SECTION_BEGIN;
-  it.text = di_strdup(di, title);
-  di_push(di, it);
-}
-
-void debug_inspector_section_end(DebugInspector* di) {
-  DebugItem it = {0};
-  it.kind = DBG_ITEM_SECTION_END;
-  di_push(di, it);
-}
-
-void debug_inspector_add_text(DebugInspector* di, const char* fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
-
-  DebugItem it = {0};
-  it.kind = DBG_ITEM_TEXT;
-  it.text = di_fmt(di, fmt, args);
-
-  va_end(args);
-  di_push(di, it);
-}
-
-void debug_inspector_add_kv_text(DebugInspector* di, const char* key, const char* fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
-
-  DebugItem it = {0};
-  it.kind = DBG_ITEM_KV_TEXT;
-  it.label = di_strdup(di, key);
-  it.kv_value_text = di_fmt(di, fmt, args);
-
-  va_end(args);
-  di_push(di, it);
-}
-
-static void add_value(DebugInspector* di, const char* label, DebugValue v) {
-  DebugItem it = {0};
-  it.kind = DBG_ITEM_VALUE;
-  it.label = di_strdup(di, label);
-  it.value = v;
-  di_push(di, it);
-}
-
-void debug_inspector_add_u32(DebugInspector* di, const char* label, uint32_t x) {
-  DebugValue v = { .type = DBG_T_U32, .lanes = 1 };
-  v.u32[0] = x;
-  add_value(di, label, v);
-}
-
-void debug_inspector_add_i32(DebugInspector* di, const char* label, int32_t x) {
-  DebugValue v = { .type = DBG_T_I32, .lanes = 1 };
-  v.i32[0] = x;
-  add_value(di, label, v);
-}
-
-void debug_inspector_add_f32(DebugInspector* di, const char* label, float x) {
-  DebugValue v = { .type = DBG_T_F32, .lanes = 1 };
-  v.f32[0] = x;
-  add_value(di, label, v);
-}
-
-void debug_inspector_add_vec2(DebugInspector* di, const char* label, float x, float y) {
-  DebugValue v = { .type = DBG_T_VEC2, .lanes = 2 };
-  v.f32[0] = x; v.f32[1] = y;
-  add_value(di, label, v);
-}
-
-void debug_inspector_add_vec3(DebugInspector* di, const char* label, float x, float y, float z) {
-  DebugValue v = { .type = DBG_T_VEC3, .lanes = 3 };
-  v.f32[0] = x; v.f32[1] = y; v.f32[2] = z;
-  add_value(di, label, v);
-}
-
-void debug_inspector_add_vec4(DebugInspector* di, const char* label, float x, float y, float z, float w) {
-  DebugValue v = { .type = DBG_T_VEC4, .lanes = 4 };
-  v.f32[0] = x; v.f32[1] = y; v.f32[2] = z; v.f32[3] = w;
-  add_value(di, label, v);
-}
-
-void debug_inspector_add_ivec2(DebugInspector* di, const char* label, int32_t x, int32_t y) {
-  DebugValue v = { .type = DBG_T_IVEC2, .lanes = 2 };
-  v.i32[0] = x; v.i32[1] = y;
-  add_value(di, label, v);
-}
-
-void debug_inspector_add_ivec3(DebugInspector* di, const char* label, int32_t x, int32_t y, int32_t z) {
-  DebugValue v = { .type = DBG_T_IVEC3, .lanes = 3 };
-  v.i32[0] = x; v.i32[1] = y; v.i32[2] = z;
-  add_value(di, label, v);
-}
-
-void debug_inspector_add_uvec2(DebugInspector* di, const char* label, uint32_t x, uint32_t y) {
-  DebugValue v = { .type = DBG_T_UVEC2, .lanes = 2 };
-  v.u32[0] = x; v.u32[1] = y;
-  add_value(di, label, v);
-}
-
-void debug_inspector_add_uvec3(DebugInspector* di, const char* label, uint32_t x, uint32_t y, uint32_t z) {
-  DebugValue v = { .type = DBG_T_UVEC3, .lanes = 3 };
-  v.u32[0] = x; v.u32[1] = y; v.u32[2] = z;
-  add_value(di, label, v);
-}
-
-void debug_inspector_add_gpu_record_u32words(DebugInspector* di, uint32_t header,
-                                            uint32_t w0, uint32_t w1, uint32_t w2, uint32_t w3) {
-  DebugItem it = {0};
-  it.kind = DBG_ITEM_GPU_RECORD;
-  it.header = header;
-  it.w0 = w0; it.w1 = w1; it.w2 = w2; it.w3 = w3;
-  di_push(di, it);
-}
-
-void debug_inspector_set_pixel_state(DebugInspector* di, const DbgPinnedPixel* s) {
-  if (!s) {
-    memset(&di->pixel, 0, sizeof(di->pixel));
+void editor_pixel_editor_free(editor_pixel_editor *ed) {
+  if (!ed)
     return;
-  }
-  di->pixel = *s; // copy (small, fixed-size)
-  if (di->pixel.count > DBG_MAX_RECORDS) di->pixel.count = DBG_MAX_RECORDS;
-}
-
-void debug_inspector_add_pixel_panel(DebugInspector* di) {
-  DebugItem it = {0};
-  it.kind = DBG_ITEM_PIXEL_PANEL;
-  di_push(di, it);
-}
-
-// ---------------------
-// Draw (Clay)
-// ---------------------
-
-static void draw_kv_row(DebugInspector* di, const char* id_prefix, uint32_t i,
-                        Clay_String left, Clay_String right) {
-  (void)id_prefix;
-
-  CLAY(CLAY_IDI("DbgRow", (int)i), {
-    .backgroundColor = di->row_bg,
-    .cornerRadius = (Clay_CornerRadius){ 4,4,4,4 },
-    .layout = {
-      .layoutDirection = CLAY_LEFT_TO_RIGHT,
-      .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0) },
-      .padding = (Clay_Padding){ 8, 8, 6, 6 },
-      .childGap = 10,
-    },
-  }) {
-    CLAY(CLAY_IDI("DbgRowL", (int)i), {
-      .layout = { .sizing = { .width = CLAY_SIZING_FIXED(140), .height = CLAY_SIZING_FIT(0) } },
-    }) {
-      CLAY_TEXT(left, CLAY_TEXT_CONFIG({ .fontSize = 14, .textColor = di->val_col }));
+  if (ed->meta) {
+    int n = ed->w * ed->h;
+    for (int i = 0; i < n; ++i) {
+      free(ed->meta[i].items);
     }
-
-    CLAY_TEXT(right, CLAY_TEXT_CONFIG({ .fontSize = 14, .textColor = di->text_col }));
+    free(ed->meta);
+    ed->meta = NULL;
   }
 }
 
-static void draw_pixel_panel(DebugInspector* di) {
-//   if (!di->pixel.active) {
-//     CLAY_TEXT(CLAY_STRING("Pixel Inspector: (inactive)"),
-//               CLAY_TEXT_CONFIG({ .fontSize = 14, .textColor = di->val_col }));
-//     return;
-//   }
+void editor_pixel_editor_clear_pixel(editor_pixel_editor *ed, int x, int y) {
+  if (!editor_in_bounds(ed, x, y))
+    return;
+  editor_pixel_meta *m = editor_meta_at(ed, x, y);
+  m->count = 0;
+}
 
-  // Header
-  CLAY(CLAY_ID("PixelInspectorHeader"), {
-    .layout = {
-      .layoutDirection = CLAY_LEFT_TO_RIGHT,
-      .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0) },
-      .childGap = 10,
-    },
-  }) {
-    CLAY_TEXT(CLAY_STRING("Pixel Inspector"),
-              CLAY_TEXT_CONFIG({ .fontSize = 18, .textColor = di->text_col }));
-    CLAY_TEXT(di_fmt1(di, "(%d, %d)", di->pixel.x, di->pixel.y),
-              CLAY_TEXT_CONFIG({ .fontSize = 18, .textColor = di->val_col }));
+void editor_pixel_editor_append_u32(editor_pixel_editor *ed, int x, int y, const char *key, unsigned int v) {
+  if (!editor_in_bounds(ed, x, y))
+    return;
+  editor_pixel_value pv;
+  memset(&pv, 0, sizeof(pv));
+  pv.key = key;
+  pv.type = EDITOR_PV_U32;
+  pv.as.u32 = v;
+  editor_pixelmeta_push(editor_meta_at(ed, x, y), pv);
+}
+
+void editor_pixel_editor_append_i32(editor_pixel_editor *ed, int x, int y, const char *key, int v) {
+  if (!editor_in_bounds(ed, x, y))
+    return;
+  editor_pixel_value pv;
+  memset(&pv, 0, sizeof(pv));
+  pv.key = key;
+  pv.type = EDITOR_PV_I32;
+  pv.as.i32 = v;
+  editor_pixelmeta_push(editor_meta_at(ed, x, y), pv);
+}
+
+void editor_pixel_editor_append_f32(editor_pixel_editor *ed, int x, int y, const char *key, float v) {
+  if (!editor_in_bounds(ed, x, y))
+    return;
+  editor_pixel_value pv;
+  memset(&pv, 0, sizeof(pv));
+  pv.key = key;
+  pv.type = EDITOR_PV_F32;
+  pv.as.f32 = v;
+  editor_pixelmeta_push(editor_meta_at(ed, x, y), pv);
+}
+
+void editor_pixel_editor_append_vec2(editor_pixel_editor *ed, int x, int y, const char *key, editor_vec2 v) {
+  if (!editor_in_bounds(ed, x, y))
+    return;
+  editor_pixel_value pv;
+  memset(&pv, 0, sizeof(pv));
+  pv.key = key;
+  pv.type = EDITOR_PV_VEC2;
+  pv.as.v2 = v;
+  editor_pixelmeta_push(editor_meta_at(ed, x, y), pv);
+}
+
+void editor_pixel_editor_append_vec3(editor_pixel_editor *ed, int x, int y, const char *key, editor_vec3 v) {
+  if (!editor_in_bounds(ed, x, y))
+    return;
+  editor_pixel_value pv;
+  memset(&pv, 0, sizeof(pv));
+  pv.key = key;
+  pv.type = EDITOR_PV_VEC3;
+  pv.as.v3 = v;
+  editor_pixelmeta_push(editor_meta_at(ed, x, y), pv);
+}
+
+void editor_pixel_editor_ui(editor_pixel_editor *ed, struct nk_context *ctx) {
+  /* two columns inside whatever window/group you put this in */
+  nk_layout_row_dynamic(ctx, 0, 2);
+
+  if (nk_group_begin(ctx, "Canvas", NK_WINDOW_BORDER)) {
+    editor_draw_canvas(ed, ctx, 10000.0f);
+    nk_group_end(ctx);
+  }
+  if (nk_group_begin(ctx, "Inspector", NK_WINDOW_BORDER)) {
+    editor_draw_inspector(ed, ctx);
+    nk_group_end(ctx);
+  }
+}
+
+void editor_pixel_editor_window_ui(editor_pixel_editor *ed, struct nk_context *ctx, const char *title, struct nk_rect r,
+                                   nk_flags flags) {
+  if (nk_begin(ctx, title, r, flags)) {
+    editor_pixel_editor_ui(ed, ctx);
+  }
+  nk_end(ctx);
+}
+
+// --- Private Functions ---
+
+static int editor_in_bounds(const editor_pixel_editor *ed, int x, int y) {
+  return (x >= 0 && y >= 0 && x < ed->w && y < ed->h);
+}
+
+static editor_pixel_meta *editor_meta_at(editor_pixel_editor *ed, int x, int y) { return &ed->meta[y * ed->w + x]; }
+
+static int editor_pick_pixel(editor_pixel_editor *ed, struct nk_context *ctx, struct nk_rect bounds, int *out_x,
+                             int *out_y) {
+  if (!nk_input_is_mouse_click_down_in_rect(&ctx->input, NK_BUTTON_LEFT, bounds, nk_true))
+    return 0;
+
+  float mx = ctx->input.mouse.pos.x - bounds.x - ed->pan.x;
+  float my = ctx->input.mouse.pos.y - bounds.y - ed->pan.y;
+
+  int px = (int)(mx / ed->zoom);
+  int py = (int)(my / ed->zoom);
+
+  if (!editor_in_bounds(ed, px, py))
+    return 0;
+
+  *out_x = px;
+  *out_y = py;
+  return 1;
+}
+
+static void editor_pixelmeta_push(editor_pixel_meta *m, editor_pixel_value v) {
+  if (m->count == m->cap) {
+    unsigned int new_cap = m->cap ? (m->cap * 2u) : 4u;
+    editor_pixel_value *new_items = (editor_pixel_value *)realloc(m->items, new_cap * sizeof(editor_pixel_value));
+    if (!new_items)
+      return; /* OOM: drop */
+    m->items = new_items;
+    m->cap = new_cap;
+  }
+  m->items[m->count++] = v;
+}
+
+static struct nk_color editor_rgba_to_nk(unsigned int c) {
+  /* Assumes 0xAARRGGBB */
+  unsigned char a = (unsigned char)((c >> 24) & 0xFF);
+  unsigned char r = (unsigned char)((c >> 16) & 0xFF);
+  unsigned char g = (unsigned char)((c >> 8) & 0xFF);
+  unsigned char b = (unsigned char)((c >> 0) & 0xFF);
+  return nk_rgba(r, g, b, a);
+}
+
+static void editor_draw_canvas(editor_pixel_editor *ed, struct nk_context *ctx, float canvas_h) {
+  nk_layout_row_dynamic(ctx, canvas_h, 1);
+  struct nk_rect bounds = nk_widget_bounds(ctx);
+  struct nk_command_buffer *out = nk_window_get_canvas(ctx);
+
+  nk_fill_rect(out, bounds, 0.0f, nk_rgb(22, 22, 22));
+
+  editor_handle_pan(ed, ctx, bounds);
+  editor_handle_zoom(ed, ctx, bounds);
+
+  int px, py;
+  if (editor_pick_pixel(ed, ctx, bounds, &px, &py)) {
+    ed->sel_x = px;
+    ed->sel_y = py;
   }
 
-  if (di->pixel.count == 0) {
-    CLAY_TEXT(CLAY_STRING("No events recorded."),
-              CLAY_TEXT_CONFIG({ .fontSize = 14, .textColor = di->val_col }));
+  const float cell = ed->zoom;
+  float ox = bounds.x + ed->pan.x;
+  float oy = bounds.y + ed->pan.y;
+
+  int x0 = (int)floorf((bounds.x - ox) / cell) - 1;
+  int y0 = (int)floorf((bounds.y - oy) / cell) - 1;
+  int x1 = (int)ceilf(((bounds.x + bounds.w) - ox) / cell) + 1;
+  int y1 = (int)ceilf(((bounds.y + bounds.h) - oy) / cell) + 1;
+
+  if (x0 < 0)
+    x0 = 0;
+  if (y0 < 0)
+    y0 = 0;
+  if (x1 > ed->w)
+    x1 = ed->w;
+  if (y1 > ed->h)
+    y1 = ed->h;
+
+  for (int y = y0; y < y1; ++y) {
+    for (int x = x0; x < x1; ++x) {
+      struct nk_rect r = {ox + x * cell, oy + y * cell, cell, cell};
+
+      struct nk_color col = nk_rgb(45, 45, 45);
+      if (ed->rgba)
+        col = editor_rgba_to_nk(ed->rgba[y * ed->w + x]);
+
+      nk_fill_rect(out, r, 0.0f, col);
+
+      if (ed->show_grid) {
+        nk_stroke_rect(out, r, 0.0f, 1.0f, nk_rgb(15, 15, 15));
+      }
+    }
+  }
+
+  if (editor_in_bounds(ed, ed->sel_x, ed->sel_y)) {
+    struct nk_rect s = {ox + ed->sel_x * cell, oy + ed->sel_y * cell, cell, cell};
+    nk_stroke_rect(out, s, 0.0f, 2.0f, nk_rgb(255, 230, 80));
+  }
+
+  /* HUD */
+  {
+    char buf[128];
+    snprintf(buf, sizeof(buf), "zoom: %.1f  pan: (%.0f, %.0f)", ed->zoom, ed->pan.x, ed->pan.y);
+    struct nk_rect hud = {bounds.x + 8, bounds.y + 8, bounds.w - 16, 18};
+    nk_draw_text(out, hud, buf, (int)strlen(buf), ctx->style.font, nk_rgba(0, 0, 0, 120), nk_rgb(220, 220, 220));
+  }
+}
+
+static void editor_draw_inspector(editor_pixel_editor *ed, struct nk_context *ctx) {
+  nk_layout_row_dynamic(ctx, 24, 1);
+
+  if (!editor_in_bounds(ed, ed->sel_x, ed->sel_y)) {
+    nk_label(ctx, "Click a pixel to inspect.", NK_TEXT_LEFT);
     return;
   }
 
-  // Rows: event/key/value
-  for (uint32_t i = 0; i < di->pixel.count; i++) {
-    DbgRecord* r = &di->pixel.records[i];
-    DebugValue v = value_from_gpu_words(r->header, r->y, r->z, r->w, 0);
-    Clay_String val = format_value(di, &v);
+  char hdr[128];
+  snprintf(hdr, sizeof(hdr), "Pixel (%d, %d)", ed->sel_x, ed->sel_y);
+  nk_label(ctx, hdr, NK_TEXT_LEFT);
 
-    CLAY(CLAY_IDI("PixRow", (int)i), {
-      .backgroundColor = di->row_bg,
-      .cornerRadius = (Clay_CornerRadius){ 4,4,4,4 },
-      .layout = {
-        .layoutDirection = CLAY_LEFT_TO_RIGHT,
-        .sizing = { .width = CLAY_SIZING_GROW(0), .height = CLAY_SIZING_FIT(0) },
-        .padding = (Clay_Padding){ 8, 8, 6, 6 },
-        .childGap = 10,
-      },
-    }) {
-      CLAY(CLAY_IDI("PixEventCol", (int)i), {
-        .layout = { .sizing = { .width = CLAY_SIZING_FIXED(60), .height = CLAY_SIZING_FIT(0) } },
-      }) {
-        CLAY_TEXT(di_fmt1(di, "%u", DBG_GET_EVENT(r->header)),
-                  CLAY_TEXT_CONFIG({ .fontSize = 14, .textColor = di->text_col }));
-      }
+  editor_pixel_meta *m = editor_meta_at(ed, ed->sel_x, ed->sel_y);
 
-      CLAY(CLAY_IDI("PixKeyCol", (int)i), {
-        .layout = { .sizing = { .width = CLAY_SIZING_FIXED(40), .height = CLAY_SIZING_FIT(0) } },
-      }) {
-        CLAY_TEXT(di_fmt1(di, "%u", DBG_GET_KEY(r->header)),
-                  CLAY_TEXT_CONFIG({ .fontSize = 14, .textColor = di->val_col }));
-      }
+  nk_layout_row_dynamic(ctx, 22, 2);
+  if (nk_button_label(ctx, "Clear pixel"))
+    editor_pixel_editor_clear_pixel(ed, ed->sel_x, ed->sel_y);
+  nk_checkbox_label(ctx, "Grid", &ed->show_grid);
 
-      CLAY_TEXT(val, CLAY_TEXT_CONFIG({ .fontSize = 14, .textColor = di->text_col }));
+  nk_layout_row_dynamic(ctx, 18, 1);
+  nk_label(ctx, "Metadata:", NK_TEXT_LEFT);
+
+  if (m->count == 0) {
+    nk_label(ctx, "(none)", NK_TEXT_LEFT);
+    return;
+  }
+
+  for (unsigned int i = 0; i < m->count; ++i) {
+    editor_pixel_value *v = &m->items[i];
+    const char *key = v->key ? v->key : "(unnamed)";
+    char line[256];
+
+    switch (v->type) {
+    case EDITOR_PV_U32:
+      snprintf(line, sizeof(line), "%s: u32  %u", key, v->as.u32);
+      break;
+    case EDITOR_PV_I32:
+      snprintf(line, sizeof(line), "%s: i32  %d", key, v->as.i32);
+      break;
+    case EDITOR_PV_F32:
+      snprintf(line, sizeof(line), "%s: f32  %.7g", key, v->as.f32);
+      break;
+    case EDITOR_PV_VEC2:
+      snprintf(line, sizeof(line), "%s: vec2 (%.7g, %.7g)", key, v->as.v2.x, v->as.v2.y);
+      break;
+    case EDITOR_PV_VEC3:
+      snprintf(line, sizeof(line), "%s: vec3 (%.7g, %.7g, %.7g)", key, v->as.v3.x, v->as.v3.y, v->as.v3.z);
+      break;
+    default:
+      snprintf(line, sizeof(line), "%s: (unknown)", key);
+      break;
     }
+
+    nk_layout_row_dynamic(ctx, 18, 1);
+    nk_label(ctx, line, NK_TEXT_LEFT);
   }
 }
 
-void debug_inspector_draw(DebugInspector* di) {
-  if (!di->open) return;
-  Clay_BeginLayout();
-  CLAY(CLAY_ID("DebugInspectorPanel"), {
-    .backgroundColor = di->panel_bg,
-    .cornerRadius = (Clay_CornerRadius){ 8,8,8,8 },
-    .layout = {
-      .layoutDirection = CLAY_TOP_TO_BOTTOM,
-      .sizing = { .width = CLAY_SIZING_FIXED(420), .height = CLAY_SIZING_FIT(0) },
-      .padding = CLAY_PADDING_ALL(16),
-      .childGap = 10,
-    },
-  }) {
-    // Title
-    CLAY_TEXT(CLAY_STRING("Debug Inspector"),
-              CLAY_TEXT_CONFIG({ .fontSize = 22, .textColor = di->text_col }));
-
-    for (uint32_t i = 0; i < di->item_count; i++) {
-      DebugItem* it = &di->items[i];
-
-      switch (it->kind) {
-        case DBG_ITEM_SECTION_BEGIN: {
-          CLAY_TEXT(it->text,
-                    CLAY_TEXT_CONFIG({ .fontSize = 16, .textColor = di->val_col }));
-        } break;
-
-        case DBG_ITEM_SECTION_END: {
-          // spacing
-          CLAY_TEXT(CLAY_STRING(""),
-                    CLAY_TEXT_CONFIG({ .fontSize = 6, .textColor = (Clay_Color){0,0,0,0} }));
-        } break;
-
-        case DBG_ITEM_TEXT: {
-          CLAY_TEXT(it->text,
-                    CLAY_TEXT_CONFIG({ .fontSize = 14, .textColor = di->text_col }));
-        } break;
-
-        case DBG_ITEM_KV_TEXT: {
-          draw_kv_row(di, "kv", i, it->label, it->kv_value_text);
-        } break;
-
-        case DBG_ITEM_VALUE: {
-          Clay_String rhs = format_value(di, &it->value);
-          draw_kv_row(di, "val", i, it->label, rhs);
-        } break;
-
-        case DBG_ITEM_GPU_RECORD: {
-          // Format: "E:K" on left, decoded value on right
-          uint32_t ev = DBG_GET_EVENT(it->header);
-          uint32_t key = DBG_GET_KEY(it->header);
-
-          Clay_String lhs = di_fmt1(di, "E%u K%u", ev, key);
-
-          DebugValue v = value_from_gpu_words(it->header, it->w0, it->w1, it->w2, it->w3);
-          Clay_String rhs = format_value(di, &v);
-
-          draw_kv_row(di, "rec", i, lhs, rhs);
-        } break;
-
-        case DBG_ITEM_PIXEL_PANEL: {
-          draw_pixel_panel(di);
-        } break;
-
-        default: break;
-      }
-    }
+static void editor_handle_pan(editor_pixel_editor *ed, struct nk_context *ctx, struct nk_rect bounds) {
+  if (nk_input_is_mouse_down(&ctx->input, NK_BUTTON_MIDDLE) && nk_input_is_mouse_hovering_rect(&ctx->input, bounds)) {
+    ed->pan.x += ctx->input.mouse.delta.x;
+    ed->pan.y += ctx->input.mouse.delta.y;
   }
+}
+
+static void editor_handle_zoom(editor_pixel_editor *ed, struct nk_context *ctx, struct nk_rect bounds) {
+  if (!nk_input_is_mouse_hovering_rect(&ctx->input, bounds))
+    return;
+
+  float scroll = ctx->input.mouse.scroll_delta.y;
+  if (scroll == 0.0f)
+    return;
+
+  float old = ed->zoom;
+  float nz = old + scroll * 1.0f;
+  if (nz < 2.0f)
+    nz = 2.0f;
+  if (nz > 60.0f)
+    nz = 60.0f;
+
+  /* zoom around mouse */
+  float mx = ctx->input.mouse.pos.x - bounds.x;
+  float my = ctx->input.mouse.pos.y - bounds.y;
+
+  float cx = (mx - ed->pan.x) / old;
+  float cy = (my - ed->pan.y) / old;
+
+  ed->zoom = nz;
+  ed->pan.x = mx - cx * nz;
+  ed->pan.y = my - cy * nz;
 }

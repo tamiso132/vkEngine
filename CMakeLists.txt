@@ -32,22 +32,14 @@ FetchContent_Declare(vma GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndS
 # 4. cglm
 FetchContent_Declare(cglm GIT_REPOSITORY https://github.com/recp/cglm.git GIT_TAG master)
 
-FetchContent_Declare(cimgui GIT_REPOSITORY https://github.com/cimgui/cimgui.git GIT_TAG master)
 
-
-
-
-FetchContent_MakeAvailable(glfw volk vma cglm cimgui)
+FetchContent_MakeAvailable(glfw volk vma cglm)
 
 include(cmake/engine.cmake)
 
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
-
-
-
-
 
 
 get_property(SOURCES_FILES_GAME_ENGINE GLOBAL PROPERTY GLOBAL_SOURCES)
@@ -63,13 +55,11 @@ add_compile_definitions(
   VKENGINE_C=1
 )
 
-target_compile_definitions(${PROJECT_NAME} PUBLIC VK_VERSION_1_0 CIMGUI_DEFINE_ENUMS_AND_STRUCTS CIMGUI_USE_GLFW CIMGUI_USE_VULKAN __USE_XOPEN2K) 
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
 shaders
 ${INCLUDE_DIRECTORIES_ENGINE}
 ${CMAKE_CURRENT_SOURCE_DIR}
-external/cimgui-src
 thirdparty/hashmap.c
 thirdparty/clay
 thirdparty/stbi
@@ -82,7 +72,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glfw 
     volk 
     cglm
-    cimgui
     glslang::glslang 
     glslang::SPIRV 
     glslang::glslang-default-resource-limits

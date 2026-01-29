@@ -1,4 +1,3 @@
-#include "rt_shared.glsl"
 // rt_debug_pixel_log.glsl
 //
 // Per-pixel multi-entry readback log.

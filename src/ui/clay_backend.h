@@ -8,6 +8,24 @@
 #include "resource/resmanager.h"
 #include <clay.h>
 
+#include <stb_truetype.h>
+
+// TODO; put everything in .c file
+
+typedef struct UI_FontAtlas {
+  float bake_px;
+  int w, h;
+  stbtt_bakedchar* baked; // Changed from ch[96] to pointer
+  ResHandle texture;
+  bool valid;
+} UI_FontAtlas;
+
+
+
+// Put this inside ClayContext in your clay_backend.h instead if you can
+// For quick test, you can keep it static global:
+static UI_FontAtlas g_ui_font;
+
 typedef struct ClayContext {
   // Clay State (Hidden from user)
   void *internal_memory;
@@ -20,7 +38,12 @@ typedef struct ClayContext {
   PipelineHandle pipeline;
   ResHandle vtx_buffer;
   ResHandle idx_buffer;
-  ResHandle font_texture;
+  
+  // Resources
+  ResHandle font_texture;  // Handle to the active font texture (atlas or white pixel)
+  ResHandle white_texture; // Handle to the white pixel texture
+  
+  UI_FontAtlas font_cpu;   // The CPU-side font atlas data
 
   uint32_t max_vertices;
   uint32_t max_indices;

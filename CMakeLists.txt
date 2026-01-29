@@ -67,6 +67,7 @@ ${INCLUDE_DIRECTORIES_ENGINE}
 ${CMAKE_CURRENT_SOURCE_DIR}
 thirdparty/hashmap.c
 thirdparty/clay
+thirdparty/stbi
 )
 
 

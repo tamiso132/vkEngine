@@ -15,6 +15,8 @@ typedef struct {
   M_GPU *gpu;
   Camera cam;
   TransferQueue* tq;
+  u32 readback_idx;
+  ivec2 dbg_mouse_pos;
 
 } SampleContext;
 

@@ -1,5 +1,6 @@
 #include "filewatch.h"
 #include "gpu/gpu.h"
+#include "util.h"
 #include "vector.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -110,13 +111,14 @@ Vector file_read_binary(const char *path) {
 
 static bool _poll() {
   auto *fm = SYSTEM_GET(SYSTEM_TYPE_FILE, M_File);
-  fm->dirty_mask = 0; // Reset per-frame mask
-  FileEntry *entries = (FileEntry *)fm->entries.data;
+  fm->dirty_mask = 0; 
 
   for (size_t i = 0; i < fm->entries.length; i++) {
+    // Access entry via index to stay safe from realloc
+    FileEntry *entries = (FileEntry *)fm->entries.data;
     FileEntry *e = &entries[i];
+    
     time_t disk_time = get_file_time(e->path);
-
     if (disk_time != 0 && disk_time != e->last_mod) {
       Vector next = file_read_binary(e->path);
       if (next.data) {
@@ -127,7 +129,7 @@ static bool _poll() {
         e->version++;
 
         if (i < 64)
-          fm->dirty_mask |= (1ULL << i);
+          fm->dirty_mask |= (1ULL << i); // Use 1ULL
         LOG_INFO("Hot-Reload: %s (v%d)", e->path, e->version);
       }
     }
@@ -156,28 +158,48 @@ static const char *_get_source(M_File *fm, FileHandle *handle) {
 }
 
 static FileHandle _load_file(M_File *fm, const char *path) {
-  if (!fm || !path)
-    return INVALID_HANDLE;
-
-  FileEntry *entries = (FileEntry *)fm->entries.data;
-  for (uint32_t i = 0; i < (uint32_t)fm->entries.length; i++) {
-    if (strcmp(entries[i].path, path) == 0) {
-      return (FileHandle){.index = i};
+    if (!fm || !path) {
+        LOG_ERROR("File System: Null FM or Path provided.");
+        return INVALID_HANDLE;
     }
-  }
 
-  Vector content = file_read_binary(path);
-  if (!content.data)
-    return INVALID_HANDLE;
+    // Re-fetching entries inside the function is safer against reallocs
+    FileEntry *entries = (FileEntry *)fm->entries.data;
+    for (uint32_t i = 0; i < (uint32_t)fm->entries.length; i++) {
+        if (strcmp(entries[i].path, path) == 0) {
+            return (FileHandle){.index = i};
+        }
+    }
 
-  FileEntry e = {.path = strdup(path),
-                 .source = (char *)content.data,
-                 .size = content.length,
-                 .last_mod = get_file_time(path),
-                 .version = 1};
+    // Get Content
+    Vector content = file_read_binary(path);
+    if (!content.data) {
+        LOG_ERROR("File System: Failed to read binary data from: %s (Check path/permissions)", path);
+        return INVALID_HANDLE;
+    }
 
-  vec_push(&fm->entries, &e);
-  return (FileHandle){.index = (uint32_t)fm->entries.length - 1};
+    // Get the timestamp
+    time_t mtime = get_file_time(path);
+    if (mtime == 0) {
+        LOG_ERROR("File System: Could not get stats/timestamp for: %s", path);
+        free(content.data); // Don't leak memory on stat failure!
+        return INVALID_HANDLE;
+    }
+
+    FileEntry e = {
+        .path     = strdup(path),
+        .source   = (char *)content.data,
+        .size     = content.length,
+        .last_mod = mtime,
+        .version  = 1
+    };
+
+    vec_push(&fm->entries, &e);
+    
+    uint32_t new_index = (uint32_t)fm->entries.length - 1;
+    LOG_INFO("File System: Successfully loaded %s at index %u", path, new_index);
+    
+    return (FileHandle){.index = new_index};
 }
 
 static time_t get_file_time(const char *path) {

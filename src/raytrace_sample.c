@@ -1,5 +1,6 @@
 
 #include "raytrace_sample.h"
+#include "cglm/call/ivec2.h"
 #include "cglm/call/vec3.h"
 #include "command.h"
 #include "common.h"
@@ -94,6 +95,7 @@ static void _render(Sample *self, SampleContext *ctx) {
       .debug_mode = ctx->cam.debug_mode,
       .grid_id = grid_id,
   };
+  glmc_ivec2_copy(ctx->dbg_mouse_pos, p.mouse_px);
   glm_vec3_copy(min_corner, p.grid_min_corner);
 
   BindPipelineInfo b = {.p_push = &p, .push_size = sizeof(PushRay), .handle = data->cs_pipeline};

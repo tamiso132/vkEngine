@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include <stdbool.h>
 #include <string.h>
+#include <cglm/cglm.h>
 
 // GLFW constants are usually < 350 for keys and < 10 for mouse
 #define MAX_KEYS 512
@@ -37,5 +38,7 @@ bool input_key_down(Input* input, int key);
 bool input_key_released(Input* input, int key);
 
 // Same for Mouse
-bool input_button_pressed(Input* input, int button);
+bool input_mouse_pressed(Input* input, int button);
 bool input_button_down(Input* input, int button);
+
+void input_get_mouse_position(Input* input, ivec2 mouse_pos);

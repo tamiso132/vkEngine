@@ -1,4 +1,5 @@
 // src/sample_runner.c
+#include "GLFW/glfw3.h"
 #include "resource/resmanager.h"
 #include "sample_interface.h"
 
@@ -84,6 +85,11 @@ static void _update_systems(SampleRunner* r, double dt) {
         r->is_paused = !r->is_paused;
     }
 
+    if(input_mouse_pressed(&r->debug_input, GLFW_MOUSE_BUTTON_LEFT)){
+        ivec2 mouse_pos = {};
+        input_get_mouse_position(&r->debug_input, r->ctx.dbg_mouse_pos);
+    }
+
     if (!r->is_paused) {
         camera_update(&r->ctx.cam, r->main_win.raw_window, dt);
         m_system_update();
@@ -92,9 +98,6 @@ static void _update_systems(SampleRunner* r, double dt) {
     }
 }
 
-/** * Phase 3: Command Recording
- * Encapsulates the actual Vulkan command recording for the sample.
- */
 static void _record_main_commands(SampleRunner* r, Sample* sample) {
 
      cmd_begin(r->gpu->device, r->cmd_main);
@@ -120,9 +123,6 @@ static void _record_main_commands(SampleRunner* r, Sample* sample) {
     sm_submit(r->sm, r->cmd_main.buffer, false);
 }
 
-/** * Phase 4: GPU Dispatch & Sync
- * Manages the handshakes between Main Render, UI Render, and Swapchains.
- */
 static void _record_debug_commands(SampleRunner* r) {
    
     cmd_begin(r->gpu->device, r->cmd_dbg);
@@ -142,16 +142,11 @@ static void _record_debug_commands(SampleRunner* r) {
     sm_submit(r->sm, r->cmd_dbg.buffer, true); 
 }
 
-/** * Phase 5: Presentation
- * Actually sends the finished images to the monitors.
- */
 static void _present_frame(SampleRunner* r) {
     transfer_submit_on_frame_end(r->ctx.tq);
     sm_present(r->sm, &r->debug_win.swapchain);
     sm_present(r->sm, &r->main_win.swapchain);
 }
-
-// --- Main Runner Loop ---
 
 void run_sample(Sample* sample) {
     // Initialization (Simplified)
@@ -178,6 +173,7 @@ void run_sample(Sample* sample) {
         .tq = transfer_init(r.gpu->device, r.gpu->transfer_queue, r.gpu->transfer_family, r.gpu->allocator, MIB(250), 1),
 
     };
+    
     r.ctx.pr = SYSTEM_GET(SYSTEM_TYPE_HOTRELOAD, M_HotReload);
     r.ctx.gpu =  SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
     r.ctx.rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
@@ -196,8 +192,9 @@ void run_sample(Sample* sample) {
     r.last_time = glfwGetTime();
     editor_pixel_editor editor = {};
     editor_pixel_meta_main_init(&editor, r.debug_win.width, r.debug_win.height, NULL);
+    ReadBackBuffer readback = {};
+    readback_init(&readback, r.rm,  r.debug_win.swapchain.extent);
 
-    // --- The Clean Main Loop ---
     while (_handle_lifecycle(&r, sample)) {
         glfwPollEvents();
         
@@ -205,14 +202,16 @@ void run_sample(Sample* sample) {
         double dt = time_now - r.last_time;
         r.last_time = time_now;
 
-        _update_systems(&r, dt);
         if (r.is_paused) continue;
 
         // Start GPU Frame
         sm_begin_frame(r.sm);
+        _update_systems(&r, dt);
 
-        editor_pixel_meta_main_append_test_data(&editor);
 
+        //TODO: move later
+        readback_write_to_editor(&readback, &editor);
+        r.ctx.readback_idx = readback_get_push_id(&readback, r.rm);
         
         // Acquire both windows
         sm_acquire_swapchain(r.sm, &r.main_win.swapchain, SM_STAGE_COMPUTE_SHADER);

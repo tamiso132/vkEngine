@@ -33,6 +33,12 @@ FetchContent_Declare(vma GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndS
 FetchContent_Declare(cglm GIT_REPOSITORY https://github.com/recp/cglm.git GIT_TAG master)
 
 
+set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+
 FetchContent_MakeAvailable(glfw volk vma cglm)
 
 include(cmake/engine.cmake)

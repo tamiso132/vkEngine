@@ -29,6 +29,7 @@
 #define LOG_INFO(fmt, ...) LOG_MESSAGE(CLR_CYN, "INFO", fmt, ##__VA_ARGS__)
 #define LOG_WARN(fmt, ...) LOG_MESSAGE(CLR_YLW, "WARN", fmt, ##__VA_ARGS__)
 #define LOG_ERROR(fmt, ...) LOG_MESSAGE(CLR_RED, "ERROR", fmt, ##__VA_ARGS__)
+#define NOT_IMPLEMENTED() {LOG_MESSAGE(CLR_RED, "ERROR", "NOT IMPLEMENTED"); abort();}
 
 #define defer(end) for (int _i = 0; _i == 0; (_i = 1), end)
 

@@ -1,4 +1,3 @@
-#define GLFW_INCLUDE_VULKAN
 #define VK_NO_PROTOTYPES
 
 #include <volk.h>

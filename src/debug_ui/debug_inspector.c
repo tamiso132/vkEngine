@@ -32,6 +32,7 @@
 */
 
 #include "debug_inspector.h"
+#include "cglm/vec3.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -73,8 +74,8 @@ void editor_pixel_meta_main_draw(editor_pixel_editor *ed, struct nk_context *ctx
 void editor_pixel_meta_main_append_test_data(editor_pixel_editor *ed) {
   /* Safe even if called multiple times: it appends repeatedly */
   editor_pixel_editor_append_u32(ed, 10, 12, "id", 123u);
-  editor_pixel_editor_append_vec2(ed, 10, 12, "uv", (editor_vec2){0.25f, 0.75f});
-  editor_pixel_editor_append_vec3(ed, 10, 12, "normal", (editor_vec3){0.0f, 1.0f, 0.0f});
+  editor_pixel_editor_append_vec2(ed, 10, 12, "uv", (vec2){0.25f, 0.75f});
+  editor_pixel_editor_append_vec3(ed, 10, 12, "normal", (vec3){0.0f, 1.0f, 0.0f});
   editor_pixel_editor_append_f32(ed, 1, 1, "depth", 0.42f);
 }
 
@@ -85,7 +86,8 @@ void editor_pixel_editor_init(editor_pixel_editor *ed, int w, int h) {
   ed->meta = (editor_pixel_meta *)calloc((size_t)w * (size_t)h, sizeof(editor_pixel_meta));
   ed->sel_x = ed->sel_y = -1;
   ed->zoom = 12.0f;
-  ed->pan = (editor_vec2){0, 0};
+  ed->pan[0] = 0;
+  ed->pan[1] = 0;
   ed->show_grid = 1;
 }
 
@@ -142,25 +144,25 @@ void editor_pixel_editor_append_f32(editor_pixel_editor *ed, int x, int y, const
   editor_pixelmeta_push(editor_meta_at(ed, x, y), pv);
 }
 
-void editor_pixel_editor_append_vec2(editor_pixel_editor *ed, int x, int y, const char *key, editor_vec2 v) {
+void editor_pixel_editor_append_vec2(editor_pixel_editor *ed, int x, int y, const char *key, vec2 v) {
   if (!editor_in_bounds(ed, x, y))
     return;
   editor_pixel_value pv;
   memset(&pv, 0, sizeof(pv));
   pv.key = key;
   pv.type = EDITOR_PV_VEC2;
-  pv.as.v2 = v;
+  glm_vec3_copy(v, pv.as.v2);
   editor_pixelmeta_push(editor_meta_at(ed, x, y), pv);
 }
 
-void editor_pixel_editor_append_vec3(editor_pixel_editor *ed, int x, int y, const char *key, editor_vec3 v) {
+void editor_pixel_editor_append_vec3(editor_pixel_editor *ed, int x, int y, const char *key, vec3 v) {
   if (!editor_in_bounds(ed, x, y))
     return;
   editor_pixel_value pv;
   memset(&pv, 0, sizeof(pv));
   pv.key = key;
   pv.type = EDITOR_PV_VEC3;
-  pv.as.v3 = v;
+  glm_vec3_copy(v, pv.as.v3);
   editor_pixelmeta_push(editor_meta_at(ed, x, y), pv);
 }
 
@@ -199,8 +201,8 @@ static int editor_pick_pixel(editor_pixel_editor *ed, struct nk_context *ctx, st
   if (!nk_input_is_mouse_click_down_in_rect(&ctx->input, NK_BUTTON_LEFT, bounds, nk_true))
     return 0;
 
-  float mx = ctx->input.mouse.pos.x - bounds.x - ed->pan.x;
-  float my = ctx->input.mouse.pos.y - bounds.y - ed->pan.y;
+  float mx = ctx->input.mouse.pos.x - bounds.x - ed->pan[0];
+  float my = ctx->input.mouse.pos.y - bounds.y - ed->pan[1];
 
   int px = (int)(mx / ed->zoom);
   int py = (int)(my / ed->zoom);
@@ -251,8 +253,8 @@ static void editor_draw_canvas(editor_pixel_editor *ed, struct nk_context *ctx, 
   }
 
   const float cell = ed->zoom;
-  float ox = bounds.x + ed->pan.x;
-  float oy = bounds.y + ed->pan.y;
+  float ox = bounds.x + ed->pan[0];
+  float oy = bounds.y + ed->pan[1];
 
   int x0 = (int)floorf((bounds.x - ox) / cell) - 1;
   int y0 = (int)floorf((bounds.y - oy) / cell) - 1;
@@ -292,7 +294,7 @@ static void editor_draw_canvas(editor_pixel_editor *ed, struct nk_context *ctx, 
   /* HUD */
   {
     char buf[128];
-    snprintf(buf, sizeof(buf), "zoom: %.1f  pan: (%.0f, %.0f)", ed->zoom, ed->pan.x, ed->pan.y);
+    snprintf(buf, sizeof(buf), "zoom: %.1f  pan: (%.0f, %.0f)", ed->zoom, ed->pan[0], ed->pan[1]);
     struct nk_rect hud = {bounds.x + 8, bounds.y + 8, bounds.w - 16, 18};
     nk_draw_text(out, hud, buf, (int)strlen(buf), ctx->style.font, nk_rgba(0, 0, 0, 120), nk_rgb(220, 220, 220));
   }
@@ -341,10 +343,10 @@ static void editor_draw_inspector(editor_pixel_editor *ed, struct nk_context *ct
       snprintf(line, sizeof(line), "%s: f32  %.7g", key, v->as.f32);
       break;
     case EDITOR_PV_VEC2:
-      snprintf(line, sizeof(line), "%s: vec2 (%.7g, %.7g)", key, v->as.v2.x, v->as.v2.y);
+      snprintf(line, sizeof(line), "%s: vec2 (%.7g, %.7g)", key, v->as.v2[0], v->as.v2[1]);
       break;
     case EDITOR_PV_VEC3:
-      snprintf(line, sizeof(line), "%s: vec3 (%.7g, %.7g, %.7g)", key, v->as.v3.x, v->as.v3.y, v->as.v3.z);
+      snprintf(line, sizeof(line), "%s: vec3 (%.7g, %.7g, %.7g)", key, v->as.v3[0], v->as.v3[1], v->as.v3[2]);
       break;
     default:
       snprintf(line, sizeof(line), "%s: (unknown)", key);
@@ -358,8 +360,8 @@ static void editor_draw_inspector(editor_pixel_editor *ed, struct nk_context *ct
 
 static void editor_handle_pan(editor_pixel_editor *ed, struct nk_context *ctx, struct nk_rect bounds) {
   if (nk_input_is_mouse_down(&ctx->input, NK_BUTTON_MIDDLE) && nk_input_is_mouse_hovering_rect(&ctx->input, bounds)) {
-    ed->pan.x += ctx->input.mouse.delta.x;
-    ed->pan.y += ctx->input.mouse.delta.y;
+    ed->pan[0] += ctx->input.mouse.delta.x;
+    ed->pan[1] += ctx->input.mouse.delta.y;
   }
 }
 
@@ -382,10 +384,10 @@ static void editor_handle_zoom(editor_pixel_editor *ed, struct nk_context *ctx, 
   float mx = ctx->input.mouse.pos.x - bounds.x;
   float my = ctx->input.mouse.pos.y - bounds.y;
 
-  float cx = (mx - ed->pan.x) / old;
-  float cy = (my - ed->pan.y) / old;
+  float cx = (mx - ed->pan[0]) / old;
+  float cy = (my - ed->pan[1]) / old;
 
   ed->zoom = nz;
-  ed->pan.x = mx - cx * nz;
-  ed->pan.y = my - cy * nz;
+  ed->pan[0] = mx - cx * nz;
+  ed->pan[1] = my - cy * nz;
 }

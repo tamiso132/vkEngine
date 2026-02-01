@@ -6,13 +6,6 @@
 #include "thirdparty/nuklear/nuklear.h"
 
 
-/* ---------------- small vector types ---------------- */
-typedef struct editor_vec2 {
-  float x, y;
-} editor_vec2;
-typedef struct editor_vec3 {
-  float x, y, z;
-} editor_vec3;
 
 /* ---------------- metadata types ---------------- */
 typedef enum editor_pixel_value_type {
@@ -30,8 +23,8 @@ typedef struct editor_pixel_value {
     unsigned int u32;
     int i32;
     float f32;
-    editor_vec2 v2;
-    editor_vec3 v3;
+    vec2 v2;
+    vec3 v3;
   } as;
 } editor_pixel_value;
 
@@ -56,7 +49,7 @@ typedef struct editor_pixel_editor {
 
   /* View */
   float zoom;      /* pixel size in screen units */
-  editor_vec2 pan; /* screen-space offset inside canvas */
+  vec2 pan; /* screen-space offset inside canvas */
 
   /* UI options */
   int show_grid;
@@ -66,9 +59,10 @@ typedef struct editor_pixel_editor {
 void editor_pixel_editor_append_f32(editor_pixel_editor *ed, int x, int y, const char *key, float v);
 void editor_pixel_editor_append_i32(editor_pixel_editor *ed, int x, int y, const char *key, int v);
 void editor_pixel_editor_append_u32(editor_pixel_editor *ed, int x, int y, const char *key, unsigned int v);
-void editor_pixel_editor_append_vec2(editor_pixel_editor *ed, int x, int y, const char *key, editor_vec2 v);
-void editor_pixel_editor_append_vec3(editor_pixel_editor *ed, int x, int y, const char *key, editor_vec3 v);
+void editor_pixel_editor_append_vec2(editor_pixel_editor *ed, int x, int y, const char *key, vec2 v);
+void editor_pixel_editor_append_vec3(editor_pixel_editor *ed, int x, int y, const char *key, vec3 v);
 void editor_pixel_editor_clear_pixel(editor_pixel_editor *ed, int x, int y);
+
 void editor_pixel_editor_free(editor_pixel_editor *ed);
 void editor_pixel_editor_init(editor_pixel_editor *ed, int w, int h);
 void editor_pixel_editor_ui(editor_pixel_editor *ed, struct nk_context *ctx);

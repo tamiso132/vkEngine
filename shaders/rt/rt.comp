@@ -6,6 +6,7 @@
 #include "rt_bindings.glsl"
 #include "rt_traversal.glsl" // brings traverse_one_chunk + debug_view_color
 #include "rt_debug.glsl"
+#include "rt_readback.glsl"
 
 #define MAX_ITER_COUNT 5000
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;

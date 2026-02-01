@@ -1,4 +1,5 @@
 #include "input.h"
+#include "cglm/types.h"
 
 void input_init(Input* input, GLFWwindow* window) {
     memset(input, 0, sizeof(Input));
@@ -46,10 +47,15 @@ bool input_key_released(Input* input, int key) {
     return (input->keys[key] == GLFW_RELEASE) && (input->prev_keys[key] == GLFW_PRESS);
 }
 
-bool input_button_pressed(Input* input, int button) {
+bool input_mouse_pressed(Input* input, int button) {
     return (input->buttons[button] == GLFW_PRESS) && (input->prev_buttons[button] == GLFW_RELEASE);
 }
 
 bool input_button_down(Input* input, int button) {
     return (input->buttons[button] == GLFW_PRESS);
+}
+
+void input_get_mouse_position(Input* input, ivec2 mouse_pos){
+   mouse_pos[0]  = input->mouse_x;
+   mouse_pos[1]  = input->mouse_y;
 }

@@ -30,4 +30,6 @@ typedef struct M_Swapchain {
 void swapchain_destroy(M_Swapchain *sc);
 ResHandle swapchain_get_image(M_Swapchain *sc);
 void swapchain_init(M_Swapchain *sc, VkSurfaceKHR surface, const char *name);
+
+VkSemaphore swapchain_get_render_done_semp(M_Swapchain *sc);
 // END PUBLIC FUNCTIONS

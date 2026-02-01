@@ -1,211 +1,241 @@
+// src/sample_runner.c
+#include "resource/resmanager.h"
+#include "sample_interface.h"
 
+// --- Project headers (grouped) ---
 #include "command.h"
 #include "common.h"
-#include "debug_ui/debug_inspector.h"
 #include "gpu/pipeline_hotreload.h"
 #include "gpu/swapchain.h"
 #include "input.h"
-#include "raycam.c"
 #include "readback.h"
-#include "sample_interface.h"
 #include "submit_manager.h"
 #include "system_manager.h"
 #include "transfer_queue.h"
-#include <GLFW/glfw3.h>
-
 #include "util.h"
 #include "window.h"
 
 #include "debug_ui/debug_inspector.h"
 #include "debug_ui/nuklear_backend.h"
-// Add this helper at the top of src/sample_runner.c
+#include "gpu/swapchain.h"
 
-// --- Private Prototypes ---
+// NOTE: Including a .c is usually a smell (ODR / build hygiene).
+// Prefer `#include "raycam.h"` and compile raycam.c separately.
+// Keeping your existing include here so this file remains drop-in.
+#include "raycam.c"
 
-void run_sample(Sample *sample) {
-  // 1. Initiera samplet
-  auto *device = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
-  auto *rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
-  auto *pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
-  auto *pr = SYSTEM_GET(SYSTEM_TYPE_HOTRELOAD, M_HotReload);
 
-  // WINDOW CREATION
-  TWindow main_win = {0};
-  window_init(&main_win, device, rm, 800, 600, "Main View", "MainSC");
+// --- Types ---
 
-  TWindow debug_win = {0};
-  window_init(&debug_win, device, rm, 800, 600, "Debug View (Click me)", "DebugSC");
+typedef struct SampleRunner {
+    M_GPU* gpu;
+    M_Resource* rm;
+    M_Submit* sm;
+    
+    TWindow main_win;
+    TWindow debug_win;
+    
+    Input main_input;
+    Input debug_input;
+    
+    NuklearBackend nuklear;
+    CmdBuffer cmd_main;
+    CmdBuffer cmd_dbg;
+    SampleContext ctx;
+    
+    bool is_paused;
+    double last_time;
+} SampleRunner;
 
-  // WINDOW INPUT CREATION, TODO, put it inside of TWindow
-  Input input = {0};
-  input_init(&input, main_win.raw_window);
+// --- Private Phases ---
 
-  Input debug_input = {0};
-  input_init(&debug_input, debug_win.raw_window);
+/** * Phase 1: Lifecycle & Windowing
+ * Handles minimization, resizing, and closing logic.
+ */
+static bool _handle_lifecycle(SampleRunner* r, Sample* sample) {
+    int w, h;
+    glfwGetFramebufferSize(r->main_win.raw_window, &w, &h);
 
-  CmdBuffer cmd_main = cmd_init(device->device, device->graphics_family);
-  CmdBuffer cmd_dbg = cmd_init(device->device, device->graphics_family);
-
-  auto *sm = sm_init(device->device, device->graphics_queue);
-
-  int width = 0, height = 0;
-
-  SampleContext ctx = {
-      .cmd = cmd_main,
-      .gpu = device,
-      .extent = main_win.swapchain.extent,
-      .pm = pm,
-      .pr = pr,
-      .rm = rm,
-      .cam = camera_init(main_win.swapchain.extent, 70),
-      .tq = transfer_init(device->device, device->transfer_queue, device->transfer_family, device->allocator, MIB(250),
-                          1),
-  };
-  cmd_begin(device->device, cmd_main);
-  transfer_on_new_frame(ctx.tq);
-  if (sample->init) {
-
-    sample->init(sample, &ctx);
-  }
-
-  NuklearBackend nuklear_ctx = nuklear_backend_init(ctx.gpu, ctx.rm, &debug_win);
-
-  cmd_end(device->device, cmd_main);
-  editor_pixel_editor ed = {};
-  editor_pixel_meta_main_init(&ed, debug_win.width, debug_win.height, 0);
-
-  sm_work(sm, &main_win.swapchain, 1, cmd_main.buffer, false, false);
-  transfer_submit_on_frame_end(ctx.tq);
-  vkDeviceWaitIdle(device->device);
-
-  double last_time = glfwGetTime();
-  bool is_paused = false;
-
-  ReadBackBuffer readback = {};
-  readback_init(&readback, ctx.rm, main_win.swapchain.extent);
-  // Initialization is now one line (plus cmd management)
-  // --- Main Loop ---
-  while (!glfwWindowShouldClose(main_win.raw_window)) {
-    glfwPollEvents();
-    double time_now = glfwGetTime();
-    double dt = time_now - last_time;
-    last_time = time_now;
-
-    input_update(&input);
-    input_update(&debug_input);
-
-    glfwGetFramebufferSize(main_win.raw_window, &width, &height);
-
-    // MINIMIZED WINDOW, MAIN WINDOW
-    while (width == 0 || height == 0) {
-      glfwWaitEvents();
-      glfwGetFramebufferSize(main_win.raw_window, &width, &height);
+    // If minimized, block until restored
+    while (w == 0 || h == 0) {
+        glfwWaitEvents();
+        glfwGetFramebufferSize(r->main_win.raw_window, &w, &h);
+        if (glfwWindowShouldClose(r->main_win.raw_window)) return false;
     }
 
-    // RESIZE HANDLING
-    if (main_win.swapchain.extent.height != height || main_win.swapchain.extent.width != width) {
-      vkDeviceWaitIdle(device->device);
-
-      VkExtent2D new_extent = {.width = width, .height = height};
-      // swapchain_resize(device, rm, &main_win.swapchain, &new_extent);
-      //  RESIZE DEBUG TOO
-
-      // Låt samplet veta att vi har ändrat storlek (fixa depth/render targets)
-      if (sample->on_resize) {
-        sample->on_resize(sample, &ctx);
-      }
-      continue;
+    // Handle Resize
+    if (r->main_win.swapchain.extent.width != (u32)w || r->main_win.swapchain.extent.height != (u32)h) {
+        vkDeviceWaitIdle(r->gpu->device);
+        // swapchain_resize(&r->main_win.swapchain, w, h); 
+        if (sample->on_resize) sample->on_resize(sample, &r->ctx);
     }
 
-    sm_begin_frame(sm);
-
-    if (input_key_pressed(&input, GLFW_KEY_P)) {
-      is_paused = !is_paused;
-      LOG_INFO("[Runner] Simulation %s", is_paused ? "PAUSED" : "RUNNING");
-      continue;
-    }
-
-    // CLICKING A PIXEL IN DEBUG WINDOW
-    if (input_button_pressed(&debug_input, GLFW_MOUSE_BUTTON_LEFT)) {
-      double x, y;
-      glfwGetCursorPos(debug_win.raw_window, &x, &y);
-      // This blocks the CPU/GPU, so only run ONCE per click
-    }
-
-    // START GPU FRAME
-    camera_update(&ctx.cam, main_win.raw_window, dt);
-    m_system_update();
-    rm_on_new_frame(rm);
-    transfer_on_new_frame(ctx.tq);
-
-    // AQUIRE SWAPCHAIN IMAGE
-    sm_acquire_swapchain(sm, &main_win.swapchain);
-    sm_acquire_swapchain(sm, &debug_win.swapchain);
-
-    ctx.swap_img = swapchain_get_image(&main_win.swapchain);
-
-    cmd_begin(device->device, cmd_main);
-    cmd_bind_bindless(cmd_main, rm, main_win.swapchain.extent);
-
-    nuklear_backend_new_frame(&nuklear_ctx);
-    editor_pixel_meta_main_append_test_data(&ed);
-
-    cmd_sync_image(cmd_main, rm, ctx.swap_img, STATE_COLOR, ACCESS_READ);
-
-    editor_pixel_meta_main_draw(&ed, nuklear_ctx.ctx);
-    if (sample->render) {
-
-      ResHandle main_img = swapchain_get_image(&main_win.swapchain);
-
-      RenderingBeginInfo main_begin = {.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                       .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-                                       .h = main_win.swapchain.extent.height,
-                                       .w = main_win.swapchain.extent.width,
-                                       .colors = &main_img,
-                                       .colors_count = 1};
-
-      sample->render(sample, &ctx);
-    }
-
-    nuklear_backend_render(&nuklear_ctx, cmd_main, ctx.gpu, &debug_win);
-
-    // ------------------------
-
-    // Transition: Render Target -> Present
-    // ImageBarrierInfo present_barrier = {.img_handle = swap_img,
-    //                                     .src_access = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
-    //                                     .src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-    //                                     .src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    //                                     .dst_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-    //                                     .dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
-    // rm_image_sync(rm, cmd.buffer, &present_barrier);
-    cmd_sync_image(cmd_main, rm, ctx.swap_img, STATE_PRESENT, ACCESS_READ);
-    cmd_end(device->device, cmd_main);
-
-    // Submit & Present
-    transfer_submit_on_frame_end(ctx.tq);
-    M_Swapchain swapchains[] = {main_win.swapchain, debug_win.swapchain};
-    sm_work(sm, swapchains, 2, cmd_main.buffer, true, true);
-
-    sm_present(sm, &debug_win.swapchain);
-    sm_present(sm, &main_win.swapchain);
-
-    sm_on_frame_end(sm);
-  }
-
-  vkDeviceWaitIdle(device->device);
-
-  if (sample->destroy) {
-    sample->destroy(sample);
-  }
-
-  // cmd_destroy(device->device, cmd); // Om du har en sådan funktion
+    return !glfwWindowShouldClose(r->main_win.raw_window);
 }
-static inline u32 f2u(float f) {
-  union {
-    float f;
-    u32 u;
-  } c;
-  c.f = f;
-  return c.u;
+
+/** * Phase 2: CPU Update
+ * Updates input, cameras, and engine systems.
+ */
+static void _update_systems(SampleRunner* r, double dt) {
+    input_update(&r->main_input);
+    input_update(&r->debug_input);
+
+    if (input_key_pressed(&r->main_input, GLFW_KEY_P)) {
+        r->is_paused = !r->is_paused;
+    }
+
+    if (!r->is_paused) {
+        camera_update(&r->ctx.cam, r->main_win.raw_window, dt);
+        m_system_update();
+        rm_on_new_frame(r->rm);
+        transfer_on_new_frame(r->ctx.tq);
+    }
+}
+
+/** * Phase 3: Command Recording
+ * Encapsulates the actual Vulkan command recording for the sample.
+ */
+static void _record_main_commands(SampleRunner* r, Sample* sample) {
+
+     cmd_begin(r->gpu->device, r->cmd_main);
+     //Submit Main Pass
+    VkSemaphore main_done = r->main_win.swapchain.sem_render_finished[r->main_win.swapchain.current_img_idx];
+    sm_add_signal(r->sm, main_done, 0, SM_STAGE_COLOR_ATTACHMENT_OUTPUT);
+    sm_add_signal(r->sm, nuklear_backend_get_wait_binary(&r->nuklear), 0, SM_STAGE_ALL_COMMANDS);
+   
+
+    cmd_bind_bindless(r->cmd_main, r->rm, r->main_win.swapchain.extent);
+
+    if (sample->render) {
+        // Transition to color attachment, render, then transition to present
+        cmd_sync_image(r->cmd_main, r->rm, r->ctx.swap_img, STATE_COLOR, ACCESS_READ);
+        sample->render(sample, &r->ctx);
+    }
+    
+    cmd_sync_image(r->cmd_main, r->rm, r->ctx.swap_img, STATE_PRESENT, ACCESS_READ);
+    //SET DEBUG SWAPCHAIN AS READ ONLY
+    cmd_sync_image(r->cmd_main, r->rm, swapchain_get_image(&r->debug_win.swapchain), STATE_SHADER, ACCESS_READ);
+
+    cmd_end(r->gpu->device, r->cmd_main);
+    sm_submit(r->sm, r->cmd_main.buffer, false);
+}
+
+/** * Phase 4: GPU Dispatch & Sync
+ * Manages the handshakes between Main Render, UI Render, and Swapchains.
+ */
+static void _record_debug_commands(SampleRunner* r) {
+   
+    cmd_begin(r->gpu->device, r->cmd_dbg);
+
+    //Submit UI Pass
+    VkSemaphore ui_done = nuklear_backend_render(&r->nuklear, &r->debug_win, r->gpu);
+
+    //Final Frame Synchronization
+    VkSemaphore debug_done = swapchain_get_render_done_semp(&r->debug_win.swapchain);
+    sm_add_wait(r->sm, ui_done, 0, SM_STAGE_COMPUTE_SHADER);
+    sm_add_signal(r->sm, debug_done, 0, SM_STAGE_COMPUTE_SHADER);
+    
+
+    cmd_sync_image(r->cmd_dbg, r->rm, swapchain_get_image(&r->debug_win.swapchain), STATE_PRESENT, ACCESS_READ);
+    cmd_end(r->gpu->device, r->cmd_dbg);
+    // Signals the timeline semaphore that the whole frame is finished
+    sm_submit(r->sm, r->cmd_dbg.buffer, true); 
+}
+
+/** * Phase 5: Presentation
+ * Actually sends the finished images to the monitors.
+ */
+static void _present_frame(SampleRunner* r) {
+    transfer_submit_on_frame_end(r->ctx.tq);
+    sm_present(r->sm, &r->debug_win.swapchain);
+    sm_present(r->sm, &r->main_win.swapchain);
+}
+
+// --- Main Runner Loop ---
+
+void run_sample(Sample* sample) {
+    // Initialization (Simplified)
+    SampleRunner r = {0};
+    r.gpu = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+    r.rm  = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
+    r.sm  = sm_init(r.gpu->device, r.gpu->graphics_queue);
+
+    window_init(&r.main_win, r.gpu, r.rm, 800, 600, "Main View", "MainSC");
+    window_init(&r.debug_win, r.gpu, r.rm, 800, 600, "Debug View", "DebugSC");
+    
+    input_init(&r.main_input, r.main_win.raw_window);
+    input_init(&r.debug_input, r.debug_win.raw_window);
+    
+    r.cmd_main = cmd_init(r.gpu->device, r.gpu->graphics_family);
+    r.cmd_dbg = cmd_init(r.gpu->device, r.gpu->graphics_family);
+
+    r.nuklear  = nuklear_backend_init(r.gpu, r.rm, &r.debug_win);
+
+    r.ctx = (SampleContext){
+        .cmd = r.cmd_main, .gpu = r.gpu, .rm = r.rm,
+        .extent = r.main_win.swapchain.extent,
+        .cam = camera_init(r.main_win.swapchain.extent, 70),
+        .tq = transfer_init(r.gpu->device, r.gpu->transfer_queue, r.gpu->transfer_family, r.gpu->allocator, MIB(250), 1),
+
+    };
+    r.ctx.pr = SYSTEM_GET(SYSTEM_TYPE_HOTRELOAD, M_HotReload);
+    r.ctx.gpu =  SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+    r.ctx.rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
+    r.ctx.pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
+
+    // Initial Sample Load
+    if (sample->init) {
+        cmd_begin(r.gpu->device, r.cmd_main);
+        transfer_on_new_frame(r.ctx.tq);
+        sample->init(sample, &r.ctx);
+        cmd_end(r.gpu->device, r.cmd_main);
+        sm_submit(r.sm, r.cmd_main.buffer, true);
+        vkDeviceWaitIdle(r.gpu->device);
+    }
+
+    r.last_time = glfwGetTime();
+    editor_pixel_editor editor = {};
+    editor_pixel_meta_main_init(&editor, r.debug_win.width, r.debug_win.height, NULL);
+
+    // --- The Clean Main Loop ---
+    while (_handle_lifecycle(&r, sample)) {
+        glfwPollEvents();
+        
+        double time_now = glfwGetTime();
+        double dt = time_now - r.last_time;
+        r.last_time = time_now;
+
+        _update_systems(&r, dt);
+        if (r.is_paused) continue;
+
+        // Start GPU Frame
+        sm_begin_frame(r.sm);
+
+        editor_pixel_meta_main_append_test_data(&editor);
+
+        
+        // Acquire both windows
+        sm_acquire_swapchain(r.sm, &r.main_win.swapchain, SM_STAGE_COMPUTE_SHADER);
+        sm_acquire_swapchain(r.sm, &r.debug_win.swapchain, SM_STAGE_COMPUTE_SHADER);
+        
+        r.ctx.swap_img = swapchain_get_image(&r.main_win.swapchain);
+
+        // DRAW DEBUG UI
+        nuklear_backend_new_frame(&r.nuklear);
+        struct nk_context* draw_ctx =  nuklear_backend_get_draw_ctx(&r.nuklear);
+        editor_pixel_meta_main_draw(&editor, draw_ctx);
+
+        _record_main_commands(&r, sample);
+
+        // Render DEBUG Window
+        _record_debug_commands(&r);
+
+        // Finish
+        _present_frame(&r);
+    }
+
+    // --- Cleanup ---
+    vkDeviceWaitIdle(r.gpu->device);
+    if (sample->destroy) sample->destroy(sample);
+    sm_destroy(r.sm);
 }

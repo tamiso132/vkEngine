@@ -2,6 +2,10 @@
 #pragma once
 #include "nuklear_backend.h"
 
+
+#include "thirdparty/nuklear/nuklear.h"
+
+
 /* ---------------- small vector types ---------------- */
 typedef struct editor_vec2 {
   float x, y;

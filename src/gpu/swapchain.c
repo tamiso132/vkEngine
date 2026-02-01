@@ -4,6 +4,7 @@
 #include "util.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <vulkan/vulkan_core.h>
 
 // --- Private Prototypes ---
 void swapchain_init(M_Swapchain *sc, VkSurfaceKHR surface, const char *name) {
@@ -47,7 +48,7 @@ void swapchain_init(M_Swapchain *sc, VkSurfaceKHR surface, const char *name) {
                                           .imageExtent = sc->extent,
                                           .imageArrayLayers = 1,
                                           .imageUsage =
-                                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                           .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
                                           .preTransform = caps.currentTransform,
                                           .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
@@ -70,9 +71,11 @@ void swapchain_init(M_Swapchain *sc, VkSurfaceKHR surface, const char *name) {
     snprintf(img_name, 64, "%s_Image_%d", name, i);
     RGImageInfo img_info = {.name = img_name,
                             .format = sc->format,
-                            .height = sc->extent.height,
-                            .width = sc->extent.width,
-                            .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT};
+                            .height = create_info.imageExtent.height,
+                            .width = create_info.imageExtent.width,
+                            .usage = create_info.imageUsage};
+    
+    vk_set_object_name(dev->device, VK_OBJECT_TYPE_IMAGE, (u64)vk_images[i], name);
     sc->images[i] = rm_import_image(rm, &img_info, vk_images[i], NULL);
   }
   free(vk_images);
@@ -89,6 +92,10 @@ void swapchain_init(M_Swapchain *sc, VkSurfaceKHR surface, const char *name) {
   for (u32 i = 0; i < sc->image_count; i++) {
     sc->sem_render_finished[i] = vk_create_semp_binary(dev->device, "Semaphore-RenderFinished");
   }
+}
+
+VkSemaphore swapchain_get_render_done_semp(M_Swapchain *sc){
+return sc->sem_render_finished[sc->current_img_idx];
 }
 
 ResHandle swapchain_get_image(M_Swapchain *sc) { return sc->images[sc->current_img_idx]; }

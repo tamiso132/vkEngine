@@ -61,13 +61,13 @@ Ticket transfer_push_upload(TransferQueue *transfer, M_Resource *rm, ResHandle h
     transfer->is_cmd_on = true;
   }
   cmd_buffer_copy(_get_frame(transfer).cmd, rm, transfer->allocator, handle, slice);
-  return sm_get_cpu_ticket(transfer->submit);
+  return sm_get_timeline_cpu(transfer->submit);
 }
 
 void transfer_on_new_frame(TransferQueue *transfer) {
   u32 old_frame_index = transfer->frame_index;
   transfer->frame_index = (old_frame_index + 1) % transfer->max_frames_in_flight;
-  if (sm_get_gpu_ticket(transfer->submit) >= _get_frame(transfer).submit_signal) {
+  if (sm_get_timeline_gpu(transfer->submit) >= _get_frame(transfer).submit_signal) {
     cmd_begin(transfer->device, _get_frame(transfer).cmd);
     transfer->is_cmd_on = true;
 
@@ -76,12 +76,13 @@ void transfer_on_new_frame(TransferQueue *transfer) {
     transfer->in_flight = false;
     transfer->is_frame_started = true;
     return;
+  } else {
+    // RETRY FRAME NEXT TICK
+    transfer->frame_index = (old_frame_index - 1) % transfer->max_frames_in_flight;
   }
 }
 
-Ticket transfer_get_current_ticket_completed(TransferQueue *transfer) {
-  return sm_get_gpu_ticket(transfer->submit);
-}
+Ticket transfer_get_current_ticket_completed(TransferQueue *transfer) { return sm_get_timeline_gpu(transfer->submit); }
 
 void transfer_submit_on_frame_end(TransferQueue *transfer) {
 
@@ -94,10 +95,8 @@ void transfer_submit_on_frame_end(TransferQueue *transfer) {
   sgr_flush(transfer->staging_ring, transfer->frame_index);
 
   transfer->frames[transfer->frame_index].submit_signal =
-      sm_work(transfer->submit, NULL, 0, _get_frame(transfer).cmd.buffer, true, true);
+      sm_submit(transfer->submit, _get_frame(transfer).cmd.buffer, true);
 
-
-  sm_on_frame_end(transfer->submit);
   transfer->in_flight = true;
   transfer->is_frame_started = false;
 }

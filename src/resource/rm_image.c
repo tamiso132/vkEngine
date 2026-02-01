@@ -3,6 +3,7 @@
 #include "resource/resmanager.h"
 #include "rm_internal.h"
 #include "util.h"
+#include <vulkan/vulkan_core.h>
 
 // --- Private Prototypes ---
 static void _create_view(M_GPU *gpu, RImage *image);
@@ -155,6 +156,8 @@ static void _create_view(M_GPU *gpu, RImage *image) {
           },
   };
   vk_check(vkCreateImageView(gpu->device, &viewInfo, NULL, &image->view));
+
+  vk_set_object_name(gpu->device, VK_OBJECT_TYPE_IMAGE_VIEW, (u64)image->view, "View-Swapchain");
 }
 
 static VkComponentMapping _vk_component_mapping(void) {

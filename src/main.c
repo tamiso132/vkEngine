@@ -1,17 +1,13 @@
 #define GLFW_INCLUDE_VULKAN
 #define VK_NO_PROTOTYPES
-#define CLAY_IMPLEMENTATION
 
-#define NK_INCLUDE_FIXED_TYPES
-#define NK_INCLUDE_STANDARD_IO
-#define NK_INCLUDE_STANDARD_VARARGS
-#define NK_INCLUDE_DEFAULT_ALLOCATOR
-#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
-#define NK_INCLUDE_FONT_BAKING
-#define NK_INCLUDE_DEFAULT_FONT
-#define NK_IMPLEMENTATION
-#define NK_GLFW_VULKAN_IMPLEMENTATION
-#include "thirdparty/nuklear/nuklear_glfw_vulkan.in.h"
+#include <volk.h>
+
+#include <GLFW/glfw3.h>
+
+
+
+
 
 #include "common.h"
 #include "filewatch.h"
@@ -19,7 +15,6 @@
 #include "raytrace_sample.h"
 #include "submit_manager.h"
 
-#include <GLFW/glfw3.h>
 #include <stdio.h>
 #include <stdlib.h>
 

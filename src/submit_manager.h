@@ -4,22 +4,28 @@
 
 typedef struct M_Submit M_Submit;
 
-// PUBLIC FUNCTIONS
-void sm_acquire_swapchain(M_Submit *mgr, M_Swapchain *swapchain);
-void sm_add_signal_binary(M_Submit *mgr, VkSemaphore sem, VkPipelineStageFlags2 stageMask);
-void sm_add_signal_timeline(M_Submit *mgr, VkSemaphore timeline, u64 value, VkPipelineStageFlags2 stageMask);
-void sm_add_wait_binary(M_Submit *mgr, VkSemaphore sem, VkPipelineStageFlags2 stageMask);
+typedef enum SmStage {
+  SM_STAGE_NONE = 0,
+  SM_STAGE_ALL_COMMANDS,
+  SM_STAGE_COLOR_ATTACHMENT_OUTPUT,
+  SM_STAGE_COMPUTE_SHADER,
+  SM_STAGE_ALL_TRANSFER,
+  SM_STAGE_VERTEX_INPUT,
+  SM_STAGE_FRAGMENT_SHADER,
+  SM_STAGE_EARLY_FRAGMENT_TESTS,
+} SmStage;
 
-void sm_add_wait_timeline(M_Submit *mgr, VkSemaphore timeline, u64 value, VkPipelineStageFlags2 stageMask);
+// PUBLIC FUNCTIONS
+void sm_acquire_swapchain(M_Submit *mgr, M_Swapchain *swp, SmStage wait_stage);
+void sm_add_signal(M_Submit *mgr, VkSemaphore sem, u64 val, SmStage stage);
+void sm_add_wait(M_Submit *mgr, VkSemaphore sem, u64 val, SmStage stage);
 void sm_begin_frame(M_Submit *mgr);
-void sm_clear_extra_submit(M_Submit *mgr);
-u64 sm_get_cpu_ticket(M_Submit *mgr);
-u64 sm_get_gpu_ticket(M_Submit *mgr);
+void sm_destroy(M_Submit *mgr);
+u64 sm_get_timeline_cpu(M_Submit *submit);
+u64 sm_get_timeline_gpu(M_Submit *submit);
 M_Submit *sm_init(VkDevice dev, VkQueue queue);
-bool sm_is_done(M_Submit *mgr, u64 timeline_index);
-void sm_on_frame_end(M_Submit *mgr);
-void sm_present(M_Submit *mgr, M_Swapchain *swapchain);
-void sm_wait(M_Submit *mgr, u64 timeline_index);
-u64 sm_work(M_Submit *mgr, M_Swapchain *swapchains, u32 swapchain_count, VkCommandBuffer cmd, bool is_last_in_frame, bool is_first_submit);
-void sm_work_manual(M_Submit *mgr, VkCommandBuffer cmd);
+void sm_present(M_Submit *mgr, M_Swapchain *swp);
+u64 sm_submit(M_Submit *mgr, VkCommandBuffer cmd, bool is_last_in_frame);
+u64 sm_submit_empty(M_Submit *mgr, bool is_last_in_frame);
+void sm_wait_idle(M_Submit *mgr);
 // END PUBLIC FUNCTIONS

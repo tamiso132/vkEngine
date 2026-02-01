@@ -1,8 +1,8 @@
 #pragma once
-// PUBLIC FUNCTIONS
-void run_sample(Sample *sample);
+
 #include "sample_interface.h"
 
+// PUBLIC FUNCTIONS
 void run_sample(Sample *sample);
 
 // END PUBLIC FUNCTIONS

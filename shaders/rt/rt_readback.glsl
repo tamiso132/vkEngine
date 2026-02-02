@@ -2,10 +2,15 @@
 // TLV (Type-Length-Value) Logging System
 // ------------------------------------------------------------
 
+#extension GL_EXT_nonuniform_qualifier : require
+
+
 #ifndef RT_DEBUG_PIXEL_LOG_GLSL
 #define RT_DEBUG_PIXEL_LOG_GLSL
 
 #include "rt_shared.glsl"
+
+
 
 #ifndef DBG_ENABLE
     #define DBG_ENABLE 1
@@ -16,6 +21,10 @@
 #endif
 
 #if DBG_ENABLE
+
+layout(set = 0, binding = BINDING_STORAGE_BUFFER) writeonly buffer ReadBackBuffer {
+        uint data[];
+} _dbg_pixel_logs[];
 
 // Internal state (Renamed to avoid reserved __ identifier warnings)
 uint  _dbgi_local_buf[DBG_MAX_WORDS];
@@ -45,6 +54,7 @@ void _dbgi_push_tlv(uint header, uint len, uint d[4]) {
 
 // --- Internal Writers ---
 
+
 void _dbgi_f32(uint ev, uint key, float v) {
     uint d[4] = uint[4](floatBitsToUint(v), 0u, 0u, 0u);
     _dbgi_push_tlv(_dbgi_pack(ev, key, DBG_T_F32, 1u), 1u, d);
@@ -68,7 +78,7 @@ void _dbgi_vec4(uint ev, uint key, vec4 v) {
 
 void _dbgi_commit(PushRay p) {
     // Component-wise check to avoid the structure comparison error
-    if (_dbgi_coords.x != p.mouse_px.x || _dbgi_coords.y != p.mouse_px.y) return;1
+    //if (_dbgi_coords.x != p.mouse_px.x || _dbgi_coords.y != p.mouse_px.y) return;
 
     // Use current extent to find pixel address
     uint pixIdx = _dbgi_coords.x + _dbgi_coords.y * uint(p.extent.x);
@@ -77,7 +87,7 @@ void _dbgi_commit(PushRay p) {
     // Use the index provided in the push constants for bindless access
 
     // [0] = Count, [1..N] = Data
-    _dbg_pixel_logs[nonuniformEXT(p.readback_idx)].data[base] = _dbgi_cursor;
+    _dbg_pixel_logs[nonuniformEXT(p.readback_idx)].data[base] = 1;
 
     for (uint i = 0u; i < _dbgi_cursor; i++) {
         _dbg_pixel_logs[nonuniformEXT(p.readback_idx)].data[base + 1u + i] = _dbgi_local_buf[i];

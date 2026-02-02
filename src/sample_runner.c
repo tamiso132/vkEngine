@@ -1,5 +1,4 @@
 // src/sample_runner.c
-#include "GLFW/glfw3.h"
 #include "resource/resmanager.h"
 #include "sample_interface.h"
 
@@ -43,6 +42,8 @@ typedef struct SampleRunner {
     CmdBuffer cmd_main;
     CmdBuffer cmd_dbg;
     SampleContext ctx;
+
+    ReadBackBuffer read_back;
     
     bool is_paused;
     double last_time;
@@ -88,6 +89,7 @@ static void _update_systems(SampleRunner* r, double dt) {
     if(input_mouse_pressed(&r->debug_input, GLFW_MOUSE_BUTTON_LEFT)){
         ivec2 mouse_pos = {};
         input_get_mouse_position(&r->debug_input, r->ctx.dbg_mouse_pos);
+        
     }
 
     if (!r->is_paused) {
@@ -112,6 +114,7 @@ static void _record_main_commands(SampleRunner* r, Sample* sample) {
     if (sample->render) {
         // Transition to color attachment, render, then transition to present
         cmd_sync_image(r->cmd_main, r->rm, r->ctx.swap_img, STATE_COLOR, ACCESS_READ);
+        cmd_sync_buffer(r->cmd_main, r->rm, readback_get_handle(&r->read_back), STATE_SHADER, ACCESS_WRITE);
         sample->render(sample, &r->ctx);
     }
     
@@ -193,7 +196,7 @@ void run_sample(Sample* sample) {
     editor_pixel_editor editor = {};
     editor_pixel_meta_main_init(&editor, r.debug_win.width, r.debug_win.height, NULL);
     ReadBackBuffer readback = {};
-    readback_init(&readback, r.rm,  r.debug_win.swapchain.extent);
+    readback_init(&r.read_back, r.rm,  r.debug_win.swapchain.extent);
 
     while (_handle_lifecycle(&r, sample)) {
         glfwPollEvents();
@@ -210,7 +213,8 @@ void run_sample(Sample* sample) {
 
 
         //TODO: move later
-        readback_write_to_editor(&readback, &editor);
+        readback_write_to_editor(&r.read_back, &editor);
+
         r.ctx.readback_idx = readback_get_push_id(&readback, r.rm);
         
         // Acquire both windows

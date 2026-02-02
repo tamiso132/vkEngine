@@ -197,7 +197,6 @@ static FileHandle _load_file(M_File *fm, const char *path) {
     vec_push(&fm->entries, &e);
     
     uint32_t new_index = (uint32_t)fm->entries.length - 1;
-    LOG_INFO("File System: Successfully loaded %s at index %u", path, new_index);
     
     return (FileHandle){.index = new_index};
 }

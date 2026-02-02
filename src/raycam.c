@@ -1,15 +1,12 @@
 
 // camera.h
 #pragma once
-#include "GLFW/glfw3.h"
 #include "cglm/util.h"
 #include "common.h"
-#include <X11/X.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <time.h>
 
-#include "gpu/gpu.h"
 #include "raycam.h"
 #include "system_manager.h"
 

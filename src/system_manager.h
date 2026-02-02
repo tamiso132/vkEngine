@@ -1,3 +1,5 @@
+#pragma once
+
 #include "common.h"
 
 /** @brief Typedef for a system initialize function pointer. */

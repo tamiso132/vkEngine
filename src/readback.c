@@ -1,5 +1,7 @@
 #include "readback.h"
+#include "common.h"
 #include "debug_ui/debug_inspector.h"
+#include "resource/resmanager.h"
 #include "util.h"
 
 typedef u32 uvec4[4];
@@ -26,6 +28,9 @@ void readback_init(ReadBackBuffer *self, M_Resource *rm, VkExtent2D extent) {
 }
 
 
+ResHandle readback_get_handle(ReadBackBuffer* self){
+  return self->buffer;
+}
 
 u32 readback_get_push_id(ReadBackBuffer *self, M_Resource *rm) {
   return rm_get_buffer(rm, self->buffer)->bindlessIndex;
@@ -34,6 +39,7 @@ u32 readback_get_push_id(ReadBackBuffer *self, M_Resource *rm) {
 static void decode_record_to_editor(editor_pixel_editor *ed, uint32_t px, uint32_t py, const u32 *data) {
  
 u32 record_count = data[0];
+u32 record_count_2 = data[1];
 u32 data_offset_idx = 1;
 for(u32 i = 0; i < record_count; i++){
     u32 header = data[data_offset_idx];
@@ -115,6 +121,10 @@ for(u32 i = 0; i < record_count; i++){
 }
 
 void readback_write_to_editor(ReadBackBuffer *self, editor_pixel_editor *editor) {
+ M_Resource* rm =  SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
+  M_GPU* dev =  SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+  RBuffer* buffer = rm_get_buffer(rm, self->buffer);
+  vmaInvalidateAllocation(dev->allocator,buffer->alloc, 0, VK_WHOLE_SIZE);
   for (u32 y = 0; y < self->extent.height; y++) {
     for (u32 x = 0; x < self->extent.width; x++) {
       u32 offset = self->extent.width * y + x; 

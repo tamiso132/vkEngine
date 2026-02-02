@@ -16,9 +16,8 @@
 typedef struct {
   const char *app_name;
   bool enable_validation;
-  
-} GPUInstanceInfo;
 
+} GPUInstanceInfo;
 
 // --- The Main Device Context ---
 typedef struct M_GPU {
@@ -40,7 +39,7 @@ typedef struct M_GPU {
   VkCommandPool imm_cmd_pool;
   VkCommandBuffer imm_cmd_buffer;
   VkFence imm_fence;
-}M_GPU;
+} M_GPU;
 
 typedef struct GPUSystemInfo {
   GPUInstanceInfo info;

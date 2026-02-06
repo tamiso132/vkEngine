@@ -15,13 +15,11 @@ void chunk_init(ChunkInput input, Vector global_coords) {
     u32 chunk_idx = *VEC_AT(&input.indices, i, u32);
     ChunkTree *chunk = VEC_AT(&input.trees, chunk_idx, ChunkTree);
     int *chunk_coord = (int *)vec_at(&global_coords, i);
-
     memcpy(chunk->min_corner, chunk_coord, sizeof(ivec3));
     vec_init(&chunk->view->p_res_data[CHUNK_RES_NODES], sizeof(Node), NULL);
     vec_init(&chunk->view->p_res_data[CHUNK_RES_CHILDREN], sizeof(ChildIndex), NULL);
     vec_init(&chunk->view->p_res_data[CHUNK_RES_PALETTE], sizeof(u32), NULL);
     vec_init(&chunk->view->p_res_data[CHUNK_RES_LEAF_MATS], sizeof(u16), NULL);
-
 
     // PUSH EMPTY ROOT
     vec_push(&chunk->view->p_res_data[CHUNK_RES_NODES], &(Node){.mask = 0});

@@ -4,6 +4,7 @@
 #include "resource/resmanager.h"
 #include "rm_internal.h"
 #include "util.h"
+#include <vulkan/vulkan_core.h>
 
 ResHandle rm_buffer_create(M_Resource *rm, M_GPU *gpu, RGBufferInfo *info) {
   if (info->capacity == 0)
@@ -56,6 +57,7 @@ ResHandle rm_buffer_create(M_Resource *rm, M_GPU *gpu, RGBufferInfo *info) {
 
   VkResult r = vmaCreateBuffer(gpu->allocator, &ci, &ai, &buffer.handle, &buffer.alloc, NULL);
   vk_check(r);
+  vk_set_object_name(gpu->device, VK_OBJECT_TYPE_BUFFER, (u64)buffer.handle, buffer.name);
 
   u32 id = (u32)vec_len(&rm->resources[RES_TYPE_BUFFER]);
   ResHandle h = {.id = id, .res_type = RES_TYPE_BUFFER};
@@ -69,6 +71,10 @@ ResHandle rm_buffer_create(M_Resource *rm, M_GPU *gpu, RGBufferInfo *info) {
     return h;
 
   rm_bindless_add(rm, h, NULL, &descriptorInfo);
+
+ // LOG_INFO_TAG("Buffer","Created A Buffer: %s with capacity(%d)", buffer.name, buffer.capacity);
+
+  
 
   return h;
 }

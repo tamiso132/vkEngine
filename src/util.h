@@ -8,12 +8,39 @@
 #include <time.h>
 #include <volk.h>
 
+extern FILE* g_log_file;
+
+#ifdef LOG_TO_FILE
+  static inline FILE* _log_stream(void) {
+    if (!g_log_file) {
+      g_log_file = fopen("log.txt", "w");
+      if (!g_log_file) g_log_file = stderr;
+      else setvbuf(g_log_file, NULL, _IOLBF, 0); // line-buffered (or use _IONBF)
+    }
+    return g_log_file;
+  }
+  #define LOG_STREAM _log_stream()
+#else
+  #define LOG_STREAM stdout
+#endif
+
+void __log_init_file();
+
+
 // LOGGING
-#define CLR_RESET "\033[0m"
-#define CLR_RED "\033[0;31m"
-#define CLR_YLW "\033[0;33m"
-#define CLR_CYN "\033[0;36m"
-#define CLR_GRY "\033[0;90m"
+#ifdef LOG_TO_FILE
+  #define CLR_RESET ""
+  #define CLR_RED   ""
+  #define CLR_YLW   ""
+  #define CLR_CYN   ""
+  #define CLR_GRY   ""
+#else
+  #define CLR_RESET "\033[0m"
+  #define CLR_RED   "\033[0;31m"
+  #define CLR_YLW   "\033[0;33m"
+  #define CLR_CYN   "\033[0;36m"
+  #define CLR_GRY   "\033[0;90m"
+#endif
 
 // Use &__FILE__[offset] instead of __FILE__ + offset
 #define RELATIVE_FILE                                                                                                  \
@@ -21,8 +48,9 @@
 
 #define LOG_MESSAGE(color, label, fmt, ...)                                                                            \
   do {                                                                                                                 \
-    fprintf(stdout, CLR_GRY "%s:%d " CLR_RESET color "%-5s" CLR_RESET " " fmt "\n", RELATIVE_FILE, __LINE__, label,    \
+    fprintf(LOG_STREAM, CLR_GRY "%s:%d " CLR_RESET color "%-5s" CLR_RESET " " fmt "\n", RELATIVE_FILE, __LINE__, label,    \
             ##__VA_ARGS__);                                                                                            \
+    fflush(LOG_STREAM);    \
   } while (0)
 
 #define LOG_TRACE(fmt, ...) LOG_MESSAGE(CLR_GRY, "TRACE", fmt, ##__VA_ARGS__)
@@ -30,6 +58,9 @@
 #define LOG_WARN(fmt, ...) LOG_MESSAGE(CLR_YLW, "WARN", fmt, ##__VA_ARGS__)
 #define LOG_ERROR(fmt, ...) LOG_MESSAGE(CLR_RED, "ERROR", fmt, ##__VA_ARGS__)
 #define NOT_IMPLEMENTED() {LOG_MESSAGE(CLR_RED, "ERROR", "NOT IMPLEMENTED"); abort();}
+
+#define LOG_INFO_TAG(TAG, FMT, ...) \
+    LOG_INFO("[%s] " FMT, TAG, ##__VA_ARGS__)
 
 #define defer(end) for (int _i = 0; _i == 0; (_i = 1), end)
 

@@ -24,6 +24,7 @@ SystemFunc rm_system_get_func() {
 
 ResHandle rm_create_buffer(M_Resource *rm, RGBufferInfo *info) {
   M_GPU *gpu = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+  
   return rm_buffer_create(rm, gpu, info);
 }
 

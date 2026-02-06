@@ -28,6 +28,8 @@ add_sources(
 
     readback.c
     input.c
+
+    raycam.c
 )
 
 include_this()

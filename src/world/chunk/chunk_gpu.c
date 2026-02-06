@@ -46,8 +46,8 @@ void chunk_gpu_init(ChunkGPUInput input, M_Resource *rm, TransferQueue *transfer
 
     async_init(rm, &node_info, &chunk->buffers[CHUNK_RES_NODES]);
     async_init(rm, &child_info, &chunk->buffers[CHUNK_RES_CHILDREN]);
-    async_init(rm, &node_info, &chunk->buffers[CHUNK_RES_PALETTE]);
-    async_init(rm, &node_info, &chunk->buffers[CHUNK_RES_LEAF_MATS]);
+    async_init(rm, &pal_info, &chunk->buffers[CHUNK_RES_PALETTE]);
+    async_init(rm, &leaf_info, &chunk->buffers[CHUNK_RES_LEAF_MATS]);
 
     chunk->is_init = true;
   }

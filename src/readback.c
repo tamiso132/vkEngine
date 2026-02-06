@@ -2,6 +2,7 @@
 #include "common.h"
 #include "debug_ui/debug_inspector.h"
 #include "resource/resmanager.h"
+#include "rt/rt_shared.glsl"
 #include "util.h"
 
 typedef u32 uvec4[4];
@@ -15,7 +16,7 @@ void readback_init(ReadBackBuffer *self, M_Resource *rm, VkExtent2D extent) {
   u32 tot_pixels = extent.height * extent.width;
 
   RGBufferInfo info = {.capacity = sizeof(u32) * tot_pixels * DBG_MAX_WORDS,
-                       .mem = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                       .mem = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                        .queue_type = BUFFER_QUEUE_GRAPHIC,
                        .name = "Buffer-Readback",
                        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT};
@@ -25,6 +26,7 @@ void readback_init(ReadBackBuffer *self, M_Resource *rm, VkExtent2D extent) {
   RBuffer *buffer = rm_get_buffer(rm, self->buffer);
 
   vmaMapMemory(dev->allocator, buffer->alloc, (void **)&self->p_cpu);
+  memset(self->p_cpu, 0, tot_pixels * sizeof(u32) * DBG_MAX_WORDS);
 }
 
 
@@ -35,11 +37,10 @@ ResHandle readback_get_handle(ReadBackBuffer* self){
 u32 readback_get_push_id(ReadBackBuffer *self, M_Resource *rm) {
   return rm_get_buffer(rm, self->buffer)->bindlessIndex;
 }
-
+// return ((ev & 0xFFu) << 24u) | ((key & 0xFFu) << 16u) | ((type & 0xFFu) << 8u) | (len & 0xFFu);
 static void decode_record_to_editor(editor_pixel_editor *ed, uint32_t px, uint32_t py, const u32 *data) {
  
 u32 record_count = data[0];
-u32 record_count_2 = data[1];
 u32 data_offset_idx = 1;
 for(u32 i = 0; i < record_count; i++){
     u32 header = data[data_offset_idx];
@@ -127,7 +128,8 @@ void readback_write_to_editor(ReadBackBuffer *self, editor_pixel_editor *editor)
   vmaInvalidateAllocation(dev->allocator,buffer->alloc, 0, VK_WHOLE_SIZE);
   for (u32 y = 0; y < self->extent.height; y++) {
     for (u32 x = 0; x < self->extent.width; x++) {
-      u32 offset = self->extent.width * y + x; 
+      u32 offset = self->extent.width * y * + x; 
+      offset *= DBG_MAX_WORDS;
       decode_record_to_editor(editor, x, y, &self->p_cpu[offset]);
     }
   }

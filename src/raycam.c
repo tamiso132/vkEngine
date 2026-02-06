@@ -1,6 +1,5 @@
 
 // camera.h
-#pragma once
 #include "cglm/util.h"
 #include "common.h"
 #include <stdint.h>
@@ -12,6 +11,8 @@
 
 #include "shaders/rt/rt_shared.glsl"
 #include "util.h"
+
+#include "raycam.h"
 
 typedef struct {
   int key;

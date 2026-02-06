@@ -26,10 +26,11 @@ layout(set = 0, binding = BINDING_STORAGE_BUFFER) writeonly buffer ReadBackBuffe
         uint data[];
 } _dbg_pixel_logs[];
 
-// Internal state (Renamed to avoid reserved __ identifier warnings)
 uint  _dbgi_local_buf[DBG_MAX_WORDS];
 uint  _dbgi_cursor = 0u;
+uint _dbgi_records_count = 0u;
 uvec2 _dbgi_coords = uvec2(0u);
+
 
 /**
  * Header Packing: [Event:8][Key:8][Type:8][Length:8]
@@ -41,9 +42,11 @@ uint _dbgi_pack(uint ev, uint key, uint type, uint len) {
 void _dbgi_begin(uvec2 px) {
     _dbgi_coords = px;
     _dbgi_cursor = 0u;
+    _dbgi_records_count = 0;
 }
 
 void _dbgi_push_tlv(uint header, uint len, uint d[4]) {
+    _dbgi_records_count = _dbgi_records_count +1;
     if (_dbgi_cursor + 1u + len <= DBG_MAX_WORDS) {
         _dbgi_local_buf[_dbgi_cursor++] = header;
         for (uint i = 0u; i < len; ++i) {
@@ -87,7 +90,7 @@ void _dbgi_commit(PushRay p) {
     // Use the index provided in the push constants for bindless access
 
     // [0] = Count, [1..N] = Data
-    _dbg_pixel_logs[nonuniformEXT(p.readback_idx)].data[base] = 1;
+    _dbg_pixel_logs[nonuniformEXT(p.readback_idx)].data[base] = _dbgi_records_count;
 
     for (uint i = 0u; i < _dbgi_cursor; i++) {
         _dbg_pixel_logs[nonuniformEXT(p.readback_idx)].data[base + 1u + i] = _dbgi_local_buf[i];

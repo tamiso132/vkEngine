@@ -12,6 +12,7 @@
 #include "resource/resmanager.h"
 #include "rt/rt_shared.glsl"
 #include "transfer_queue.h"
+#include "util.h"
 #include "vector.h"
 
 #include "internal.h"
@@ -190,12 +191,14 @@ void world_gpu_tick(World *w, CmdBuffer main_cmd, M_Resource *rm, TransferQueue 
   //  check uploaded list, then swap all of them.
   if (w->gpu_ctx.is_pending) {
     ChunkGPUInput swap_input = {.chunk = w->gpu_ctx.chunks, .indices = w->gpu_ctx.uploaded_idxs};
+    LOG_INFO_TAG("World", "Swap buffers count: %ld", swap_input.indices.length);
     chunk_gpu_swap_buffers(swap_input, rm);
 
     GridInput grid_input = {.slots = w->grid_ctx->grid_slots};
     glm_ivec3_copy(w->min_corner, grid_input.min_corner);
 
     if (w->gpu_ctx.uploaded_idxs.length > 0) {
+      LOG_INFO_TAG("World", "Rebuild Descriptor Buffer");
       _rebuild_descriptor_buffer(w, rm, w->grid_ctx->descriptor_slots);
       cmd_buffer_upload(main_cmd, dev, rm, w->gpu_ctx.descriptor_res, w->grid_ctx->descriptor_slots,
                         sizeof(w->grid_ctx->descriptor_slots));
@@ -282,6 +285,8 @@ static void _world_async_upload_gpu(World *w, M_Resource *rm, TransferQueue *tra
   // TODO, maybe memset
   ChunkUploadView views[gpu_ctx->need_transfer_idx.length];
   chunk_get_upload_view(chunk_input_view, views);
+
+  LOG_INFO_TAG("World", "Load %ld chunks",gpu_ctx->need_transfer_idx.length);
   chunk_gpu_init(gpu_input, rm, transfer, views);
 
   // ok to upload zeros; first world_gpu_tick will rebuild real values
@@ -289,6 +294,7 @@ static void _world_async_upload_gpu(World *w, M_Resource *rm, TransferQueue *tra
   // move the indices to uploaded list
   // TODO, continue if same indices already exist
   // maybe use a bitmask, to chec
+  
   vec_copy(&gpu_ctx->need_transfer_idx, &gpu_ctx->uploaded_idxs);
   vec_clear(&gpu_ctx->need_transfer_idx);
 

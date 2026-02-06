@@ -3,6 +3,14 @@
 #include "gpu/pipeline.h"
 #include "gpu/swapchain.h"
 
+FILE* g_log_file = NULL;
+
+
+void __log_init_file(){
+      g_log_file = fopen("log.txt", "w");
+      if (!g_log_file) g_log_file = stderr;
+      else setvbuf(g_log_file, NULL, _IOLBF, 0); // line-buffered (or use _IONBF)
+}
 // --- Private Prototypes ---
 static const char *vk_result_to_string(VkResult r);
 

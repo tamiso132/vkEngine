@@ -42,7 +42,7 @@ void rm_retire_on_new_frame(M_Resource *rm, M_GPU *gpu, u32 frames_in_flight) {
   // anything retired <= (frame_count - frames_in_flight) is safe
   u32 safe_frame = (rm->frame_count > frames_in_flight) ? (rm->frame_count - frames_in_flight) : 0;
   if (rm->retired_res.length > 0)
-    LOG_INFO("Retire Buffers: {%ld}", rm->retired_res.length);
+    LOG_INFO_TAG("ResourceManager","Retire Buffers Count: {%ld}", rm->retired_res.length);
   for (int i = 0; i < vec_len(&rm->retired_res); i++) {
     RetiredRes *r = VEC_AT(&rm->retired_res, i, RetiredRes);
 

@@ -22,7 +22,6 @@
 // NOTE: Including a .c is usually a smell (ODR / build hygiene).
 // Prefer `#include "raycam.h"` and compile raycam.c separately.
 // Keeping your existing include here so this file remains drop-in.
-#include "raycam.c"
 
 
 // --- Types ---
@@ -182,21 +181,26 @@ void run_sample(Sample* sample) {
     r.ctx.rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
     r.ctx.pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
 
-    // Initial Sample Load
-    if (sample->init) {
-        cmd_begin(r.gpu->device, r.cmd_main);
-        transfer_on_new_frame(r.ctx.tq);
-        sample->init(sample, &r.ctx);
-        cmd_end(r.gpu->device, r.cmd_main);
-        sm_submit(r.sm, r.cmd_main.buffer, true);
-        vkDeviceWaitIdle(r.gpu->device);
-    }
+
+
+    cmd_begin(r.gpu->device, r.cmd_main);
 
     r.last_time = glfwGetTime();
     editor_pixel_editor editor = {};
     editor_pixel_meta_main_init(&editor, r.debug_win.width, r.debug_win.height, NULL);
     ReadBackBuffer readback = {};
     readback_init(&r.read_back, r.rm,  r.debug_win.swapchain.extent);
+
+    // Initial Sample Load
+    if (sample->init) {
+        transfer_on_new_frame(r.ctx.tq);
+        sample->init(sample, &r.ctx);
+    }
+    
+    
+    cmd_end(r.gpu->device, r.cmd_main);
+    sm_submit(r.sm, r.cmd_main.buffer, true);
+    vkDeviceWaitIdle(r.gpu->device);
 
     while (_handle_lifecycle(&r, sample)) {
         glfwPollEvents();

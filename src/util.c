@@ -3,16 +3,18 @@
 #include "gpu/pipeline.h"
 #include "gpu/swapchain.h"
 
-FILE* g_log_file = NULL;
+FILE *g_log_file = NULL;
 
-
-void __log_init_file(){
-      g_log_file = fopen("log.txt", "w");
-      if (!g_log_file) g_log_file = stderr;
-      else setvbuf(g_log_file, NULL, _IOLBF, 0); // line-buffered (or use _IONBF)
-}
 // --- Private Prototypes ---
 static const char *vk_result_to_string(VkResult r);
+
+void __log_init_file() {
+  g_log_file = fopen("log.txt", "w");
+  if (!g_log_file)
+    g_log_file = stderr;
+  else
+    setvbuf(g_log_file, NULL, _IOLBF, 0); // line-buffered (or use _IONBF)
+}
 
 void vk_check(VkResult err) {
   if (err != VK_SUCCESS) {
@@ -33,7 +35,7 @@ VkSemaphore vk_create_semp_timeline(VkDevice device, const char *name) {
   return timeline;
 }
 
-void vk_set_image_name(VkDevice device, VkImage image, const char* name){
+void vk_set_image_name(VkDevice device, VkImage image, const char *name) {
   vk_set_object_name(device, VK_OBJECT_TYPE_IMAGE, (u64)image, name);
 }
 

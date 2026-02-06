@@ -10,12 +10,14 @@ typedef u32 uvec2[2];
 
 // --- Private Prototypes ---
 
+#define DBG_MAX (DBG_MAX_WORDS + 1)
+
 void readback_init(ReadBackBuffer *self, M_Resource *rm, VkExtent2D extent) {
 
   M_GPU *dev = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
   u32 tot_pixels = extent.height * extent.width;
-
-  RGBufferInfo info = {.capacity = sizeof(u32) * tot_pixels * DBG_MAX_WORDS,
+//96307200
+  RGBufferInfo info = {.capacity = sizeof(u32) * tot_pixels * DBG_MAX,
                        .mem = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                        .queue_type = BUFFER_QUEUE_GRAPHIC,
                        .name = "Buffer-Readback",
@@ -26,7 +28,7 @@ void readback_init(ReadBackBuffer *self, M_Resource *rm, VkExtent2D extent) {
   RBuffer *buffer = rm_get_buffer(rm, self->buffer);
 
   vmaMapMemory(dev->allocator, buffer->alloc, (void **)&self->p_cpu);
-  memset(self->p_cpu, 0, tot_pixels * sizeof(u32) * DBG_MAX_WORDS);
+  memset(self->p_cpu, 0, tot_pixels * sizeof(u32) * DBG_MAX);
 }
 
 
@@ -128,8 +130,8 @@ void readback_write_to_editor(ReadBackBuffer *self, editor_pixel_editor *editor)
   vmaInvalidateAllocation(dev->allocator,buffer->alloc, 0, VK_WHOLE_SIZE);
   for (u32 y = 0; y < self->extent.height; y++) {
     for (u32 x = 0; x < self->extent.width; x++) {
-      u32 offset = self->extent.width * y * + x; 
-      offset *= DBG_MAX_WORDS;
+      u32 offset = self->extent.width * y  + x; 
+      offset *= DBG_MAX;
       decode_record_to_editor(editor, x, y, &self->p_cpu[offset]);
     }
   }

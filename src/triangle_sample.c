@@ -58,8 +58,12 @@ void tri_render(Sample *self, SampleContext *ctx) {
   RenderingBeginInfo begin_info = {
       .colors = &img,
       .colors_count = 1,
-      .w = ctx->extent.width,
-      .h = ctx->extent.height,
+      .w = ctx->game_rect.size.width,
+      .h = ctx->game_rect.size.height,
+
+      .offset_x = ctx->game_rect.offset.x,
+      .offset_y = ctx->game_rect.offset.y,
+
       .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
       .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
       .clear_color = {0.05f, 0.05f, 0.05f} // Snygg mörkgrå

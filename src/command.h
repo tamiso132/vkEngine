@@ -21,6 +21,9 @@ typedef struct RenderingBeginInfo {
   u32 w;
   u32 h;
 
+  u32 offset_x;
+  u32 offset_y;
+
 } RenderingBeginInfo;
 
 typedef struct BindPipelineInfo {

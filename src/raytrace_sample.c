@@ -44,8 +44,8 @@ static void _init(Sample *self, SampleContext *ctx) {
 
   RGImageInfo info = {.name = "IMG_Raytrace_Output",
                       .format = VK_FORMAT_B8G8R8A8_UNORM,
-                      .height = ctx->extent.height,
-                      .width = ctx->extent.width,
+                      .height = ctx->game_rect.size.height,
+                      .width = ctx->game_rect.size.width,
                       .usage = VK_IMAGE_USAGE_STORAGE_BIT};
 
   RGBufferInfo cam_info = {
@@ -66,8 +66,8 @@ static void _init(Sample *self, SampleContext *ctx) {
 
 static void _render(Sample *self, SampleContext *ctx) {
   RaytraceData *data = self->user_data;
-  uint32_t groupsX = (ctx->extent.width + 7) / 8;
-  uint32_t groupsY = (ctx->extent.height + 7) / 8;
+  uint32_t groupsX = (ctx->game_rect.size.width + 7) / 8;
+  uint32_t groupsY = (ctx->game_rect.size.height + 7) / 8;
   ResHandle swap_img = ctx->swap_img;
 
   world_cpu_tick(data->world, ctx->cam.pos);
@@ -90,7 +90,8 @@ static void _render(Sample *self, SampleContext *ctx) {
   world_grid_get_min_corner(data->world, min_corner);
   i32 grid_id = world_grid_get_push_id(data->world, ctx->rm);
   PushRay p = {
-      .extent = {ctx->extent.width, ctx->extent.height},
+      .extent = {ctx->game_rect.size.width, ctx->game_rect.size.height},
+      .extent_offset = {ctx->game_rect.offset.x, ctx->game_rect.offset.y},
       .cam_id = rm_get_buffer_index(ctx->rm, data->cam_buffer),
       .debug_mode = ctx->cam.debug_mode,
       .grid_id = grid_id,
@@ -106,10 +107,10 @@ static void _render(Sample *self, SampleContext *ctx) {
   cmd_sync_buffer(ctx->cmd, ctx->rm, data->cam_buffer, STATE_SHADER, ACCESS_READ);
 
   vkCmdDispatch(ctx->cmd.buffer, groupsX, groupsY, 1);
-  cmd_image_copy_to_image(ctx->cmd, ctx->rm, data->cs_output_img, swap_img);
+ // cmd_image_copy_to_image(ctx->cmd, ctx->rm, data->cs_output_img, swap_img);
 }
 
 static void _resize(Sample *self, SampleContext *ctx) {
   RaytraceData *data = self->user_data;
-  rm_resize_image(ctx->rm, data->cs_output_img, ctx->extent.width, ctx->extent.height);
+  rm_resize_image(ctx->rm, data->cs_output_img, ctx->game_rect.size.width, ctx->game_rect.size.height);
 }

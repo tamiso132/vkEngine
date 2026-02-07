@@ -30,6 +30,7 @@ add_sources(
     input.c
 
     raycam.c
+    panel.c
 )
 
 include_this()

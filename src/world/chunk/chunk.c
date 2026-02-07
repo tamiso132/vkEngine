@@ -10,7 +10,6 @@
 
 // --- Private Prototypes ---
 void chunk_init(ChunkInput input, Vector global_coords) {
-
   for (u32 i = 0; i < input.indices.length; i++) {
     u32 chunk_idx = *VEC_AT(&input.indices, i, u32);
     ChunkTree *chunk = VEC_AT(&input.trees, chunk_idx, ChunkTree);

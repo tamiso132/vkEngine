@@ -11,16 +11,16 @@
 #define MAX_ITER_COUNT 5000
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-
 void main()
 {
+        const uint GRID_VIS = 4u;
+        uvec2 local_pixel = uvec2(gl_GlobalInvocationID.xy);
 
-        const uint GRID_VIS = 4u; 
-        uvec2 pixel = uvec2(gl_GlobalInvocationID.xy);
-        if (pixel.x >= uint(pc.extent.x) || pixel.y >= uint(pc.extent.y)) return;
-
+        if (local_pixel.x >= uint(pc.extent.x) || local_pixel.y >= uint(pc.extent.y))
+                return;
+        uvec2 pixel = uvec2(pc.extent_offset) + local_pixel;
         DBG_BEGIN();
-        vec3 test_data = vec3(1,0,0.5);
+        vec3 test_data = vec3(1, 0, 0.5);
         DBG_LOG_VEC3(DBG_EV_INIT, DBG_KEY_NONE, test_data);
         DBG_COMMIT();
 
@@ -35,56 +35,53 @@ void main()
         vec3 n_smooth = vec3(0);
         float ao = 0;
 
-
-        
-        
         ivec3 grid_slot3 = grid_world_to_slot(ray.origin, pc.grid_min_corner, CHUNK_SIZE);
 
         bool grid_oob =
-            any(lessThan(grid_slot3, ivec3(0))) ||
-            any(greaterThanEqual(grid_slot3, ivec3(int(GRID_VIS))));
+                any(lessThan(grid_slot3, ivec3(0))) ||
+                        any(greaterThanEqual(grid_slot3, ivec3(int(GRID_VIS))));
 
         if (grid_oob) {
-            // MAGENTA = ray origin outside grid
-            imageStore(G_OUTIMG(pc), ivec2(pixel), vec4(1,0,1,1));
-            return;
+                // MAGENTA = ray origin outside grid
+                imageStore(G_OUTIMG(pc), ivec2(pixel), vec4(1, 0, 1, 1));
+                return;
         }
         int grid_slot = grid_world_to_chunk_index(ray.origin, pc.grid_min_corner, CHUNK_SIZE, 4);
-        GPUGridSlot slot_indices = G_GRID(pc,grid_slot);
-        if(slot_indices.nodes_id == UNDEFINED_VALUE)
+        GPUGridSlot slot_indices = G_GRID(pc, grid_slot);
+        if (slot_indices.nodes_id == UNDEFINED_VALUE)
         {
-          vec4 color = vec4(1.0, 1.0, 1.0, 1.0);
-          imageStore(G_OUTIMG(pc), ivec2(pixel), color);
-          return;
+                vec4 color = vec4(1.0, 1.0, 1.0, 1.0);
+                imageStore(G_OUTIMG(pc), ivec2(pixel), color);
+                return;
         }
         float t_dist = 0;
-         bool hit = traverse_one_chunk(
-                       slot_indices,
-                         ray, vec3(0.0), //   TODO, update later to chunk corner
+        bool hit = traverse_one_chunk(
+                        slot_indices,
+                        ray, vec3(0.0), //   TODO, update later to chunk corner
                         t_dist,
-                         hit_pos, hit_level, hit_slot, iter_count, err_code, hit_color, n_smooth, ao);
+                        hit_pos, hit_level, hit_slot, iter_count, err_code, hit_color, n_smooth, ao);
 
         if (!hit && err_code == TRACE_OK) {
-          // Check if we actually hit the chunk bounds at all
-          float t0, t1;
-          vec3 chunk_min = vec3(0.0); // Or use pc.grid_min_corner if that's your reference
-          vec3 chunk_max = chunk_min + vec3(CHUNK_SIZE);
-          
-          // Check intersection using your utility
-          if (ray_aabb(ray.origin, ray.dir, chunk_min, chunk_max, t0, t1)) {
-              // BLUE = Ray Hit the Box, but found no voxels (Empty Space)
-              imageStore(G_OUTIMG(pc), ivec2(pixel), vec4(0, 0, 1, 1));
-              return;
-          } else {
-              // GREEN = Ray Missed the Box entirely
-              imageStore(G_OUTIMG(pc), ivec2(pixel), vec4(0, 0.5, 0, 1));
-              return;
-          }
-        } 
-        
-         vec4 color = debug_view_color(
-                         pc.debug_mode, hit, iter_count, MAX_ITER_COUNT,
-                         hit_level, hit_slot, err_code, hit_color, n_smooth, ao);
-        
-         imageStore(G_OUTIMG(pc), ivec2(pixel), color);
+                // Check if we actually hit the chunk bounds at all
+                float t0, t1;
+                vec3 chunk_min = vec3(0.0); // Or use pc.grid_min_corner if that's your reference
+                vec3 chunk_max = chunk_min + vec3(CHUNK_SIZE);
+
+                // Check intersection using your utility
+                if (ray_aabb(ray.origin, ray.dir, chunk_min, chunk_max, t0, t1)) {
+                        // BLUE = Ray Hit the Box, but found no voxels (Empty Space)
+                        imageStore(G_OUTIMG(pc), ivec2(pixel), vec4(0, 0, 1, 1));
+                        return;
+                } else {
+                        // GREEN = Ray Missed the Box entirely
+                        imageStore(G_OUTIMG(pc), ivec2(pixel), vec4(0, 0.5, 0, 1));
+                        return;
+                }
+        }
+
+        vec4 color = debug_view_color(
+                        pc.debug_mode, hit, iter_count, MAX_ITER_COUNT,
+                        hit_level, hit_slot, err_code, hit_color, n_smooth, ao);
+
+        imageStore(G_OUTIMG(pc), ivec2(pixel), color);
 }

@@ -4,8 +4,8 @@
 #include <cglm/cglm.h>
 #include <volk.h>
 
+#include "debug_ui/debug_inspector.h"
 #include "shaders/rt/rt_shared.glsl"
-#include  "debug_ui/debug_inspector.h"
 
 typedef struct ReadBackBuffer {
   ResHandle buffer; // used by gpu
@@ -14,8 +14,8 @@ typedef struct ReadBackBuffer {
 } ReadBackBuffer;
 
 // PUBLIC FUNCTIONS
-void readback_write_to_editor(ReadBackBuffer *self, editor_pixel_editor *editor);
+ResHandle readback_get_handle(ReadBackBuffer *self);
 u32 readback_get_push_id(ReadBackBuffer *self, M_Resource *rm);
 void readback_init(ReadBackBuffer *self, M_Resource *rm, VkExtent2D extent);
-ResHandle readback_get_handle(ReadBackBuffer* self);
+void readback_write_to_editor(ReadBackBuffer *self, EditorPixelEditor *editor);
 // END PUBLIC FUNCTIONS

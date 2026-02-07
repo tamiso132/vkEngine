@@ -5,6 +5,7 @@
 #include "resource/resmanager.h"
 #include "resource/rm_internal.h"
 #include "resource/staging_arena.h"
+#include "util.h"
 #include "vector.h"
 
 typedef struct {
@@ -41,6 +42,21 @@ static const StateProperties STATE_TABLE[] = {[STATE_SHADER] = {.stage = VK_PIPE
                                                                  .write_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR}
 
 };
+
+static const char* get_str(){
+  static const char* txt = {
+          
+  }; 
+      // VK_IMAGE_LAYOUT_UNDEFINED = 0,
+    // VK_IMAGE_LAYOUT_GENERAL = 1,
+    // VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL = 2,
+    // VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL = 3,
+    // VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL = 4,
+    // VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL = 5,
+    // VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL = 6,
+    // VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL = 7,
+    // VK_IMAGE_LAYOUT_PREINITIALIZED = 8,s
+}
 
 // --- Private Prototypes ---
 static void _cmd_reset(VkDevice device, CmdBuffer cmd);
@@ -213,6 +229,7 @@ void cmd_sync_image(CmdBuffer cmd, M_Resource *rm, ResHandle img_handle, Resourc
   RImage *img = rm_get_image(rm, img_handle);
   SyncDef src_sync = img->sync;
   SyncDef dst_sync = _resolve_sync(dst_state, dst_access);
+  LOG_INFO_TAG("Sync", "Image(%s), layout_old(%d) => layout_new(%d)", img->name, src_sync.layout, dst_sync.layout);
 
   VkImageMemoryBarrier2 barrier = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,

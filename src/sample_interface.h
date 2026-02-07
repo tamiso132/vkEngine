@@ -1,20 +1,21 @@
 #pragma once
 #include "command.h"
 #include "common.h"
+#include "panel.h"
 #include "raycam.h"
 #include "transfer_queue.h"
 
 typedef struct {
   CmdBuffer cmd; // Den aktuella kommandobuffern för denna frame
   float dt;      // Delta time (kan läggas till senare)
-  VkExtent2D extent;
+  WindowRect game_rect;
   ResHandle swap_img;
   M_Resource *rm;
   M_HotReload *pr;
   M_Pipeline *pm;
   M_GPU *gpu;
   Camera cam;
-  TransferQueue* tq;
+  TransferQueue *tq;
   u32 readback_idx;
   ivec2 dbg_mouse_pos;
 

@@ -1,253 +1,202 @@
-/*  pixel_meta_ui.h  (drop-in UI code)
-    ----------------------------------
-    You already have Nuklear rendering/input. This file only contains:
-      - PixelEditor data + metadata store
-      - Append APIs for u32/i32/f32/vec2/vec3
-      - Nuklear UI function that draws:
-          * left: pixel canvas you can click to select a pixel
-          * right: inspector listing all metadata for that pixel
-      - No backend code (no SDL/GL/etc). Pure Nuklear.
 
-    Usage:
-      1) Create/init PixelEditor:
-           PixelEditor pe;
-           pe_init(&pe, W, H);
-           pe.zoom = 12.0f; // optional
-           pe.pan = (struct nk_vec2){0,0};
+/* pixel_meta_ui.c  (drop-in, rect-driven Nuklear inspector)
+   ---------------------------------------------------------
+   - Stores metadata per pixel for a w*h image (game buffer).
+   - Renders a pixel canvas + inspector, but CANVAS placement is driven by a rect you pass in.
+   - No backend code (no Vulkan/GL/SDL). Pure Nuklear draw commands.
 
-      2) Each frame in your UI:
-           pe_ui(&pe, ctx);
+   Key idea:
+     - Pixel coordinates are ALWAYS in [0..img_w-1, 0..img_h-1]
+     - UI rectangles are screen-space and ONLY used for drawing/picking.
 
-      3) Append metadata whenever you want:
-           pe_append_u32(&pe, x, y, "id", 123);
-           pe_append_vec3(&pe, x, y, "normal", (vec3){0,1,0});
+   Notes:
+     - Requires Nuklear + your debug_inspector.h types:
+         EditorPixelEditor, editor_pixel_meta, editor_pixel_value, EDITOR_PV_* enums.
+     - Assumes RGBA preview buffer format: 0xAARRGGBB
 
-    Optional:
-      - Provide pe.rgba (w*h) if you want pixels colored by a preview buffer.
-        Format assumed: 0xAARRGGBB (adjust in pe_rgba_to_nk if yours differs).
+   Public API:
+     editor_pixel_editor_init(ed, img_w, img_h, rgba_or_null);
+     editor_pixel_editor_free(ed);
 
-    Notes:
-      - This draws one filled rect per pixel. Great for 32..256 grids.
-      - If you need sparse metadata, tell me and I’ll swap meta[] to a hashmap.
+     editor_pixel_editor_clear_pixel(ed, x, y);
+     editor_pixel_editor_append_u32/i32/f32/vec2/vec3(...)
+
+     editor_pixel_editor_ui(ed, ctx, canvas_rect);   // draws canvas in canvas_rect, inspector via Nuklear layout
 */
 
 #include "debug_inspector.h"
+#include "cglm/vec2.h"
 #include "cglm/vec3.h"
+#include "panel.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 // --- Private Prototypes ---
-static int editor_in_bounds(const editor_pixel_editor *ed, int x, int y);
-static editor_pixel_meta *editor_meta_at(editor_pixel_editor *ed, int x, int y);
-static int editor_pick_pixel(editor_pixel_editor *ed, struct nk_context *ctx, struct nk_rect bounds, int *out_x,
-                             int *out_y);
-static void editor_pixelmeta_push(editor_pixel_meta *m, editor_pixel_value v);
-static struct nk_color editor_rgba_to_nk(unsigned int c);
+static void draw_canvas_rect(EditorPixelEditor *ed, struct nk_context *ctx, struct nk_rect bounds);
+static void draw_inspector(EditorPixelEditor *ed, struct nk_context *ctx);
 
-static void editor_draw_canvas(editor_pixel_editor *ed, struct nk_context *ctx, float canvas_h);
-static void editor_draw_inspector(editor_pixel_editor *ed, struct nk_context *ctx);
+static void handle_pan(EditorPixelEditor *ed, struct nk_context *ctx, struct nk_rect bounds);
+static void handle_zoom(EditorPixelEditor *ed, struct nk_context *ctx, struct nk_rect bounds);
 
-static void editor_handle_pan(editor_pixel_editor *ed, struct nk_context *ctx, struct nk_rect bounds);
-static void editor_handle_zoom(editor_pixel_editor *ed, struct nk_context *ctx, struct nk_rect bounds);
+static int in_bounds(const EditorPixelEditor *ed, int x, int y);
 
-/* ---------------- PUBLIC IMPLEMENTATION ---------------- */
+static editor_pixel_meta *meta_at(EditorPixelEditor *ed, int x, int y);
 
-void editor_pixel_meta_main_init(editor_pixel_editor *ed, int w, int h, unsigned int *rgba_or_null) {
-  editor_pixel_editor_init(ed, w, h);
-  ed->rgba = rgba_or_null; /* user-owned */
-}
+static int pick_pixel(EditorPixelEditor *ed, struct nk_context *ctx, struct nk_rect bounds, int *out_x, int *out_y);
 
-void editor_pixel_meta_main_shutdown(editor_pixel_editor *ed) {
-  editor_pixel_editor_free(ed);
-  /* ed->rgba is user-owned; don't free it here */
-  ed->rgba = NULL;
-}
+static void pixelmeta_push(editor_pixel_meta *m, editor_pixel_value v);
 
-void editor_pixel_meta_main_draw(editor_pixel_editor *ed, struct nk_context *ctx) {
-  /* Default window config. Change title/rect/flags if you want. */
-  editor_pixel_editor_window_ui(ed, ctx, "Pixel Meta Editor", nk_rect(20, 20, 900, 520),
-                                NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_TITLE);
-}
+static struct nk_color rgba_to_nk(unsigned int c);
 
-void editor_pixel_meta_main_append_test_data(editor_pixel_editor *ed) {
-  /* Safe even if called multiple times: it appends repeatedly */
-  editor_pixel_editor_append_u32(ed, 10, 12, "id", 123u);
-  editor_pixel_editor_append_vec2(ed, 10, 12, "uv", (vec2){0.25f, 0.75f});
-  editor_pixel_editor_append_vec3(ed, 10, 12, "normal", (vec3){0.0f, 1.0f, 0.0f});
-  editor_pixel_editor_append_f32(ed, 1, 1, "depth", 0.42f);
-}
+/* ----------------------- public API ----------------------- */
 
-void editor_pixel_editor_init(editor_pixel_editor *ed, int w, int h) {
+void editor_pixel_editor_init(EditorPixelEditor *ed, int img_w, int img_h, unsigned int *rgba_or_null) {
   memset(ed, 0, sizeof(*ed));
-  ed->w = w;
-  ed->h = h;
-  ed->meta = (editor_pixel_meta *)calloc((size_t)w * (size_t)h, sizeof(editor_pixel_meta));
+
+  ed->img_w = img_w;
+  ed->img_h = img_h;
+
+  ed->meta = (editor_pixel_meta *)calloc((size_t)img_w * (size_t)img_h, sizeof(editor_pixel_meta));
+
   ed->sel_x = ed->sel_y = -1;
   ed->zoom = 12.0f;
-  ed->pan[0] = 0;
-  ed->pan[1] = 0;
+  ed->pan[0] = 0.0f;
+  ed->pan[1] = 0.0f;
   ed->show_grid = 1;
 }
 
-void editor_pixel_editor_free(editor_pixel_editor *ed) {
+void editor_pixel_editor_free(EditorPixelEditor *ed) {
   if (!ed)
     return;
   if (ed->meta) {
-    int n = ed->w * ed->h;
-    for (int i = 0; i < n; ++i) {
+    int n = ed->img_w * ed->img_h;
+    for (int i = 0; i < n; ++i)
       free(ed->meta[i].items);
-    }
     free(ed->meta);
     ed->meta = NULL;
   }
 }
 
-void editor_pixel_editor_clear_pixel(editor_pixel_editor *ed, int x, int y) {
-  if (!editor_in_bounds(ed, x, y))
+void editor_pixel_editor_clear_pixel(EditorPixelEditor *ed, int x, int y) {
+  if (!in_bounds(ed, x, y))
     return;
-  editor_pixel_meta *m = editor_meta_at(ed, x, y);
+  editor_pixel_meta *m = meta_at(ed, x, y);
   m->count = 0;
 }
 
-void editor_pixel_editor_append_u32(editor_pixel_editor *ed, int x, int y, const char *key, unsigned int v) {
-  if (!editor_in_bounds(ed, x, y))
+void editor_pixel_editor_append_u32(EditorPixelEditor *ed, int x, int y, const char *key, unsigned int v) {
+  if (!in_bounds(ed, x, y))
     return;
   editor_pixel_value pv;
   memset(&pv, 0, sizeof(pv));
   pv.key = key;
   pv.type = EDITOR_PV_U32;
   pv.as.u32 = v;
-  editor_pixelmeta_push(editor_meta_at(ed, x, y), pv);
+  pixelmeta_push(meta_at(ed, x, y), pv);
 }
 
-void editor_pixel_editor_append_i32(editor_pixel_editor *ed, int x, int y, const char *key, int v) {
-  if (!editor_in_bounds(ed, x, y))
+void editor_pixel_editor_append_i32(EditorPixelEditor *ed, int x, int y, const char *key, int v) {
+  if (!in_bounds(ed, x, y))
     return;
   editor_pixel_value pv;
   memset(&pv, 0, sizeof(pv));
   pv.key = key;
   pv.type = EDITOR_PV_I32;
   pv.as.i32 = v;
-  editor_pixelmeta_push(editor_meta_at(ed, x, y), pv);
+  pixelmeta_push(meta_at(ed, x, y), pv);
 }
 
-void editor_pixel_editor_append_f32(editor_pixel_editor *ed, int x, int y, const char *key, float v) {
-  if (!editor_in_bounds(ed, x, y))
+void editor_pixel_editor_append_f32(EditorPixelEditor *ed, int x, int y, const char *key, float v) {
+  if (!in_bounds(ed, x, y))
     return;
   editor_pixel_value pv;
   memset(&pv, 0, sizeof(pv));
   pv.key = key;
   pv.type = EDITOR_PV_F32;
   pv.as.f32 = v;
-  editor_pixelmeta_push(editor_meta_at(ed, x, y), pv);
+  pixelmeta_push(meta_at(ed, x, y), pv);
 }
 
-void editor_pixel_editor_append_vec2(editor_pixel_editor *ed, int x, int y, const char *key, vec2 v) {
-  if (!editor_in_bounds(ed, x, y))
+void editor_pixel_editor_append_vec2(EditorPixelEditor *ed, int x, int y, const char *key, vec2 v) {
+  if (!in_bounds(ed, x, y))
     return;
   editor_pixel_value pv;
   memset(&pv, 0, sizeof(pv));
   pv.key = key;
   pv.type = EDITOR_PV_VEC2;
-  glm_vec3_copy(v, pv.as.v2);
-  editor_pixelmeta_push(editor_meta_at(ed, x, y), pv);
+  glm_vec2_copy(v, pv.as.v2);
+  pixelmeta_push(meta_at(ed, x, y), pv);
 }
 
-void editor_pixel_editor_append_vec3(editor_pixel_editor *ed, int x, int y, const char *key, vec3 v) {
-  if (!editor_in_bounds(ed, x, y))
+void editor_pixel_editor_append_vec3(EditorPixelEditor *ed, int x, int y, const char *key, vec3 v) {
+  if (!in_bounds(ed, x, y))
     return;
   editor_pixel_value pv;
   memset(&pv, 0, sizeof(pv));
   pv.key = key;
   pv.type = EDITOR_PV_VEC3;
   glm_vec3_copy(v, pv.as.v3);
-  editor_pixelmeta_push(editor_meta_at(ed, x, y), pv);
+  pixelmeta_push(meta_at(ed, x, y), pv);
 }
 
-void editor_pixel_editor_ui(editor_pixel_editor *ed, struct nk_context *ctx) {
-  /* two columns inside whatever window/group you put this in */
-  nk_layout_row_dynamic(ctx, 0, 2);
+/* UI: canvas rect is screen-space; inspector uses Nuklear layout (right column) */
+void editor_pixel_editor_ui(EditorPixelEditor *ed, struct nk_context *ctx, struct WindowRect inspector_rect) {
 
-  if (nk_group_begin(ctx, "Canvas", NK_WINDOW_BORDER)) {
-    editor_draw_canvas(ed, ctx, 10000.0f);
-    nk_group_end(ctx);
-  }
-  if (nk_group_begin(ctx, "Inspector", NK_WINDOW_BORDER)) {
-    editor_draw_inspector(ed, ctx);
-    nk_group_end(ctx);
+  struct nk_rect win = (struct nk_rect){
+    .x = (float)inspector_rect.offset.x,
+    .y = (float)inspector_rect.offset.y,
+    .w = (float)inspector_rect.size.width,
+    .h = (float)inspector_rect.size.height
+  };
+
+  if (nk_begin(ctx, "Debug", win, NK_WINDOW_NO_SCROLLBAR)) {
+
+    if (nk_group_begin(ctx, "Canvas", NK_WINDOW_BORDER)) {
+      /* draw the canvas exactly where you want */
+      struct nk_rect canvas_rect = nk_widget_bounds(ctx);
+      draw_canvas_rect(ed, ctx, canvas_rect);
+      nk_group_end(ctx);
+    }
+
+    if (nk_group_begin(ctx, "Inspector", NK_WINDOW_BORDER)) {
+      draw_inspector(ed, ctx);
+      nk_group_end(ctx);
+    }
+    nk_end(ctx);
   }
 }
 
-void editor_pixel_editor_window_ui(editor_pixel_editor *ed, struct nk_context *ctx, const char *title, struct nk_rect r,
-                                   nk_flags flags) {
-  if (nk_begin(ctx, title, r, flags)) {
-    editor_pixel_editor_ui(ed, ctx);
+void editor_pixel_editor_set_selected(EditorPixelEditor *ed, int x, int y) {
+  if (!ed)
+    return;
+  if (x < 0 || y < 0 || x >= ed->img_w || y >= ed->img_h) {
+    ed->sel_x = ed->sel_y = -1;
+    return;
   }
-  nk_end(ctx);
+  ed->sel_x = x;
+  ed->sel_y = y;
 }
 
 // --- Private Functions ---
 
-static int editor_in_bounds(const editor_pixel_editor *ed, int x, int y) {
-  return (x >= 0 && y >= 0 && x < ed->w && y < ed->h);
-}
-
-static editor_pixel_meta *editor_meta_at(editor_pixel_editor *ed, int x, int y) { return &ed->meta[y * ed->w + x]; }
-
-static int editor_pick_pixel(editor_pixel_editor *ed, struct nk_context *ctx, struct nk_rect bounds, int *out_x,
-                             int *out_y) {
-  if (!nk_input_is_mouse_click_down_in_rect(&ctx->input, NK_BUTTON_LEFT, bounds, nk_true))
-    return 0;
-
-  float mx = ctx->input.mouse.pos.x - bounds.x - ed->pan[0];
-  float my = ctx->input.mouse.pos.y - bounds.y - ed->pan[1];
-
-  int px = (int)(mx / ed->zoom);
-  int py = (int)(my / ed->zoom);
-
-  if (!editor_in_bounds(ed, px, py))
-    return 0;
-
-  *out_x = px;
-  *out_y = py;
-  return 1;
-}
-
-static void editor_pixelmeta_push(editor_pixel_meta *m, editor_pixel_value v) {
-  if (m->count == m->cap) {
-    unsigned int new_cap = m->cap ? (m->cap * 2u) : 4u;
-    editor_pixel_value *new_items = (editor_pixel_value *)realloc(m->items, new_cap * sizeof(editor_pixel_value));
-    if (!new_items)
-      return; /* OOM: drop */
-    m->items = new_items;
-    m->cap = new_cap;
-  }
-  m->items[m->count++] = v;
-}
-
-static struct nk_color editor_rgba_to_nk(unsigned int c) {
-  /* Assumes 0xAARRGGBB */
-  unsigned char a = (unsigned char)((c >> 24) & 0xFF);
-  unsigned char r = (unsigned char)((c >> 16) & 0xFF);
-  unsigned char g = (unsigned char)((c >> 8) & 0xFF);
-  unsigned char b = (unsigned char)((c >> 0) & 0xFF);
-  return nk_rgba(r, g, b, a);
-}
-
-static void editor_draw_canvas(editor_pixel_editor *ed, struct nk_context *ctx, float canvas_h) {
-  nk_layout_row_dynamic(ctx, canvas_h, 1);
-  struct nk_rect bounds = nk_widget_bounds(ctx);
+/* ----------------------- drawing ----------------------- */
+static void draw_canvas_rect(EditorPixelEditor *ed, struct nk_context *ctx, struct nk_rect bounds) {
   struct nk_command_buffer *out = nk_window_get_canvas(ctx);
+
+  /* save/restore clip: nk_push_scissor overwrites b->clip (no stack) */
+  struct nk_rect old_clip = out->clip;
+  nk_push_scissor(out, bounds);
 
   nk_fill_rect(out, bounds, 0.0f, nk_rgb(22, 22, 22));
 
-  editor_handle_pan(ed, ctx, bounds);
-  editor_handle_zoom(ed, ctx, bounds);
+  handle_pan(ed, ctx, bounds);
+  handle_zoom(ed, ctx, bounds);
 
   int px, py;
-  if (editor_pick_pixel(ed, ctx, bounds, &px, &py)) {
+  if (pick_pixel(ed, ctx, bounds, &px, &py)) {
     ed->sel_x = px;
     ed->sel_y = py;
   }
@@ -256,6 +205,7 @@ static void editor_draw_canvas(editor_pixel_editor *ed, struct nk_context *ctx, 
   float ox = bounds.x + ed->pan[0];
   float oy = bounds.y + ed->pan[1];
 
+  /* compute visible pixel range, then clamp to image */
   int x0 = (int)floorf((bounds.x - ox) / cell) - 1;
   int y0 = (int)floorf((bounds.y - oy) / cell) - 1;
   int x1 = (int)ceilf(((bounds.x + bounds.w) - ox) / cell) + 1;
@@ -265,18 +215,16 @@ static void editor_draw_canvas(editor_pixel_editor *ed, struct nk_context *ctx, 
     x0 = 0;
   if (y0 < 0)
     y0 = 0;
-  if (x1 > ed->w)
-    x1 = ed->w;
-  if (y1 > ed->h)
-    y1 = ed->h;
+  if (x1 > ed->img_w)
+    x1 = ed->img_w;
+  if (y1 > ed->img_h)
+    y1 = ed->img_h;
 
   for (int y = y0; y < y1; ++y) {
     for (int x = x0; x < x1; ++x) {
       struct nk_rect r = {ox + x * cell, oy + y * cell, cell, cell};
 
       struct nk_color col = nk_rgb(45, 45, 45);
-      if (ed->rgba)
-        col = editor_rgba_to_nk(ed->rgba[y * ed->w + x]);
 
       nk_fill_rect(out, r, 0.0f, col);
 
@@ -286,7 +234,7 @@ static void editor_draw_canvas(editor_pixel_editor *ed, struct nk_context *ctx, 
     }
   }
 
-  if (editor_in_bounds(ed, ed->sel_x, ed->sel_y)) {
+  if (in_bounds(ed, ed->sel_x, ed->sel_y)) {
     struct nk_rect s = {ox + ed->sel_x * cell, oy + ed->sel_y * cell, cell, cell};
     nk_stroke_rect(out, s, 0.0f, 2.0f, nk_rgb(255, 230, 80));
   }
@@ -298,13 +246,15 @@ static void editor_draw_canvas(editor_pixel_editor *ed, struct nk_context *ctx, 
     struct nk_rect hud = {bounds.x + 8, bounds.y + 8, bounds.w - 16, 18};
     nk_draw_text(out, hud, buf, (int)strlen(buf), ctx->style.font, nk_rgba(0, 0, 0, 120), nk_rgb(220, 220, 220));
   }
+
+  nk_push_scissor(out, old_clip);
 }
 
-static void editor_draw_inspector(editor_pixel_editor *ed, struct nk_context *ctx) {
+static void draw_inspector(EditorPixelEditor *ed, struct nk_context *ctx) {
   nk_layout_row_dynamic(ctx, 24, 1);
 
-  if (!editor_in_bounds(ed, ed->sel_x, ed->sel_y)) {
-    nk_label(ctx, "Click a pixel to inspect.", NK_TEXT_LEFT);
+  if (!in_bounds(ed, ed->sel_x, ed->sel_y)) {
+    nk_label(ctx, "Click a pixel in the canvas to inspect.", NK_TEXT_LEFT);
     return;
   }
 
@@ -312,7 +262,7 @@ static void editor_draw_inspector(editor_pixel_editor *ed, struct nk_context *ct
   snprintf(hdr, sizeof(hdr), "Pixel (%d, %d)", ed->sel_x, ed->sel_y);
   nk_label(ctx, hdr, NK_TEXT_LEFT);
 
-  editor_pixel_meta *m = editor_meta_at(ed, ed->sel_x, ed->sel_y);
+  editor_pixel_meta *m = meta_at(ed, ed->sel_x, ed->sel_y);
 
   nk_layout_row_dynamic(ctx, 22, 2);
   if (nk_button_label(ctx, "Clear pixel"))
@@ -358,14 +308,15 @@ static void editor_draw_inspector(editor_pixel_editor *ed, struct nk_context *ct
   }
 }
 
-static void editor_handle_pan(editor_pixel_editor *ed, struct nk_context *ctx, struct nk_rect bounds) {
+/* ----------------------- input ----------------------- */
+static void handle_pan(EditorPixelEditor *ed, struct nk_context *ctx, struct nk_rect bounds) {
   if (nk_input_is_mouse_down(&ctx->input, NK_BUTTON_MIDDLE) && nk_input_is_mouse_hovering_rect(&ctx->input, bounds)) {
     ed->pan[0] += ctx->input.mouse.delta.x;
     ed->pan[1] += ctx->input.mouse.delta.y;
   }
 }
 
-static void editor_handle_zoom(editor_pixel_editor *ed, struct nk_context *ctx, struct nk_rect bounds) {
+static void handle_zoom(EditorPixelEditor *ed, struct nk_context *ctx, struct nk_rect bounds) {
   if (!nk_input_is_mouse_hovering_rect(&ctx->input, bounds))
     return;
 
@@ -390,4 +341,51 @@ static void editor_handle_zoom(editor_pixel_editor *ed, struct nk_context *ctx, 
   ed->zoom = nz;
   ed->pan[0] = mx - cx * nz;
   ed->pan[1] = my - cy * nz;
+}
+
+/* ----------------------- helpers ----------------------- */
+static int in_bounds(const EditorPixelEditor *ed, int x, int y) {
+  return (x >= 0 && y >= 0 && x < ed->img_w && y < ed->img_h);
+}
+
+static editor_pixel_meta *meta_at(EditorPixelEditor *ed, int x, int y) { return &ed->meta[y * ed->img_w + x]; }
+
+static int pick_pixel(EditorPixelEditor *ed, struct nk_context *ctx, struct nk_rect bounds, int *out_x, int *out_y) {
+  if (!nk_input_is_mouse_click_down_in_rect(&ctx->input, NK_BUTTON_LEFT, bounds, nk_true))
+    return 0;
+
+  float mx = ctx->input.mouse.pos.x - bounds.x - ed->pan[0];
+  float my = ctx->input.mouse.pos.y - bounds.y - ed->pan[1];
+
+  int x = (int)(mx / ed->zoom);
+  int y = (int)(my / ed->zoom);
+
+  if (!in_bounds(ed, x, y))
+    return 0;
+
+  *out_x = x;
+  *out_y = y;
+  return 1;
+}
+
+static void pixelmeta_push(editor_pixel_meta *m, editor_pixel_value v) {
+  if (m->count == m->cap) {
+    unsigned int new_cap = m->cap ? (m->cap * 2u) : 4u;
+    editor_pixel_value *new_items =
+        (editor_pixel_value *)realloc(m->items, (size_t)new_cap * sizeof(editor_pixel_value));
+    if (!new_items)
+      return; /* OOM: drop */
+    m->items = new_items;
+    m->cap = new_cap;
+  }
+  m->items[m->count++] = v;
+}
+
+static struct nk_color rgba_to_nk(unsigned int c) {
+  /* Assumes 0xAARRGGBB */
+  unsigned char a = (unsigned char)((c >> 24) & 0xFF);
+  unsigned char r = (unsigned char)((c >> 16) & 0xFF);
+  unsigned char g = (unsigned char)((c >> 8) & 0xFF);
+  unsigned char b = (unsigned char)((c >> 0) & 0xFF);
+  return nk_rgba(r, g, b, a);
 }

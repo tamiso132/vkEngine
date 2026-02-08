@@ -155,7 +155,7 @@ void editor_pixel_editor_ui(EditorPixelEditor *ed, struct nk_context *ctx, struc
   };
 
   if (nk_begin(ctx, "Debug", win, NK_WINDOW_NO_SCROLLBAR)) {
-
+    nk_layout_row_dynamic(ctx, 200, 1);      
     if (nk_group_begin(ctx, "Canvas", NK_WINDOW_BORDER)) {
       /* draw the canvas exactly where you want */
       struct nk_rect canvas_rect = nk_widget_bounds(ctx);

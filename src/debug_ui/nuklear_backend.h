@@ -23,5 +23,6 @@ void nuklear_backend_record(
     M_Resource *rm,
     ResHandle swap_img,
     WindowRect win,
+      VkExtent2D window_extent,
     M_GPU *dev);
 // END PUBLIC FUNCTIONS

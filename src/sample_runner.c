@@ -117,10 +117,10 @@ static void _record_main_commands(SampleRunner *r, Sample *sample) {
 
 static void _record_ui_commands(SampleRunner *r) {
 
-WindowRect inspector_rect = window_manager_get_virtual(r->window_manager, WIN_PANEL_TYPE_RIGHT)->rect;
-cmd_sync_image(r->cmd_main, r->rm, r->ctx.swap_img, STATE_COLOR, ACCESS_WRITE);
- // nuklear_backend_record(r->nuklear, r->cmd_main, r->ctx.pm, r->rm, r->ctx.swap_img, inspector_rect, r->gpu);
-    
+  WindowRect inspector_rect = window_manager_get_virtual(r->window_manager, WIN_PANEL_TYPE_RIGHT)->rect;
+  cmd_sync_image(r->cmd_main, r->rm, r->ctx.swap_img, STATE_COLOR, ACCESS_WRITE);
+  nuklear_backend_record(r->nuklear, r->cmd_main, r->ctx.pm, r->rm, r->ctx.swap_img, inspector_rect,r->main_win.swapchain.extent, r->gpu);
+
   // Final Frame Synchronization
   VkSemaphore debug_done = swapchain_get_render_done_semp(&r->main_win.swapchain);
   
@@ -219,7 +219,7 @@ void run_sample(Sample *sample) {
 
     nuklear_backend_new_frame(r.nuklear, &r.main_input);
     struct nk_context *draw_ctx = nuklear_backend_get_draw_ctx(r.nuklear);
-    // editor_pixel_editor_ui(&editor, draw_ctx, inspector_rect);
+    editor_pixel_editor_ui(&editor, draw_ctx, inspector_rect);
 
     _record_main_commands(&r, sample);
 

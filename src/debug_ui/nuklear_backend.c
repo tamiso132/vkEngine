@@ -125,7 +125,7 @@ NuklearBackend* nuklear_backend_init(
     // 3) GPU buffers (FIX: correct Vulkan usage bits!)
     RGBufferInfo vert_info = {
         .capacity   = sizeof(GPUNuklearVertex) * 8192, // pick a real budget
-        .mem        = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+        .mem        = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         .name       = "VertexBuffer-Nuklear",
         .queue_type = BUFFER_QUEUE_GRAPHIC,
         .usage      = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
@@ -133,7 +133,7 @@ NuklearBackend* nuklear_backend_init(
 
     RGBufferInfo index_info = {
         .capacity   = sizeof(u16) * 16384,
-        .mem        = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+        .mem        = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         .name       = "IndexBuffer-Nuklear",
         .queue_type = BUFFER_QUEUE_GRAPHIC,
         .usage      = VK_BUFFER_USAGE_INDEX_BUFFER_BIT
@@ -174,6 +174,7 @@ void nuklear_backend_record(
     M_Resource *rm,
     ResHandle swap_img,
     WindowRect win,
+    VkExtent2D window_extent,
     M_GPU *dev)
 {
     // 0) Setup projection uniform (same as you did)
@@ -236,20 +237,23 @@ void nuklear_backend_record(
 
     GPUPushUI ui_push = {};
     memcpy(ui_push.projection, projection, sizeof(projection));
-    ui_push.screen_size[0] = (float)win.size.width;
-    ui_push.screen_size[1] = (float)win.size.height;
+    ui_push.screen_size[0] = (float)window_extent.width;
+    ui_push.screen_size[1] = (float)window_extent.height;
     ui_push.tex_id = rm_get_image_descriptor_index(rm, backend->res_font);
     ui_push.vert_id = rm_get_buffer_index(rm, backend->res_vertex);
 
     BindPipelineInfo info = {.handle = backend->pipeline, .push_size = sizeof(GPUPushUI), .p_push = &ui_push};
     cmd_bind_pipeline(cmd, m_pipeline, rm, &info);
 
+VkViewport view_port ={.height = window_extent.height, .width = window_extent.width, .maxDepth = 1.0, .minDepth = 0.0};
+    vkCmdSetViewport(cmd.buffer, 0, 1, &view_port);
+
     const struct nk_draw_command *dcmd;
     uint32_t index_offset = 0;
 
     nk_draw_foreach(dcmd, &backend->ctx, &backend->nk_cmds) {
         if (!dcmd->elem_count) continue;
-        if (!dcmd->texture.ptr) continue;
+       // if (!dcmd->texture.ptr) continue;
 
         // dcmd->texture.ptr is expected to be a VkImageView (as set via nk_handle_ptr)
         VkImageView view = (VkImageView)dcmd->texture.ptr;

@@ -19,6 +19,8 @@ layout(location = 0) out vec4 outColor;
 layout(set = 0, binding = 0) uniform sampler2D textures[];
 
 void main() {
+        
         vec4 tex = texture(textures[nonuniformEXT(pc.tex_id)], fragUV);
-        outColor = fragColor * tex;
+        //outColor = fragColor * tex;
+        outColor = vec4(0.5, 0.5, 0.5, 1.0);
 }

@@ -34,6 +34,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "nuklear_config.h"
+
 // --- Private Prototypes ---
 static void draw_canvas_rect(EditorPixelEditor *ed, struct nk_context *ctx, struct nk_rect bounds);
 static void draw_inspector(EditorPixelEditor *ed, struct nk_context *ctx);

@@ -36,10 +36,11 @@ typedef struct SampleRunner {
 
   Input main_input;
 
-  NuklearBackend nuklear;
+  NuklearBackend *nuklear;
   CmdBuffer cmd_main;
-  CmdBuffer cmd_ui;
   SampleContext ctx;
+
+  WindowManager *window_manager;
 
   ReadBackBuffer read_back;
 
@@ -98,12 +99,12 @@ static void _update_systems(SampleRunner *r, double dt) {
   }
 }
 
-static void _record_main_commands(SampleRunner *r, Sample *sample) {
+static void _record_main_commands(SampleRunner *r, Sample *sample) {  
 
   cmd_begin(r->gpu->device, r->cmd_main);
   // Submit Main Pass
-  sm_add_signal(r->sm, nuklear_backend_get_wait_binary(&r->nuklear), 0, SM_STAGE_ALL_COMMANDS);
 
+  cmd_sync_image(r->cmd_main, r->rm, r->ctx.swap_img, STATE_COLOR, ACCESS_WRITE);
   cmd_bind_bindless(r->cmd_main, r->rm, r->main_win.swapchain.extent);
 
   if (sample->render) {
@@ -111,28 +112,24 @@ static void _record_main_commands(SampleRunner *r, Sample *sample) {
     cmd_sync_buffer(r->cmd_main, r->rm, readback_get_handle(&r->read_back), STATE_SHADER, ACCESS_WRITE);
     sample->render(sample, &r->ctx);
   }
-  cmd_sync_image(r->cmd_main, r->rm, r->ctx.swap_img, STATE_COLOR, ACCESS_WRITE);
 
-  cmd_end(r->gpu->device, r->cmd_main);
-  sm_submit(r->sm, r->cmd_main.buffer, false);
 }
 
 static void _record_ui_commands(SampleRunner *r) {
 
-  cmd_begin(r->gpu->device, r->cmd_ui);
-
-  // Submit UI Pass
-  VkSemaphore ui_done = nuklear_backend_render(&r->nuklear, &r->main_win, r->gpu);
-
+WindowRect inspector_rect = window_manager_get_virtual(r->window_manager, WIN_PANEL_TYPE_RIGHT)->rect;
+cmd_sync_image(r->cmd_main, r->rm, r->ctx.swap_img, STATE_COLOR, ACCESS_WRITE);
+ // nuklear_backend_record(r->nuklear, r->cmd_main, r->ctx.pm, r->rm, r->ctx.swap_img, inspector_rect, r->gpu);
+    
   // Final Frame Synchronization
   VkSemaphore debug_done = swapchain_get_render_done_semp(&r->main_win.swapchain);
-  sm_add_wait(r->sm, ui_done, 0, SM_STAGE_ALL_COMMANDS);
+  
   sm_add_signal(r->sm, debug_done, 0, SM_STAGE_ALL_COMMANDS);
 
-  cmd_sync_image(r->cmd_ui, r->rm, r->ctx.swap_img, STATE_PRESENT, ACCESS_READ);
-  cmd_end(r->gpu->device, r->cmd_ui);
+  cmd_sync_image(r->cmd_main, r->rm, r->ctx.swap_img, STATE_PRESENT, ACCESS_READ);
+  cmd_end(r->gpu->device, r->cmd_main);
 
-  sm_submit(r->sm, r->cmd_ui.buffer, true);
+  sm_submit(r->sm, r->cmd_main.buffer, true);
 }
 
 static void _present_frame(SampleRunner *r) {
@@ -149,18 +146,16 @@ void run_sample(Sample *sample) {
 
   window_init(&r.main_win, r.gpu, r.rm, 1920, 1080, "Main View", "MainSC");
 
-  WindowManager *win_manager =
+  r.window_manager=
       window_manager_init(r.main_win.swapchain.extent, (VkExtent2D){.width = 800, .height = 600});
 
-  WindowRect game_rect = window_manager_get_virtual(win_manager, WIN_PANEL_TYPE_MIDDLE)->rect;
+  WindowRect game_rect = window_manager_get_virtual(r.window_manager, WIN_PANEL_TYPE_MIDDLE)->rect;
 
   input_init(&r.main_input, r.main_win.raw_window);
 
-  r.cmd_main = cmd_init(r.gpu->device, r.gpu->graphics_family);
-  r.cmd_ui = cmd_init(r.gpu->device, r.gpu->graphics_family);
+  r.cmd_main = cmd_init(r.gpu->device, r.gpu->graphics_family,  "Cmd-Main");
 
-  r.nuklear = nuklear_backend_init(r.gpu, r.rm, &r.main_win);
-
+  
   r.ctx = (SampleContext){
       .cmd = r.cmd_main,
       .gpu = r.gpu,
@@ -168,15 +163,17 @@ void run_sample(Sample *sample) {
       .game_rect = game_rect,
       .cam = camera_init(r.main_win.swapchain.extent, 70),
       .tq = transfer_init(r.gpu->device, r.gpu->transfer_queue, r.gpu->transfer_family, r.gpu->allocator, MIB(250), 1),
-
-  };
-
-  r.ctx.pr = SYSTEM_GET(SYSTEM_TYPE_HOTRELOAD, M_HotReload);
-  r.ctx.gpu = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
-  r.ctx.rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
-  r.ctx.pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
-
+      
+    };
+    
+    r.ctx.pr = SYSTEM_GET(SYSTEM_TYPE_HOTRELOAD, M_HotReload);
+    r.ctx.gpu = SYSTEM_GET(SYSTEM_TYPE_GPU, M_GPU);
+    r.ctx.rm = SYSTEM_GET(SYSTEM_TYPE_RESOURCE, M_Resource);
+    r.ctx.pm = SYSTEM_GET(SYSTEM_TYPE_PIPELINE, M_Pipeline);
+    
   cmd_begin(r.gpu->device, r.cmd_main);
+
+  r.nuklear = nuklear_backend_init(r.gpu, r.rm, r.cmd_main, &r.main_win, r.ctx.pr);
 
   r.last_time = glfwGetTime();
   EditorPixelEditor editor = {};
@@ -218,11 +215,11 @@ void run_sample(Sample *sample) {
     r.ctx.swap_img = swapchain_get_image(&r.main_win.swapchain);
 
     // DRAW DEBUG UI
-    WindowRect inspector_rect = window_manager_get_virtual(win_manager, WIN_PANEL_TYPE_RIGHT)->rect;
+    WindowRect inspector_rect = window_manager_get_virtual(r.window_manager, WIN_PANEL_TYPE_RIGHT)->rect;
 
-    nuklear_backend_new_frame(&r.nuklear);
-    struct nk_context *draw_ctx = nuklear_backend_get_draw_ctx(&r.nuklear);
-    editor_pixel_editor_ui(&editor, draw_ctx, inspector_rect);
+    nuklear_backend_new_frame(r.nuklear, &r.main_input);
+    struct nk_context *draw_ctx = nuklear_backend_get_draw_ctx(r.nuklear);
+    // editor_pixel_editor_ui(&editor, draw_ctx, inspector_rect);
 
     _record_main_commands(&r, sample);
 

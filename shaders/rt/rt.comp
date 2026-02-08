@@ -24,6 +24,10 @@ void main()
         DBG_LOG_VEC3(DBG_EV_INIT, DBG_KEY_NONE, test_data);
         DBG_COMMIT();
 
+        vec4 color_test = vec4(1, 1, 1, 1);
+        imageStore(G_OUTIMG(pc), ivec2(local_pixel), color_test);
+        return;
+
         ShaderRayCam cam = G_CAM(pc);
         Ray ray = camera_ray_for_pixel(cam, pixel, pc.extent);
         vec3 hit_pos;
@@ -83,5 +87,5 @@ void main()
                         pc.debug_mode, hit, iter_count, MAX_ITER_COUNT,
                         hit_level, hit_slot, err_code, hit_color, n_smooth, ao);
 
-        imageStore(G_OUTIMG(pc), ivec2(pixel), color);
+        imageStore(G_OUTIMG(pc), ivec2(local_pixel), color);
 }

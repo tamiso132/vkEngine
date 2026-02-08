@@ -7,6 +7,7 @@
 #include "resource/staging_arena.h"
 #include "util.h"
 #include "vector.h"
+#include <vulkan/vulkan_core.h>
 
 typedef struct {
   VkPipelineStageFlags2 stage;
@@ -15,6 +16,19 @@ typedef struct {
   VkImageLayout read_layout;
   VkImageLayout write_layout;
 } StateProperties;
+
+#include <stddef.h>   // size_t
+#include <stdint.h>   // uint32_t
+
+// Assumes VkImageLayout enum is defined exactly as you posted.
+
+typedef struct VkEnumStr {
+    VkImageLayout value;
+    const char*   name;
+} VkEnumStr;
+
+
+
 
 // The Master Lookup Table
 static const StateProperties STATE_TABLE[] = {[STATE_SHADER] = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
@@ -32,8 +46,8 @@ static const StateProperties STATE_TABLE[] = {[STATE_SHADER] = {.stage = VK_PIPE
                                               [STATE_COLOR] = {.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                                                                .read_access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT,
                                                                .write_access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                                                               .read_layout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-                                                               .write_layout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL},
+                                                               .read_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                                               .write_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
 
                                               [STATE_PRESENT] = {.stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
                                                                  .read_access = 0,
@@ -43,27 +57,12 @@ static const StateProperties STATE_TABLE[] = {[STATE_SHADER] = {.stage = VK_PIPE
 
 };
 
-static const char* get_str(){
-  static const char* txt = {
-          
-  }; 
-      // VK_IMAGE_LAYOUT_UNDEFINED = 0,
-    // VK_IMAGE_LAYOUT_GENERAL = 1,
-    // VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL = 2,
-    // VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL = 3,
-    // VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL = 4,
-    // VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL = 5,
-    // VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL = 6,
-    // VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL = 7,
-    // VK_IMAGE_LAYOUT_PREINITIALIZED = 8,s
-}
-
 // --- Private Prototypes ---
 static void _cmd_reset(VkDevice device, CmdBuffer cmd);
 
 static SyncDef _resolve_sync(ResourceState state, AccessType access);
 
-CmdBuffer cmd_init(VkDevice device, u32 queue_fam) {
+CmdBuffer cmd_init(VkDevice device, u32 queue_fam, const char* name) {
   CmdBuffer cmd = {.device = device};
   VkCommandPoolCreateInfo info = {.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
                                   .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
@@ -76,13 +75,15 @@ CmdBuffer cmd_init(VkDevice device, u32 queue_fam) {
                                            .commandBufferCount = 1};
 
   vk_check(vkAllocateCommandBuffers(device, &allocInfo, &cmd.buffer));
+
+  vk_set_object_name(device, VK_OBJECT_TYPE_COMMAND_BUFFER, (u64)cmd.buffer, name);
   return cmd;
 }
 
 // Helper to start a one-time command buffer
 void cmd_begin(VkDevice device, CmdBuffer cmd) {
 
-  vkResetCommandPool(device, cmd.pool, 0); 
+  vkResetCommandPool(device, cmd.pool, 0);
   VkCommandBufferBeginInfo beginInfo = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                                         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 
@@ -115,9 +116,12 @@ void cmd_begin_rendering(CmdBuffer cmd, M_Resource *rm, RenderingBeginInfo *info
 
       .renderArea = {.offset = {0, 0}, .extent = {.width = info->w, .height = info->h}},
   };
-
+  
   // 4. Begin!
   vkCmdBeginRendering(cmd.buffer, &render_info);
+  VkViewport view_port = {info->offset_x, info->offset_y, info->w, info->h, 0.0, 1.0};
+  vkCmdSetViewport(cmd.buffer, 0 , 1, &view_port);
+  vkCmdSetScissor(cmd.buffer, 0, 1, &render_info.renderArea);
 }
 
 void cmd_bind_bindless(CmdBuffer cmd, M_Resource *rm, VkExtent2D extent) {
@@ -162,15 +166,23 @@ void cmd_image_copy_host(CmdBuffer cmd, M_GPU *dev, M_Resource *rm, ResHandle ds
   // TODO FIX ACTUALLY SIZEOF
   RmStageSlice slice = rm_stage_push(rm, dev, data, extent.height * extent.width * sizeof(u32), 1);
   RImage *img = rm_get_image(rm, dst_handle);
-  VkBufferImageCopy2 region_info = {.sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
+
+
+   RImage *dst_img = rm_get_image(rm, dst_handle);
+   if (dst_img->sync.layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+    cmd_sync_image(cmd, rm, dst_handle, STATE_TRANSFER, ACCESS_WRITE);
+  }
+
+    VkBufferImageCopy2 region_info = {.sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
                                     .bufferImageHeight = extent.height,
                                     .bufferRowLength = extent.width,
+                                    .imageExtent = {.height = extent.height, .width = extent.width, .depth  = 1},
                                     .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1}};
 
   VkCopyBufferToImageInfo2 copy_info = {
       .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2,
       .dstImage = img->handle,
-      .dstImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+      .dstImageLayout = dst_img->sync.layout,
       .srcBuffer = slice.buffer,
       .pRegions = &region_info,
       .regionCount = 1,
@@ -179,6 +191,10 @@ void cmd_image_copy_host(CmdBuffer cmd, M_GPU *dev, M_Resource *rm, ResHandle ds
   vkCmdCopyBufferToImage2(cmd.buffer, &copy_info);
 }
 void cmd_image_copy_to_image(CmdBuffer cmd, M_Resource *rm, ResHandle src_handle, ResHandle dst_handle) {
+ cmd_image_copy_to_image_offset(cmd, rm, src_handle, dst_handle, (VkOffset2D){});
+}
+
+void cmd_image_copy_to_image_offset(CmdBuffer cmd, M_Resource *rm, ResHandle src_handle, ResHandle dst_handle, VkOffset2D dst_offset) {
   RImage *src_img = rm_get_image(rm, src_handle);
   RImage *dst_img = rm_get_image(rm, dst_handle);
 
@@ -189,7 +205,10 @@ void cmd_image_copy_to_image(CmdBuffer cmd, M_Resource *rm, ResHandle src_handle
   if (dst_img->sync.layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
     cmd_sync_image(cmd, rm, dst_handle, STATE_TRANSFER, ACCESS_WRITE);
   }
-  VkOffset3D bound[] = {{}, (VkOffset3D){.x = src_img->extent.width, .y = src_img->extent.height, .z = 1}};
+  VkOffset3D src_bound[] = {(VkOffset3D){}, (VkOffset3D){.x = src_img->extent.width, .y = src_img->extent.height, .z = 1}};
+
+
+  VkOffset3D dst_bound[] = {(VkOffset3D){.x = dst_offset.x, .y = dst_offset.y, .z = 0}, (VkOffset3D){.x = src_img->extent.width + dst_offset.x, .y = src_img->extent.height + dst_offset.y, .z = 1}};
 
   VkImageBlit2 blitInfo = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
@@ -199,14 +218,14 @@ void cmd_image_copy_to_image(CmdBuffer cmd, M_Resource *rm, ResHandle src_handle
               .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
               .layerCount = 1,
           },
-      .srcOffsets = {bound[0], bound[1]},
+      .srcOffsets = {src_bound[0], src_bound[1]},
       .dstSubresource =
           {
               .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
               .layerCount = 1,
           },
 
-      .dstOffsets = {bound[0], bound[1]},
+      .dstOffsets = {dst_bound[0], dst_bound[1]},
   };
 
   VkBlitImageInfo2 info = {
@@ -223,13 +242,69 @@ void cmd_image_copy_to_image(CmdBuffer cmd, M_Resource *rm, ResHandle src_handle
   vkCmdBlitImage2(cmd.buffer, &info);
 }
 
+const char* vk_get_str_layout(VkImageLayout layout)
+{
+    // Static table (primary values only; alias *_KHR/_NV names resolve to same numeric values)
+    static const VkEnumStr kTable[] = {
+        { VK_IMAGE_LAYOUT_UNDEFINED, "VK_IMAGE_LAYOUT_UNDEFINED" },
+        { VK_IMAGE_LAYOUT_GENERAL, "VK_IMAGE_LAYOUT_GENERAL" },
+        { VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, "VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, "VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, "VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, "VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, "VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, "VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_PREINITIALIZED, "VK_IMAGE_LAYOUT_PREINITIALIZED" },
+
+        { VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL, "VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL, "VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, "VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, "VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL, "VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL, "VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, "VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL, "VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL" },
+        { VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ, "VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ" },
+
+        { VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, "VK_IMAGE_LAYOUT_PRESENT_SRC_KHR" },
+
+        { VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR, "VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR" },
+        { VK_IMAGE_LAYOUT_VIDEO_DECODE_SRC_KHR, "VK_IMAGE_LAYOUT_VIDEO_DECODE_SRC_KHR" },
+        { VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR, "VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR" },
+
+        { VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR, "VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR" },
+
+        { VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT, "VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT" },
+        { VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR, "VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR" },
+
+        { VK_IMAGE_LAYOUT_VIDEO_ENCODE_DST_KHR, "VK_IMAGE_LAYOUT_VIDEO_ENCODE_DST_KHR" },
+        { VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR, "VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR" },
+        { VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR, "VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR" },
+
+        { VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT, "VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT" },
+        { VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM, "VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM" },
+        { VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR, "VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR" },
+        { VK_IMAGE_LAYOUT_ZERO_INITIALIZED_EXT, "VK_IMAGE_LAYOUT_ZERO_INITIALIZED_EXT" },
+    };
+
+    // Linear scan is fine (small table). If you care, this can be replaced with a sorted table + binary search.
+    for (size_t i = 0; i < sizeof(kTable) / sizeof(kTable[0]); ++i) {
+        if (kTable[i].value == layout) {
+            return kTable[i].name;
+        }
+    }
+
+    return "VK_IMAGE_LAYOUT_<unknown>";
+}
+
 void cmd_sync_image(CmdBuffer cmd, M_Resource *rm, ResHandle img_handle, ResourceState dst_state,
                     AccessType dst_access) {
 
   RImage *img = rm_get_image(rm, img_handle);
   SyncDef src_sync = img->sync;
   SyncDef dst_sync = _resolve_sync(dst_state, dst_access);
-  LOG_INFO_TAG("Sync", "Image(%s), layout_old(%d) => layout_new(%d)", img->name, src_sync.layout, dst_sync.layout);
+  // LOG_INFO_TAG("Sync", "Image(%s), layout_old(%s) => layout_new(%s)", img->name, vk_get_str_layout(src_sync.layout),
+  //              vk_get_str_layout(dst_sync.layout));
 
   VkImageMemoryBarrier2 barrier = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,

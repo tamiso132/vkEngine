@@ -5,6 +5,8 @@
 
 #include "panel.h"
 
+  const char *TAG = "WindowManager";
+
 typedef struct WindowCallbacks {
   void (*on_focus)(WindowInstance *w);
   void (*on_blur)(WindowInstance *w);
@@ -60,6 +62,22 @@ WindowManager *window_manager_init(VkExtent2D window_extent, VkExtent2D middle_w
   ctx->editor_panels[WIN_PANEL_TYPE_BOTTOM].rect = virt_bot_window;
 
   _set_new_hover(ctx);
+
+LOG_INFO_TAG(TAG, "virt_middle_window: off=(%d,%d) size=(%u,%u)",
+             virt_middle_window.offset.x, virt_middle_window.offset.y,
+             virt_middle_window.size.width, virt_middle_window.size.height);
+
+LOG_INFO_TAG(TAG, "virt_left_window: off=(%d,%d) size=(%u,%u)",
+             virt_left_window.offset.x, virt_left_window.offset.y,
+             virt_left_window.size.width, virt_left_window.size.height);
+
+LOG_INFO_TAG(TAG, "virt_right_window: off=(%d,%d) size=(%u,%u)",
+             virt_right_window.offset.x, virt_right_window.offset.y,
+             virt_right_window.size.width, virt_right_window.size.height);
+
+LOG_INFO_TAG(TAG, "virt_bot_window: off=(%d,%d) size=(%u,%u)",
+             virt_bot_window.offset.x, virt_bot_window.offset.y,
+             virt_bot_window.size.width, virt_bot_window.size.height);
 
   return ctx;
 }

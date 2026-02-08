@@ -1,6 +1,8 @@
 #include "input.h"
 #include "cglm/types.h"
 
+static void _glfw_char_cb(GLFWwindow* win, unsigned int codepoint);
+
 void input_init(Input* input, GLFWwindow* window) {
     memset(input, 0, sizeof(Input));
     input->window = window;
@@ -9,6 +11,12 @@ void input_init(Input* input, GLFWwindow* window) {
     glfwGetCursorPos(window, &input->mouse_x, &input->mouse_y);
     input->prev_mouse_x = input->mouse_x;
     input->prev_mouse_y = input->mouse_y;
+
+     // If you already use window user pointer, you can store a wrapper struct instead.
+    glfwSetWindowUserPointer(window, input);
+
+    // Install only the char callback (minimal + safe)
+    glfwSetCharCallback(window, _glfw_char_cb);
 }
 
 void input_update(Input* input) {
@@ -18,6 +26,7 @@ void input_update(Input* input) {
     
     input->prev_mouse_x = input->mouse_x;
     input->prev_mouse_y = input->mouse_y;
+    input->text_len = 0;
 
     // 2. Poll New State from GLFW
     // Note: We scan all keys. This is very fast (just array reads in GLFW).
@@ -58,4 +67,14 @@ bool input_button_down(Input* input, int button) {
 void input_get_mouse_position(Input* input, ivec2 mouse_pos){
    mouse_pos[0]  = input->mouse_x;
    mouse_pos[1]  = input->mouse_y;
+}
+
+static void _glfw_char_cb(GLFWwindow* win, unsigned int codepoint)
+{
+    Input* in = (Input*)glfwGetWindowUserPointer(win);
+    if (!in) return;
+
+    if (in->text_len < INPUT_TEXT_MAX) {
+        in->text[in->text_len++] = (uint32_t)codepoint;
+    }
 }

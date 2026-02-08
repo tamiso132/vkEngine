@@ -1,9 +1,7 @@
 
 #pragma once
 #include "nuklear_backend.h"
-
 #include "panel.h"
-#include "thirdparty/nuklear/nuklear.h"
 
 /* ---------------- metadata types ---------------- */
 typedef enum editor_pixel_value_type {

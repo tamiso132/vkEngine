@@ -65,6 +65,8 @@ void __log_init_file();
   }
 
 #define LOG_INFO_TAG(TAG, FMT, ...) LOG_INFO("[%s] " FMT, TAG, ##__VA_ARGS__)
+#define LOG_ERROR_TAG(TAG, FMT, ...) LOG_ERROR("[%s] " FMT, TAG, ##__VA_ARGS__)
+#define LOG_FATAL_TAG(TAG, FMT, ...) {LOG_ERROR("[%s] " FMT, TAG, ##__VA_ARGS__); abort();}
 
 #define defer(end) for (int _i = 0; _i == 0; (_i = 1), end)
 

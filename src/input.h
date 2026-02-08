@@ -5,10 +5,11 @@
 #include <stdbool.h>
 #include <string.h>
 #include <cglm/cglm.h>
-
+#include "common.h"
 // GLFW constants are usually < 350 for keys and < 10 for mouse
 #define MAX_KEYS 512
 #define MAX_BUTTONS 16
+#define INPUT_TEXT_MAX 256
 
 typedef struct Input {
     GLFWwindow* window;
@@ -25,6 +26,9 @@ typedef struct Input {
     double mouse_x, mouse_y;
     double prev_mouse_x, prev_mouse_y;
     double mouse_dx, mouse_dy; // Delta movement this frame
+
+    u32 text[INPUT_TEXT_MAX];
+    u32 text_len;
 } Input;
 
 void input_init(Input* input, GLFWwindow* window);

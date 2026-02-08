@@ -107,7 +107,7 @@ static void _render(Sample *self, SampleContext *ctx) {
   cmd_sync_buffer(ctx->cmd, ctx->rm, data->cam_buffer, STATE_SHADER, ACCESS_READ);
 
   vkCmdDispatch(ctx->cmd.buffer, groupsX, groupsY, 1);
- // cmd_image_copy_to_image(ctx->cmd, ctx->rm, data->cs_output_img, swap_img);
+  cmd_image_copy_to_image_offset(ctx->cmd, ctx->rm, data->cs_output_img, swap_img, ctx->game_rect.offset);
 }
 
 static void _resize(Sample *self, SampleContext *ctx) {

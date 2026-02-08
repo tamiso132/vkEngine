@@ -4,10 +4,11 @@ SHARED_STRUCT(GPUPushUI, 16){
 vec2 screen_size;
 uint tex_id; // If using bindless
 uint vert_id;
+mat4 projection;
 } ;
 
-SHARED_STRUCT(GPUClayVertex, 16){
+SHARED_STRUCT(GPUNuklearVertex, 16){
 vec2 pos;
 vec2 uv;
-vec4 color;
+u32 color;
 } ;

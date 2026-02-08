@@ -92,6 +92,7 @@ ResHandle rm_image_import(M_Resource *rm, RGImageInfo *info, VkImage img, VkImag
   image.usage = info->usage;
   image.format = info->format;
   image.is_imported = true;
+  image.bindlessIndex = -1;
 
   if (view == NULL) {
     _create_view(dev, &image);
@@ -110,6 +111,8 @@ ResHandle rm_image_import(M_Resource *rm, RGImageInfo *info, VkImage img, VkImag
   u32 id = (u32)vec_len(&rm->resources[RES_TYPE_IMAGE]);
   vec_push(&rm->resources[RES_TYPE_IMAGE], &image);
   ResHandle h = {.id = id, .res_type = RES_TYPE_IMAGE};
+
+  vk_set_image_name(dev->device, img, info->name);
 
   // Update bindless for imported too (so shaders can use it)
   //   VkDescriptorImageInfo imageInfo = {

@@ -45,8 +45,9 @@ void cmd_end_rendering(CmdBuffer cmd);
 void cmd_image_copy_host(CmdBuffer cmd, M_GPU *dev, M_Resource *rm, ResHandle dst_handle, void *data,
                          VkExtent2D extent);
 void cmd_image_copy_to_image(CmdBuffer cmd, M_Resource *rm, ResHandle src_handle, ResHandle dst_handle);
+void cmd_image_copy_to_image_offset(CmdBuffer cmd, M_Resource *rm, ResHandle src_handle, ResHandle dst_handle, VkOffset2D offset);
 
-CmdBuffer cmd_init(VkDevice device, u32 queue_fam);
+CmdBuffer cmd_init(VkDevice device, u32 queue_fam, const char* name);
 void cmd_sync_buffer(CmdBuffer cmd, M_Resource *rm, ResHandle buf_handle, ResourceState dst_state,
                      AccessType dst_access);
 void cmd_sync_image(CmdBuffer cmd, M_Resource *rm, ResHandle img_handle, ResourceState dst_state,

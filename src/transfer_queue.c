@@ -44,7 +44,7 @@ TransferQueue *transfer_init(VkDevice device, VkQueue transfer, u32 queue_fam, V
   tq->is_frame_started = false;
 
   for (u32 i = 0; i < max_frame_in_flight; i++) {
-    tq->frames[i].cmd = cmd_init(device, queue_fam);
+    tq->frames[i].cmd = cmd_init(device, queue_fam, "Cmd-Transfer");
   }
 
   return tq;
